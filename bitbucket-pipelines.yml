@@ -1,0 +1,24 @@
+image: bitnami/git
+pipelines:
+  branches:
+    dev:
+      - step:
+          name: Deploy Files to  dev
+          deployment: Test
+          script:
+            - apt-get update
+            - apt-get -qq install git-ftp
+            - git ftp push --user "$FTP_USERNAME" --passwd "$FTP_PASSWORD" "$FTP_HOST//motorliderapi.z.actotal.net"
+            - echo "Deploy Files to  dev"
+    master:
+      - step:
+          name: Deploy Files to Production
+          deployment: Production
+          script:
+            - apt-get update
+            - apt-get -qq install git-ftp
+            - git config git-ftp.url "ftpes://$FTP_HOST/public_html"
+            - git config git-ftp.user "$FTP_USERNAME"
+            - git config git-ftp.password "$FTP_PASSWORD"
+            - git ftp push --insecure
+            - echo "Deploy Files to  Production"

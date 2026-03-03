@@ -1,0 +1,193 @@
+---------------
+ERROR DE FAMILIA-MODELO
+CHERY 
+2020
+ARRIZO
+Modelos: Arrizo 5 1.5 Comfort Full,2Abag,ABS,llan,esp,Ay.Est. 4p.(CHI
+consulta: https://api.mercadolibre.com/sites/MLU/search?category=MLU1744&BRAND=389168&MODEL=2820709&q=Arrizo%205%201.5&VEHICLE_YEAR=2019-2021&KILOMETERS=1km-10001km
+Mercado libre solo hay 3 Arrizo 5 0km de 2020 - 2022
+---------------
+
+---------------
+CHERY
+2020
+FULWIN
+Modelos: New Fulwin 1.5 Full, 2Abag, ABS 5p. (CHI)
+consulta: https://api.mercadolibre.com/sites/MLU/search?category=MLU1744&BRAND=389168&MODEL=1252905&q=CHERY FULWIN&VEHICLE_YEAR=2015-2022&KILOMETERS=1km-50001km
+Mercado libre solo hay 5 FULWIN 1.5 full 1km-50001km de 2015 - 2022
+---------------
+
+---------------
+CHEVROLET
+2020
+JOY
+Modelos: Nuevo Joy Plus 1.0 Full, 2Abag, ABS, radio, Btooth 4p.
+consulta: https://api.mercadolibre.com/sites/MLU/search?category=MLU1744&BRAND=58955&MODEL=15027&q=CHEVROLET JOY&VEHICLE_YEAR=2015-2022&KILOMETERS=1km-60001km
+Mercado libre solo hay 5 CHEVROLET JOY 1km-60001km de 2015 - 2022
+---------------
+
+---------------
+CHEVROLET
+2020
+SILVERADO
+Modelos: Nueva Silverado 3.0 LTZ T.Diesel 277HP Ex.Full 4x4 Aut.(MEX)
+consulta https://api.mercadolibre.com/sites/MLU/search?category=MLU1744&BRAND=58955&MODEL=66716&q=CHEVROLET SILVERADO&VEHICLE_YEAR=2015-2022&KILOMETERS=1km-110001km
+Mercado libre hay solo 3 que no son 0km
+---------------
+
+---------------
+ERROR DE FAMILIA-MODELO
+NISSAN
+2001
+D21 (error en la base aparece como D-21 y no lo detecta) lo mismo D22 (D-22)
+modelo: D21 Doble Cabina 4x4 Full c/diesel adaptado
+category=MLU1744&BRAND=60505&VEHICLE_YEAR=2000-2002
+Trae valores errados
+---------------
+
+---------------
+NISSAN
+2001
+MAXIMA
+modelo: Maxima 30 GV Limited Full (JAP)
+category=MLU1744&BRAND=60505&MODEL=61614&VEHICLE_YEAR=1996-2006
+trae mas valores si seguimos bajando anios
+---------------
+
+---------------
+NISSAN
+2004
+SUNNY
+modelo: Sunny 1.8 Full, 2Abag 4p. Aut.
+category=MLU1744&BRAND=60505&MODEL=493975&q=Sunny%201.8%202Abag&VEHICLE_YEAR=2003-2005
+category=MLU1744&BRAND=60505&MODEL=493975&VEHICLE_YEAR=1999-2009
+no trae nada por que son modelos viejos del 1900 en adelante
+---------------
+
+---------------
+ERROR FAMILIA-MODELO
+NISSAN
+2001
+ALMERA
+modelo: Almera Tino 2.2 Diesel Full, 4Abag, ABS 5p. (ESP)
+No existe Almera en Mercado libre
+---------------
+
+---------------
+ERROR FAMILIA-MODELO
+NISSAN
+2001
+NAVARA
+modelo: Navara Doble Cabina Diesel 4x4 Extra Full (JAP)
+No existe NAVARA en Mercado libre
+---------------
+
+---------------
+ERROR FAMILIA-MODELO
+NISSAN
+SENTRA B13
+2001
+modelo: Sentra B13 E 16v dir a/a
+En Mercado libre existe Sentra y b18
+En Motor lider solo existe SETRA B13 y SETRA B15
+---------------
+
+---------------
+ERROR FAMILIA-MODELO
+NISSAN
+SENTRA B15
+2001
+modelo: Sentra B15 E 16v dir a/a
+En Mercado libre existe Sentra y b18
+En Motor lider solo existe SETRA B13 y SETRA B15
+---------------
+
+---------------
+ERROR FAMILIA-MODELO
+NISSAN
+350/370 Z
+2005
+modelo: 350Z CoupÚ Extra Full
+En Mercado libre existe 350Z y 370Z
+En Motor lider solo existe 350/370 Z
+---------------
+
+---------------
+ERROR FAMILIA-MODELO
+HONDA
+ODYSSEY
+2011
+modelo: Nueva Odyssey Elite EX-LRES 3.5i V6 Extra Full, cuero Aut.
+En Mercado libre existen 2 modelos Oddysey y Odyssey
+En motor lider solo existe ODYSSEY
+---------------
+
+---------------
+ERROR FAMILIA-MODELO
+HYUNDAI
+COUPE
+2013
+modelo: New Coupe 3.8 GLS Genesis Extra Full Aut.
+En Mercado libre existen 2 modelos COUPE y COUPé
+En motor lider solo existe COUPE
+---------------
+
+---------------
+ERROR FAMILIA-MODELO
+HYUNDAI
+I 10
+2013
+modelo: I 10 1.1 Full 5p.
+En Mercado libre existen como i10
+En motor lider es I 10
+---------------
+
+---------------
+ERROR FAMILIA-MODELO
+CITROEN
+C ELYSEE
+2020
+modelo: New C Elysee 1.2 Feel Pack 82 HP Full,4Abag,ABS,llan 4p(ESP
+En Mercado libre existen como C-Elysée
+En motor lider es C ELYSEE
+---------------
+
+---------------
+ERROR FAMILIA-MODELO
+CITROEN
+PICASSO
+2020
+modelo: New C4 Picasso 1.6T Intensive E.Full,t.cielo,Ay.Est.5p.Aut.
+En Mercado libre existen como C3 Picasso, C4 Picasso,G Grand C4 Picasso,X Xsara Picasso
+En motor lider es PICASSO
+---------------
+
+---------------
+ERROR FAMILIA-MODELO
+FAW
+X40/X80
+2020
+modelo: X40 1.6 Luxury Extra Full,4Abag,techo,cue,CTR,Ay. Est. 5p.
+En Mercado libre NO existe X40/X80 solo existe X80
+En motor lider es X40/X80
+---------------
+
+---------------
+ERROR MARCA
+KIA MOTORS
+CARNIVAL
+2020
+modelo: Nueva Carnival 3.3 V6 Extra Full,cue,techo,Ay.Est. 8 pax.Aut.
+En Mercado libre NO existe KIA MOTORS solo KIA
+En motor lider es KIA MOTORS
+---------------
+
+---------------
+ERROR FAMILIA-MODELO
+KIA MOTORS (KIA por codigo)
+K2400/2500/2700
+2013
+modelo: Nuevo K 2700 Diesel Dob Cab Rueda Simple 4x4 c/caja dir
+En Mercado libre NO existe K2400/2500/2700 solo existe K 2700 y K2500
+En motor lider es K2400/2500/2700
+---------------

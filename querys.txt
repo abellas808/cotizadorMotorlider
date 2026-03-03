@@ -1,0 +1,240 @@
+$vehiculo [] = [
+    'marca' => 'SUZUKI',
+    'anio' => 2020,
+    'familia' => 'ALTO',
+    'modelo' => 'Alto K10 1.0 Full, 2Abag, ABS 5p. (IND)',
+    'km' => ''
+];
+
+$vehiculo [] = [
+    'marca' => 'BMW',
+    'anio' => 2020,
+    'familia' => '118',
+    'modelo' => '118i 1.5T 140 HP Urban Extra Full 5p. Aut. (F40)',
+    'km' => 50000
+];
+
+$vehiculo [] = [
+    'marca' => 'CHERY',
+    'anio' => 2020,
+    'familia' => 'ARRIZO',
+    'modelo' => 'Arrizo 5 1.5 Comfort Full,2Abag,ABS,llan,esp,Ay.Est. 4p.(CHI',
+    'km' => 1
+];
+
+$vehiculo [] = [
+    'marca' => 'CHERY',
+    'anio' => 2020,
+    'familia' => 'FULWIN',
+    'modelo' => 'New Fulwin 1.5 Full, 2Abag, ABS 5p. (CHI)',
+    'km' => 1
+];
+
+$vehiculo [] = [
+    'marca' => 'CHERY',
+    'anio' => 2020,
+    'familia' => 'QQ',
+    'modelo' => 'New QQ 1.0 Standard dir, a/a, vid, 2Abag, ABS 5p. (CHI)',
+    'km' => 1
+];
+
+$vehiculo [] = [
+    'marca' => 'CHERY',
+    'anio' => 2020,
+    'familia' => 'TIGGO',
+    'modelo' => 'Tiggo 2 1.5 Full, 2Abag, ABS, pant., Ay. Estac. (CHI)',
+    'km' => 1
+];
+
+$vehiculo [] = [
+    'marca' => 'CHEVROLET',
+    'anio' => 2020,
+    'familia' => 'PRISMA',
+    'modelo' => 'Nuevo Prisma 1.0 LT Full, 2Abag, ABS, Ay.Estac., MyLink 4p.',
+    'km' => 1
+];
+
+$vehiculo [] = [
+    'marca' => 'CHEVROLET',
+    'anio' => 2020,
+    'familia' => 'JOY',
+    'modelo' => 'Nuevo Joy Plus 1.0 Full, 2Abag, ABS, radio, Btooth 4p.',
+    'km' => 1
+];
+
+$vehiculo [] = [
+    'marca' => 'CHEVROLET',
+    'anio' => 2020,
+    'familia' => 'ONIX',
+    'modelo' => 'New Onix 1.0T RS Full, 6Abag,ABS,CES,CTR,llan16,Ay.Est.5p.',
+    'km' => 1
+];
+
+$vehiculo [] = [
+    'marca' => 'CHEVROLET',
+    'anio' => 2020,
+    'familia' => 'SILVERADO',
+    'modelo' => 'Nueva Silverado 3.0 LTZ T.Diesel 277HP Ex.Full 4x4 Aut.(MEX)',
+    'km' => 1
+];
+
+---------------------- Cambios ------------------
+$vehiculo [] = [
+    'marca' => 'FIAT',
+    'anio' => 2020,
+    'familia' => '500',
+    'modelo' => '500X Cross 1.4T 140 HP Extra Full 5p. Aut. (ITA)',
+    'km' => 1
+];
+
+$vehiculo [] = [
+    'marca' => 'NISSAN',
+    'anio' => 2001,
+    'familia' => 'D21',
+    'modelo' => 'D21 Doble Cabina 4x4 Full c/diesel adaptado',
+    'km' => ''
+];
+
+$vehiculo [] = [
+    'marca' => 'NISSAN',
+    'anio' => 2001,
+    'familia' => 'MAXIMA',
+    'modelo' => 'Maxima 30 GV Limited Full (JAP)',
+    'km' => ''
+];
+
+$vehiculo [] = [
+    'marca' => 'NISSAN',
+    'anio' => 2004,
+    'familia' => 'SUNNY',
+    'modelo' => 'Sunny 1.8 Full, 2Abag 4p. Aut.',
+    'km' => ''
+];
+
+$vehiculo [] = [
+    'marca' => 'NISSAN',
+    'anio' => 2001,
+    'familia' => 'ALMERA',
+    'modelo' => 'Almera Tino 2.2 Diesel Full, 4Abag, ABS 5p. (ESP)',
+    'km' => 1
+];
+
+$vehiculo [] = [
+    'marca' => 'NISSAN',
+    'anio' => 2001,
+    'familia' => 'NAVARA',
+    'modelo' => 'Navara Doble Cabina Diesel 4x4 Extra Full (JAP)',
+    'km' => ''
+];
+
+$vehiculo [] = [
+    'marca' => 'NISSAN',
+    'anio' => 2001,
+    'familia' => 'SETRA B13',
+    'modelo' => 'Sentra B13 E 16v dir a/a',
+    'km' => ''
+];
+
+$vehiculo [] = [
+    'marca' => 'NISSAN',
+    'anio' => 2001,
+    'familia' => 'SETRA B15',
+    'modelo' => 'Sentra B15 XE 1.8 dir, inmov, a/a, bloq, vid, Aut',
+    'km' => ''
+];
+
+$vehiculo [] = [
+    'marca' => 'NISSAN',
+    'anio' => 2005,
+    'familia' => '350/370 Z',
+    'modelo' => '350Z CoupÚ Extra Full',
+    'km' => ''
+];
+
+$vehiculo [] = [
+    'marca' => 'HONDA',
+    'anio' => 2011,
+    'familia' => 'ODYSSEY',
+    'modelo' => 'Nueva Odyssey Elite EX-LRES 3.5i V6 Extra Full, cuero Aut.',
+    'km' => ''
+];
+
+$vehiculo [] = [
+    'marca' => 'HYUNDAI',
+    'anio' => 2013,
+    'familia' => 'COUPE',
+    'modelo' => 'New Coupe 3.8 GLS Genesis Extra Full Aut.',
+    'km' => ''
+];
+
+$vehiculo [] = [
+    'marca' => 'HYUNDAI',
+    'anio' => 2013,
+    'familia' => 'I 10',
+    'modelo' => 'I 10 1.1 Full 5p.',
+    'km' => ''
+];
+
+$vehiculo [] = [
+    'marca' => 'SUZUKI',
+    'anio' => 2020,
+    'familia' => 'ALTO',
+    'modelo' => 'New Alto 800 GA dir, a/a, 2Abag, ABS, c/Multimedia 5p. (IND)',
+    'km' => 1
+];
+
+$vehiculo [] = [
+    'marca' => 'CITROEN',
+    'anio' => 2020,
+    'familia' => 'C ELYSEE',
+    'modelo' => 'New C Elysee 1.2 Feel Pack 82 HP Full,4Abag,ABS,llan 4p(ESP',
+    'km' => 1
+];
+
+$vehiculo [] = [
+    'marca' => 'CITROEN',
+    'anio' => 2020,
+    'familia' => 'PICASSO',
+    'modelo' => 'New C4 Picasso 1.6T Intensive E.Full,t.cielo,Ay.Est.5p.Aut.',
+    'km' => 1
+];
+
+$vehiculo [] = [
+    'marca' => 'FAW',
+    'anio' => 2020,
+    'familia' => 'X40/X80',
+    'modelo' => 'X40 1.6 Luxury Extra Full,4Abag,techo,cue,CTR,Ay. Est. 5p.',
+    'km' => 1
+];
+
+$vehiculo [] = [
+    'marca' => 'KIAMOTORS',
+    'anio' => 2020,
+    'familia' => 'CARNIVAL',
+    'modelo' => 'Nueva Carnival 3.3 V6 Extra Full,cue,techo,Ay.Est. 8 pax.Aut',
+    'km' => 1
+];
+
+$vehiculo [] = [
+    'marca' => 'KIA MOTORS',
+    'anio' => 2013,
+    'familia' => 'K2400/2500/2700',
+    'modelo' => 'Nuevo K 2700 Diesel Dob Cab Rueda Simple 4x4 c/caja dir',
+    'km' => 1
+];
+
+$vehiculo [] = [
+    'marca' => 'TOYOTA',
+    'anio' => 2020,
+    'familia' => 'C-HR',
+    'modelo' => 'Nuevo C-HR Luxury 1.8 HEV Extra Full, cuero 5p. Aut.(TUR)',
+    'km' => 5000
+];
+
+$vehiculo [] = [
+    'marca' => 'TOYOTA',
+    'anio' => 2020,
+    'familia' => 'FORTUNER',
+    'modelo' => 'New Fortuner 4.0 SRX Extra Full 4x4 7pax Aut. (ARG)',
+    'km' => 5000
+];
