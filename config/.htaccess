@@ -1,0 +1,3 @@
+Options +FollowSymLinks -MultiViews
+RewriteEngine On
+RewriteRule ^([a-zA-Z_-]*)$ index.php?peticion=$1
