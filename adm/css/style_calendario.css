@@ -1,0 +1,210 @@
+@import url("fonts.css");
+
+table {
+    border-collapse: collapse;
+    border-spacing: 0;
+	border:none
+}
+
+.cuadrado {
+    height: 35px;
+    width: 35px;
+    /* font-weight: bold; */
+	border:none;
+}
+
+.gris {
+    background-color: #F0F0F0;
+    cursor: pointer;
+}
+
+.verde_central {
+	background-color:#376D37;
+	color:#FFFFFF;
+	cursor:pointer;
+}
+
+.cuadrado_rojo{
+	background-color:#e03a3e;
+	color:#FFFFFF;
+	cursor:pointer;
+
+}
+
+#referencia_colores {
+	font-size:14px;
+	line-height:21px;
+}
+
+
+#div_calendario {
+	float:left;
+    width: 25%;
+    height: auto;
+}
+
+#div_calendario p {
+    text-align: left;
+    font-size: 20px;
+}
+
+#horarios{
+    float:left;
+    width: 75%;
+    height: auto;
+}
+
+.columna{
+    height: 30px;
+}
+
+@media (max-width:767px) {
+.columna_display{
+   display: none;
+    height: 30px;
+}
+.columna{
+    height: 50px;
+}
+}
+
+
+
+
+.boton_confirmar_1{
+
+	width: 300px;
+    cursor: pointer;
+    float: none;
+backface-visibility: hidden;
+    border: none;
+    border-radius: 0;
+    color: #fff !important;
+    display: inline-block;
+    font-size: 14px;
+    line-height: 1;
+    padding: 17px 40px;
+    position: relative;
+    text-align: center;
+    text-transform: uppercase;
+    transform: translateZ(0px);
+    transition: .3s;
+    transition-property: color;
+    background: #be3a49;
+    font-weight: 600 !important;
+}
+
+.hora_1{
+
+	height: 48px;
+    width: 300px;
+    border: 1px solid #cccccc;
+    margin-bottom: 30px;
+    padding: 0 15px;
+    color: #666666;
+    font-size: 14px;
+    transition: .3s;
+    background: #f7f7fd;
+}
+
+.hora_2{
+
+	height: 48px;
+    width: 300px;
+    border: 1px solid #dddc;
+    margin-bottom: 30px;
+    padding: 0 15px;
+    color: #ccc;
+    font-size: 14px;
+    transition: .3s;
+    background: #f7f7fd;
+}
+
+.flechita_izquierda_1{
+
+	background-color: #041e42;
+    /* border-color: #be3a49; */
+    /* border-width: thin; */
+    color: #fff;
+    margin-right: 5%;
+    cursor: pointer;
+    width: 25px;
+    height: 25px;
+    border-width: thin;
+    border: none;
+    font-size: 20px;
+    float: left;
+    padding-bottom: 30px;
+}
+
+.flechita_derecha_1{
+
+	background-color: #041e42;
+    /* border-color: #be3a49; */
+    color: #fff;
+    margin-left: 5%;
+    cursor: pointer;
+    width: 25px;
+    height: 25px;
+    border-width: thin;
+    font-size: 20px;
+    float: right;
+    padding-bottom: 30px;
+    border: none;
+}
+
+.mes_ano_1{
+	color: #000;
+    font-size: 20px;
+    text-align: center;
+}
+
+.horarios_1{
+
+	/* margin-bottom: 15px; */
+    color: #376D37;
+    font-size: 20px;
+    font-weight: 500;
+}
+
+.horarios_2{
+
+	margin-bottom: 15px;
+    color: #cccccc;
+    font-size: 20px;
+}
+
+.page-title_1{
+    font-family: 'Open Sans', sans-serif !important;
+    color:#e28330 !important;
+    font-size: 15px !important;
+}
+
+.page-title_2{
+    font-family: 'Open Sans', sans-serif !important;
+    color: #be3a49 !important;
+    font-size: 15px !important;
+}
+
+.tasar_whatsapp{
+
+    background-color: #38bb38;
+    border: 1px solid #174817;
+    width: 100%;
+
+}
+
+.columna_tasar{
+    padding-bottom: 50px !important;
+    margin-top: 25px;
+}
+
+
+@media (min-width:320px) and (max-width:767px) {
+
+	#div_calendario {
+		float:none;
+		margin-bottom:25px;
+	}
+
+}
