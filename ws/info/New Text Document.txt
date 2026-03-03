@@ -1,0 +1,5 @@
+https://api.mercadolibre.com/sites/MLU/search?category=MLU1744&BRAND=43943&MODEL=2109402&VEHICLE_YEAR=2016-2018
+
+Suzuki > Celerio > De 2017 a 2010 --- NO VERSION
+
+Suzuki > Celerio > De 2018 a 2023 --- SI VERSION
