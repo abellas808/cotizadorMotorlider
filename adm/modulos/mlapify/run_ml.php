@@ -295,6 +295,7 @@ foreach ($items as $it) {
       '".$esc(substr($vendedor,0,180))."',
       ".intval($es_oficial).",
       '".$esc($raw)."',
+      
       '".$now."'
     )
     ON DUPLICATE KEY UPDATE
