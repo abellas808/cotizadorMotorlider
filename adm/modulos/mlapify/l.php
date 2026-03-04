@@ -173,7 +173,7 @@ if (!isset($sistema_iniciado)) exit();
 		apifySetEstado('enviando', 'Lanzando consulta...');
 		$('#tabla_apify_resultados tbody').html('<tr><td colspan="7" style="color:#777;">Buscando...</td></tr>');
 
-		$.post('modulos/mlapify/apify_run.php', data, function(raw){
+		$.post('/adm/modulos/mlapify/run_ml.php', data, function(raw){
 			let res = null;
 			try { res = (typeof raw === 'string') ? JSON.parse(raw) : raw; } catch(e) {}
 
@@ -189,10 +189,12 @@ if (!isset($sistema_iniciado)) exit();
 			if (apifyTimer) clearInterval(apifyTimer);
 			apifyTimer = setInterval(apifyPoll, 2000);
 			apifyPoll();
-		}).fail(function(){
-			apifySetEstado('error', 'No se pudo contactar apify_run.php');
+		}).fail(function(xhr){
+			const status = xhr ? xhr.status : '';
+			const text = (xhr && xhr.responseText) ? xhr.responseText : '';
+			apifySetEstado('error', 'HTTP ' + status + ' ' + (text ? text : 'Sin body'));
 			$('#btn_apify_buscar').prop('disabled', false);
-		});
+			});
 	});
 </script>
 
