@@ -22,7 +22,11 @@ if ($corridaId === '') {
 
 $rows = [];
 $q = $db->query("
-	SELECT titulo, precio, moneda, anio, km, ubicacion, url
+	SELECT
+		marca_txt  AS marca,
+		modelo_txt AS modelo,
+		version,
+		titulo, precio, moneda, anio, km, ubicacion, url
 	FROM apify_publicaciones
 	WHERE corrida_id='" . $db->escape($corridaId) . "'
 	ORDER BY id DESC
@@ -31,6 +35,9 @@ $q = $db->query("
 
 while ($r = $db->fetch_array($q)) {
 	$rows[] = [
+		'marca' => $r['marca'],
+		'modelo' => $r['modelo'],
+		'version' => $r['version'],
 		'titulo' => $r['titulo'],
 		'precio' => $r['precio'],
 		'moneda' => $r['moneda'],
@@ -41,4 +48,4 @@ while ($r = $db->fetch_array($q)) {
 	];
 }
 
-echo json_encode(['ok' => true, 'rows' => $rows]);
+echo json_encode(['ok' => true, 'rows' => $rows], JSON_UNESCAPED_UNICODE);

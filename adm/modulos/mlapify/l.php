@@ -261,9 +261,9 @@ try {
 
 		const data = {
 			marca_id: $('#apify_marca').val(),
-			marca: $('#apify_marca option:selected').text(),
+			marca_txt: $('#apify_marca option:selected').text(),
 			modelo_id: $('#apify_modelo').val(),
-			modelo: $('#apify_modelo option:selected').text(),
+			modelo_txt: $('#apify_modelo option:selected').text(),
 			anio_desde: $('#apify_anio_desde').val(),
 			anio_hasta: $('#apify_anio_hasta').val(),
 			km_desde: $('#apify_km_desde').val(),
