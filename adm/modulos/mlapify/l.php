@@ -350,11 +350,20 @@ try {
 				});
 			}
 		}).fail(function(xhr){
-			apifySetEstado('error', 'No se pudo contactar apify_estado.php (HTTP '+(xhr ? xhr.status : '')+')');
-			if (apifyTimer) clearInterval(apifyTimer);
-			apifyTimer = null;
+			let msg = 'No se pudo contactar run_ml.php (HTTP ' + (xhr ? xhr.status : '') + ')';
+			if (xhr && xhr.responseText) {
+				// intento mostrar JSON de error si vino
+				try {
+				const j = JSON.parse(xhr.responseText);
+				if (j && j.mensaje) msg = j.mensaje + ' (HTTP ' + xhr.status + ')';
+				else msg = xhr.responseText;
+				} catch(e) {
+				msg = xhr.responseText; // texto plano
+				}
+			}
+			apifySetEstado('error', msg);
 			$('#btn_apify_buscar').prop('disabled', false);
-		});
+			});
 	}
 
 	$('#apify_marca').on('change', function(){
@@ -415,9 +424,20 @@ try {
 			apifyTimer = setInterval(apifyPoll, 2000);
 			apifyPoll();
 		}).fail(function(xhr){
-			apifySetEstado('error', 'No se pudo contactar run_ml.php (HTTP '+(xhr ? xhr.status : '')+')');
+			let msg = 'No se pudo contactar run_ml.php (HTTP ' + (xhr ? xhr.status : '') + ')';
+			if (xhr && xhr.responseText) {
+				// intento mostrar JSON de error si vino
+				try {
+				const j = JSON.parse(xhr.responseText);
+				if (j && j.mensaje) msg = j.mensaje + ' (HTTP ' + xhr.status + ')';
+				else msg = xhr.responseText;
+				} catch(e) {
+				msg = xhr.responseText; // texto plano
+				}
+			}
+			apifySetEstado('error', msg);
 			$('#btn_apify_buscar').prop('disabled', false);
-		});
+			});
 	});
 
 	// ✅ Auto-cargar última corrida al entrar
