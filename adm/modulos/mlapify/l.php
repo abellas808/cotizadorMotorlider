@@ -124,6 +124,12 @@ try {
 <div class="row" style="margin-top:10px;">
 	<div class="span6">
 		<button type="button" class="btn btn-primary btn-small" id="btn_apify_buscar">Buscar (Apify)</button>
+
+		<!-- ⭐ NUEVO: botones para filtrar localmente la grilla -->
+		<button type="button" class="btn btn-small" id="btn_apify_filtrar" style="margin-left:6px;">Filtrar</button>
+		<button type="button" class="btn btn-small" id="btn_apify_limpiar" style="margin-left:6px;">Limpiar</button>
+		<span id="apify_count" style="margin-left:10px; font-weight:bold; color:#444;">0 / 0</span>
+
 		<span style="margin-left:10px; font-weight:bold;" id="apify_estado">Estado: -</span>
 		<div style="margin-top:4px; font-size:12px; color:#666;" id="apify_progreso">-</div>
 	</div>
@@ -157,9 +163,27 @@ try {
 	let apifyCorridaId = null;
 	let apifyTimer = null;
 
+	// ⭐ NUEVO: datasets para filtrar localmente
+	let APIFY_ROWS_ALL = [];
+	let APIFY_ROWS_VIEW = [];
+
 	function apifySetEstado(txt, sub) {
 		$('#apify_estado').text('Estado: ' + (txt || '-'));
 		$('#apify_progreso').text(sub || '-');
+	}
+
+	// ⭐ NUEVO: contador tipo "mostrando / total"
+	function apifySetCount(show, total) {
+		$('#apify_count').text(String(show || 0) + ' / ' + String(total || 0));
+	}
+
+	// ⭐ helper parse int seguro
+	function apifyToIntOrNull(v) {
+		if (v === null || v === undefined) return null;
+		let s = String(v).replace(/[^\d]/g,'').trim();
+		if (!s) return null;
+		let n = parseInt(s, 10);
+		return Number.isFinite(n) ? n : null;
 	}
 
 	function apifyRenderResultados(rows) {
@@ -203,6 +227,80 @@ try {
 		});
 	}
 
+	// ⭐ NUEVO: aplica filtros a APIFY_ROWS_ALL y renderiza
+	function apifyApplyFilters() {
+		const marcaId = ($('#apify_marca').val() || '').toString();
+		const modeloId = ($('#apify_modelo').val() || '').toString();
+
+		const marcaTxt = ($('#apify_marca option:selected').text() || '').toString().trim();
+		let modeloTxt = ($('#apify_modelo option:selected').text() || '').toString().trim();
+
+		// Si el select está en "-- Todos --", no filtramos por modelo
+		const filtraModelo = (modeloId !== '' && modeloTxt !== '' && modeloTxt !== '-- Todos --' && modeloTxt !== '-- Seleccionar --');
+		const filtraMarca  = (marcaId !== '' && marcaTxt !== '' && marcaTxt !== '-- Seleccionar --');
+
+		const anioDesde = apifyToIntOrNull($('#apify_anio_desde').val());
+		const anioHasta = apifyToIntOrNull($('#apify_anio_hasta').val());
+		const kmDesde   = apifyToIntOrNull($('#apify_km_desde').val());
+		const kmHasta   = apifyToIntOrNull($('#apify_km_hasta').val());
+
+		const needYear = (anioDesde !== null || anioHasta !== null);
+		const needKm   = (kmDesde !== null   || kmHasta !== null);
+
+		APIFY_ROWS_VIEW = (APIFY_ROWS_ALL || []).filter(r => {
+			// Texto (marca/modelo)
+			const rMarca = ((r && r.marca) ? String(r.marca) : '').trim();
+			const rModelo = ((r && r.modelo) ? String(r.modelo) : '').trim();
+
+			if (filtraMarca) {
+				if (!rMarca) return false;
+				if (rMarca.toLowerCase() !== marcaTxt.toLowerCase()) return false;
+			}
+
+			if (filtraModelo) {
+				if (!rModelo) return false;
+				// contiene (más flexible)
+				if (rModelo.toLowerCase().indexOf(modeloTxt.toLowerCase()) === -1) return false;
+			}
+
+			// Año / KM (num)
+			const rAnio = apifyToIntOrNull(r ? r.anio : null);
+			const rKm   = apifyToIntOrNull(r ? r.km   : null);
+
+			if (needYear) {
+				if (rAnio === null) return false;
+				if (anioDesde !== null && rAnio < anioDesde) return false;
+				if (anioHasta !== null && rAnio > anioHasta) return false;
+			}
+
+			if (needKm) {
+				if (rKm === null) return false;
+				if (kmDesde !== null && rKm < kmDesde) return false;
+				if (kmHasta !== null && rKm > kmHasta) return false;
+			}
+
+			return true;
+		});
+
+		apifyRenderResultados(APIFY_ROWS_VIEW);
+		apifySetCount(APIFY_ROWS_VIEW.length, APIFY_ROWS_ALL.length);
+		apifySetEstado('filtrado', 'Mostrando resultados filtrados (local).');
+	}
+
+	// ⭐ NUEVO: limpia filtros (inputs) y vuelve a mostrar todo
+	function apifyClearFilters() {
+		$('#apify_anio_desde').val('');
+		$('#apify_anio_hasta').val('');
+		$('#apify_km_desde').val('');
+		$('#apify_km_hasta').val('');
+
+		// OJO: no reseteo marca/modelo para no romper tu flujo de selección
+		APIFY_ROWS_VIEW = (APIFY_ROWS_ALL || []).slice(0);
+		apifyRenderResultados(APIFY_ROWS_VIEW);
+		apifySetCount(APIFY_ROWS_VIEW.length, APIFY_ROWS_ALL.length);
+		apifySetEstado('ok', 'Filtros limpiados. Mostrando todo.');
+	}
+
 	function cargarModelosPorMarca(idMarca) {
 		const $m = $('#apify_modelo');
 		$m.empty();
@@ -241,7 +339,14 @@ try {
 				$('#btn_apify_buscar').prop('disabled', false);
 
 				$.getJSON('/adm/modulos/mlapify/apify_resultados.php', { corrida_id: apifyCorridaId }, function(r2){
-					if (r2 && r2.ok) apifyRenderResultados(r2.rows);
+					if (r2 && r2.ok) {
+						// ⭐ NUEVO: guardo dataset completo
+						APIFY_ROWS_ALL = (r2.rows || []);
+						APIFY_ROWS_VIEW = APIFY_ROWS_ALL.slice(0);
+
+						apifyRenderResultados(APIFY_ROWS_VIEW);
+						apifySetCount(APIFY_ROWS_VIEW.length, APIFY_ROWS_ALL.length);
+					}
 				});
 			}
 		}).fail(function(xhr){
@@ -254,6 +359,21 @@ try {
 
 	$('#apify_marca').on('change', function(){
 		cargarModelosPorMarca($(this).val());
+
+		// ⭐ opcional: si ya hay datos cargados, re-aplico filtros al cambiar marca
+		// apifyApplyFilters();
+	});
+
+	$('#btn_apify_filtrar').on('click', function(){
+		if (!APIFY_ROWS_ALL || !APIFY_ROWS_ALL.length) {
+			apifySetEstado('info', 'No hay resultados cargados para filtrar todavía.');
+			return;
+		}
+		apifyApplyFilters();
+	});
+
+	$('#btn_apify_limpiar').on('click', function(){
+		apifyClearFilters();
 	});
 
 	$('#btn_apify_buscar').on('click', function(){
@@ -286,6 +406,11 @@ try {
 			apifyCorridaId = res.corrida_id;
 			apifySetEstado('corriendo', 'Corrida #' + apifyCorridaId);
 
+			// ⭐ NUEVO: al iniciar nueva corrida, reseteo datasets
+			APIFY_ROWS_ALL = [];
+			APIFY_ROWS_VIEW = [];
+			apifySetCount(0, 0);
+
 			if (apifyTimer) clearInterval(apifyTimer);
 			apifyTimer = setInterval(apifyPoll, 2000);
 			apifyPoll();
@@ -297,12 +422,22 @@ try {
 
 	// ✅ Auto-cargar última corrida al entrar
 	$(function(){
+		apifySetCount(0, 0);
+
 		$.getJSON('/adm/modulos/mlapify/apify_ultima_corrida.php', function(r){
 			if (r && r.ok && r.corrida_id) {
 				apifyCorridaId = r.corrida_id;
 				apifySetEstado(r.estado || '-', 'Items: ' + (r.total_items ?? '-') + ' | Guardados: ' + (r.items_guardados ?? '-') + (r.mensaje ? (' | ' + r.mensaje) : ''));
+
 				$.getJSON('/adm/modulos/mlapify/apify_resultados.php', { corrida_id: apifyCorridaId }, function(r2){
-					if (r2 && r2.ok) apifyRenderResultados(r2.rows);
+					if (r2 && r2.ok) {
+						// ⭐ NUEVO: guardo dataset completo
+						APIFY_ROWS_ALL = (r2.rows || []);
+						APIFY_ROWS_VIEW = APIFY_ROWS_ALL.slice(0);
+
+						apifyRenderResultados(APIFY_ROWS_VIEW);
+						apifySetCount(APIFY_ROWS_VIEW.length, APIFY_ROWS_ALL.length);
+					}
 				});
 			}
 		});
