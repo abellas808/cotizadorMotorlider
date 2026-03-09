@@ -97,10 +97,9 @@ function slugify($s) {
 }
 
 function build_ml_url($marca_txt, $modelo_txt) {
-    // Mantengo tu formato base: https://autos.mercadolibre.com.uy/{marca}/{modelo}/usado/montevideo/
     $b = slugify($marca_txt);
     $m = slugify($modelo_txt);
-    return "https://autos.mercadolibre.com.uy/{$b}/{$m}/usado/montevideo/";
+    return rtrim("https://autos.mercadolibre.com.uy/{$b}/{$m}/usado/montevideo/_NoIndex_True", '/');
 }
 
 // ====== CARGA .ENV ======

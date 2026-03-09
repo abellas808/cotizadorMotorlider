@@ -48,7 +48,7 @@ try {
 	$qo = $db->query("SELECT * FROM {$tblModelo} ORDER BY nombre");
 	while ($r = $db->fetch_array($qo)) {
 		$idMarca = _pickArr($r, ['id_marca','marca_id']);
-		$idMod   = _pickArr($r, ['id_modelo','id_mdoelo','id','modelo_id']); // por si viene con typo
+		$idMod   = _pickArr($r, ['id_model','id_modelo','id_mdoelo','id','modelo_id']);
 		$nomMod  = _pickArr($r, ['nombre','name','modelo']);
 		if ($idMarca === null || $idMod === null || $nomMod === null) continue;
 
@@ -123,7 +123,7 @@ try {
 
 <div class="row" style="margin-top:10px;">
 	<div class="span6">
-		<button type="button" class="btn btn-primary btn-small" id="btn_apify_buscar">Buscar (Apify)</button>
+		<!-- <button type="button" class="btn btn-primary btn-small" id="btn_apify_buscar">Buscar (Apify)</button> -->
 
 		<!-- ⭐ NUEVO: botones para filtrar localmente la grilla -->
 		<button type="button" class="btn btn-small" id="btn_apify_filtrar" style="margin-left:6px;">Filtrar</button>
@@ -440,26 +440,30 @@ try {
 			});
 	});
 
-	// ✅ Auto-cargar última corrida al entrar
+	// ✅ Auto-cargar resultados recientes del batch al entrar
 	$(function(){
 		apifySetCount(0, 0);
 
-		$.getJSON('/adm/modulos/mlapify/apify_ultima_corrida.php', function(r){
-			if (r && r.ok && r.corrida_id) {
-				apifyCorridaId = r.corrida_id;
-				apifySetEstado(r.estado || '-', 'Items: ' + (r.total_items ?? '-') + ' | Guardados: ' + (r.items_guardados ?? '-') + (r.mensaje ? (' | ' + r.mensaje) : ''));
+		$.getJSON('/adm/modulos/mlapify/apify_resultados_batch.php?limit=300', function(r){
+			if (r && r.ok) {
+				APIFY_ROWS_ALL = (r.rows || []);
+				APIFY_ROWS_VIEW = APIFY_ROWS_ALL.slice(0);
 
-				$.getJSON('/adm/modulos/mlapify/apify_resultados.php', { corrida_id: apifyCorridaId }, function(r2){
-					if (r2 && r2.ok) {
-						// ⭐ NUEVO: guardo dataset completo
-						APIFY_ROWS_ALL = (r2.rows || []);
-						APIFY_ROWS_VIEW = APIFY_ROWS_ALL.slice(0);
-
-						apifyRenderResultados(APIFY_ROWS_VIEW);
-						apifySetCount(APIFY_ROWS_VIEW.length, APIFY_ROWS_ALL.length);
-					}
-				});
+				apifyRenderResultados(APIFY_ROWS_VIEW);
+				apifySetCount(APIFY_ROWS_VIEW.length, APIFY_ROWS_ALL.length);
+				apifySetEstado('ok', 'Mostrando resultados recientes del batch.');
+			} else {
+				apifySetEstado('error', (r && r.mensaje) ? r.mensaje : 'No se pudieron cargar resultados del batch.');
 			}
+		}).fail(function(xhr){
+			let msg = 'No se pudo cargar apify_resultados_batch.php';
+			if (xhr && xhr.responseText) {
+				try {
+					const j = JSON.parse(xhr.responseText);
+					if (j && j.mensaje) msg = j.mensaje;
+				} catch(e) {}
+			}
+			apifySetEstado('error', msg);
 		});
 	});
 </script>
