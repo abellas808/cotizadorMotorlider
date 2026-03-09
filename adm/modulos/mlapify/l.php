@@ -28,11 +28,10 @@ function findSchemaForTable($db, $tableName) {
 
 try {
 	// === detectar schema real de tablas ===
-	// OJO: si tu tabla real es act_marca (sin s), cambiá acá.
 	$schemaMarca  = findSchemaForTable($db, 'act_marcas');
 	$schemaModelo = findSchemaForTable($db, 'act_modelo');
 
-	$tblMarca  = $schemaMarca  ? "{$schemaMarca}.act_marcas"   : "act_marcas";
+	$tblMarca  = $schemaMarca  ? "{$schemaMarca}.act_marcas"  : "act_marcas";
 	$tblModelo = $schemaModelo ? "{$schemaModelo}.act_modelo" : "act_modelo";
 
 	// Marcas
@@ -76,6 +75,105 @@ try {
 
 <div class="sep_titulo"></div>
 
+<!-- ========================= -->
+<!-- BLOQUE NUEVO: COTIZACION -->
+<!-- ========================= -->
+<div style="margin-top:10px;">
+	<strong>Simulación de Cotización</strong>
+</div>
+
+<div class="row">
+	<div class="span2 tr">Marca</div>
+	<div class="span4">
+		<select id="cotiza_marca" class="input">
+			<option value="">-- Seleccionar --</option>
+			<?php foreach ($marcas as $m): ?>
+				<option value="<?php echo htmlspecialchars($m['id']); ?>">
+					<?php echo htmlspecialchars($m['nombre']); ?>
+				</option>
+			<?php endforeach; ?>
+		</select>
+	</div>
+</div>
+
+<div class="row">
+	<div class="span2 tr">Modelo</div>
+	<div class="span4">
+		<select id="cotiza_modelo" class="input" disabled>
+			<option value="">-- Seleccionar --</option>
+		</select>
+	</div>
+</div>
+
+<div class="row">
+	<div class="span2 tr">Año</div>
+	<div class="span2">
+		<input type="number" id="cotiza_anio" class="input-mini" placeholder="Ej: 2020" />
+	</div>
+</div>
+
+<div class="row">
+	<div class="span2 tr">Versión</div>
+	<div class="span4">
+		<input type="text" id="cotiza_version" class="input" placeholder="Ej: Full, GLS, LTZ" />
+	</div>
+</div>
+
+<div class="row">
+	<div class="span2 tr">Tipo de venta</div>
+	<div class="span4">
+		<select id="cotiza_tipo_venta" class="input">
+			<option value="">-- Seleccionar --</option>
+			<option value="venta_contado">Venta contado</option>
+			<option value="entrega_forma_pago">Entrega como forma de pago</option>
+		</select>
+	</div>
+</div>
+
+<div class="row">
+	<div class="span2 tr">¿Posee ficha oficial?</div>
+	<div class="span4">
+		<select id="cotiza_ficha_oficial" class="input">
+			<option value="">-- Seleccionar --</option>
+			<option value="si">Sí</option>
+			<option value="no">No</option>
+		</select>
+	</div>
+</div>
+
+<div class="row">
+	<div class="span2 tr">Kilómetros</div>
+	<div class="span2">
+		<input type="number" id="cotiza_km" class="input-mini" placeholder="Ej: 85000" />
+	</div>
+</div>
+
+<div class="row">
+	<div class="span2 tr">Valor pretendido</div>
+	<div class="span2">
+		<input type="number" id="cotiza_valor" class="input-mini" placeholder="Ej: 15000" />
+	</div>
+</div>
+
+<div class="row">
+	<div class="span2 tr">Email</div>
+	<div class="span4">
+		<input type="email" id="cotiza_email" class="input" placeholder="Ej: cliente@email.com" />
+	</div>
+</div>
+
+<div class="row" style="margin-top:10px;">
+	<div class="span6">
+		<button type="button" class="btn btn-primary btn-small" id="btn_cotiza_simular">Cotizar</button>
+		<span id="cotiza_estado" style="margin-left:10px; font-weight:bold; color:#444;">Estado: -</span>
+	</div>
+</div>
+
+<hr>
+
+<!-- ========================= -->
+<!-- BLOQUE ACTUAL: FILTROS/APIFY -->
+<!-- ========================= -->
 <div class="row">
 	<div class="span2 tr">Marca</div>
 	<div class="span4">
@@ -124,8 +222,6 @@ try {
 <div class="row" style="margin-top:10px;">
 	<div class="span6">
 		<!-- <button type="button" class="btn btn-primary btn-small" id="btn_apify_buscar">Buscar (Apify)</button> -->
-
-		<!-- ⭐ NUEVO: botones para filtrar localmente la grilla -->
 		<button type="button" class="btn btn-small" id="btn_apify_filtrar" style="margin-left:6px;">Filtrar</button>
 		<button type="button" class="btn btn-small" id="btn_apify_limpiar" style="margin-left:6px;">Limpiar</button>
 		<span id="apify_count" style="margin-left:10px; font-weight:bold; color:#444;">0 / 0</span>
@@ -163,7 +259,6 @@ try {
 	let apifyCorridaId = null;
 	let apifyTimer = null;
 
-	// ⭐ NUEVO: datasets para filtrar localmente
 	let APIFY_ROWS_ALL = [];
 	let APIFY_ROWS_VIEW = [];
 
@@ -172,12 +267,14 @@ try {
 		$('#apify_progreso').text(sub || '-');
 	}
 
-	// ⭐ NUEVO: contador tipo "mostrando / total"
+	function cotizaSetEstado(txt) {
+		$('#cotiza_estado').text('Estado: ' + (txt || '-'));
+	}
+
 	function apifySetCount(show, total) {
 		$('#apify_count').text(String(show || 0) + ' / ' + String(total || 0));
 	}
 
-	// ⭐ helper parse int seguro
 	function apifyToIntOrNull(v) {
 		if (v === null || v === undefined) return null;
 		let s = String(v).replace(/[^\d]/g,'').trim();
@@ -196,7 +293,6 @@ try {
 		}
 
 		rows.forEach(r => {
-			// ✅ ahora SI: r existe acá adentro
 			const marca   = ((r && r.marca)   ? r.marca   : '-').toString();
 			const modelo  = ((r && r.modelo)  ? r.modelo  : '-').toString();
 			const version = ((r && r.version) ? r.version : '-').toString();
@@ -227,7 +323,6 @@ try {
 		});
 	}
 
-	// ⭐ NUEVO: aplica filtros a APIFY_ROWS_ALL y renderiza
 	function apifyApplyFilters() {
 		const marcaId = ($('#apify_marca').val() || '').toString();
 		const modeloId = ($('#apify_modelo').val() || '').toString();
@@ -235,7 +330,6 @@ try {
 		const marcaTxt = ($('#apify_marca option:selected').text() || '').toString().trim();
 		let modeloTxt = ($('#apify_modelo option:selected').text() || '').toString().trim();
 
-		// Si el select está en "-- Todos --", no filtramos por modelo
 		const filtraModelo = (modeloId !== '' && modeloTxt !== '' && modeloTxt !== '-- Todos --' && modeloTxt !== '-- Seleccionar --');
 		const filtraMarca  = (marcaId !== '' && marcaTxt !== '' && marcaTxt !== '-- Seleccionar --');
 
@@ -248,7 +342,6 @@ try {
 		const needKm   = (kmDesde !== null   || kmHasta !== null);
 
 		APIFY_ROWS_VIEW = (APIFY_ROWS_ALL || []).filter(r => {
-			// Texto (marca/modelo)
 			const rMarca = ((r && r.marca) ? String(r.marca) : '').trim();
 			const rModelo = ((r && r.modelo) ? String(r.modelo) : '').trim();
 
@@ -259,11 +352,9 @@ try {
 
 			if (filtraModelo) {
 				if (!rModelo) return false;
-				// contiene (más flexible)
 				if (rModelo.toLowerCase().indexOf(modeloTxt.toLowerCase()) === -1) return false;
 			}
 
-			// Año / KM (num)
 			const rAnio = apifyToIntOrNull(r ? r.anio : null);
 			const rKm   = apifyToIntOrNull(r ? r.km   : null);
 
@@ -287,35 +378,41 @@ try {
 		apifySetEstado('filtrado', 'Mostrando resultados filtrados (local).');
 	}
 
-	// ⭐ NUEVO: limpia filtros (inputs) y vuelve a mostrar todo
 	function apifyClearFilters() {
 		$('#apify_anio_desde').val('');
 		$('#apify_anio_hasta').val('');
 		$('#apify_km_desde').val('');
 		$('#apify_km_hasta').val('');
 
-		// OJO: no reseteo marca/modelo para no romper tu flujo de selección
 		APIFY_ROWS_VIEW = (APIFY_ROWS_ALL || []).slice(0);
 		apifyRenderResultados(APIFY_ROWS_VIEW);
 		apifySetCount(APIFY_ROWS_VIEW.length, APIFY_ROWS_ALL.length);
 		apifySetEstado('ok', 'Filtros limpiados. Mostrando todo.');
 	}
 
-	function cargarModelosPorMarca(idMarca) {
-		const $m = $('#apify_modelo');
+	function cargarModelosEnSelect(idMarca, selectDestino, textoVacio, textoPrimeraOpcion) {
+		const $m = $(selectDestino);
 		$m.empty();
 
 		if (!idMarca || !APIFY_MODELOS_POR_MARCA[idMarca] || !APIFY_MODELOS_POR_MARCA[idMarca].length) {
-			$m.append('<option value="">-- Seleccionar --</option>');
+			$m.append('<option value="">' + (textoVacio || '-- Seleccionar --') + '</option>');
 			$m.prop('disabled', true);
 			return;
 		}
 
-		$m.append('<option value="">-- Todos --</option>');
+		$m.append('<option value="">' + (textoPrimeraOpcion || '-- Seleccionar --') + '</option>');
 		APIFY_MODELOS_POR_MARCA[idMarca].forEach(x => {
 			$m.append('<option value="'+ String(x.id).replace(/"/g,'&quot;') +'">'+ $('<div>').text(x.nombre).html() +'</option>');
 		});
 		$m.prop('disabled', false);
+	}
+
+	function cargarModelosPorMarca(idMarca) {
+		cargarModelosEnSelect(idMarca, '#apify_modelo', '-- Seleccionar --', '-- Todos --');
+	}
+
+	function cargarModelosCotiza(idMarca) {
+		cargarModelosEnSelect(idMarca, '#cotiza_modelo', '-- Seleccionar --', '-- Seleccionar --');
 	}
 
 	function apifyPoll() {
@@ -340,7 +437,6 @@ try {
 
 				$.getJSON('/adm/modulos/mlapify/apify_resultados.php', { corrida_id: apifyCorridaId }, function(r2){
 					if (r2 && r2.ok) {
-						// ⭐ NUEVO: guardo dataset completo
 						APIFY_ROWS_ALL = (r2.rows || []);
 						APIFY_ROWS_VIEW = APIFY_ROWS_ALL.slice(0);
 
@@ -352,25 +448,25 @@ try {
 		}).fail(function(xhr){
 			let msg = 'No se pudo contactar run_ml.php (HTTP ' + (xhr ? xhr.status : '') + ')';
 			if (xhr && xhr.responseText) {
-				// intento mostrar JSON de error si vino
 				try {
-				const j = JSON.parse(xhr.responseText);
-				if (j && j.mensaje) msg = j.mensaje + ' (HTTP ' + xhr.status + ')';
-				else msg = xhr.responseText;
+					const j = JSON.parse(xhr.responseText);
+					if (j && j.mensaje) msg = j.mensaje + ' (HTTP ' + xhr.status + ')';
+					else msg = xhr.responseText;
 				} catch(e) {
-				msg = xhr.responseText; // texto plano
+					msg = xhr.responseText;
 				}
 			}
 			apifySetEstado('error', msg);
 			$('#btn_apify_buscar').prop('disabled', false);
-			});
+		});
 	}
 
 	$('#apify_marca').on('change', function(){
 		cargarModelosPorMarca($(this).val());
+	});
 
-		// ⭐ opcional: si ya hay datos cargados, re-aplico filtros al cambiar marca
-		// apifyApplyFilters();
+	$('#cotiza_marca').on('change', function(){
+		cargarModelosCotiza($(this).val());
 	});
 
 	$('#btn_apify_filtrar').on('click', function(){
@@ -383,6 +479,25 @@ try {
 
 	$('#btn_apify_limpiar').on('click', function(){
 		apifyClearFilters();
+	});
+
+	$('#btn_cotiza_simular').on('click', function(){
+		const payload = {
+			marca_id: $('#cotiza_marca').val(),
+			marca_txt: $('#cotiza_marca option:selected').text(),
+			modelo_id: $('#cotiza_modelo').val(),
+			modelo_txt: $('#cotiza_modelo option:selected').text(),
+			anio: $('#cotiza_anio').val(),
+			version: $('#cotiza_version').val(),
+			tipo_venta: $('#cotiza_tipo_venta').val(),
+			ficha_oficial: $('#cotiza_ficha_oficial').val(),
+			km: $('#cotiza_km').val(),
+			valor_pretendido: $('#cotiza_valor').val(),
+			email: $('#cotiza_email').val()
+		};
+
+		console.log('Simulación cotización payload:', payload);
+		cotizaSetEstado('listo para consumir API');
 	});
 
 	$('#btn_apify_buscar').on('click', function(){
@@ -415,7 +530,6 @@ try {
 			apifyCorridaId = res.corrida_id;
 			apifySetEstado('corriendo', 'Corrida #' + apifyCorridaId);
 
-			// ⭐ NUEVO: al iniciar nueva corrida, reseteo datasets
 			APIFY_ROWS_ALL = [];
 			APIFY_ROWS_VIEW = [];
 			apifySetCount(0, 0);
@@ -426,23 +540,22 @@ try {
 		}).fail(function(xhr){
 			let msg = 'No se pudo contactar run_ml.php (HTTP ' + (xhr ? xhr.status : '') + ')';
 			if (xhr && xhr.responseText) {
-				// intento mostrar JSON de error si vino
 				try {
-				const j = JSON.parse(xhr.responseText);
-				if (j && j.mensaje) msg = j.mensaje + ' (HTTP ' + xhr.status + ')';
-				else msg = xhr.responseText;
+					const j = JSON.parse(xhr.responseText);
+					if (j && j.mensaje) msg = j.mensaje + ' (HTTP ' + xhr.status + ')';
+					else msg = xhr.responseText;
 				} catch(e) {
-				msg = xhr.responseText; // texto plano
+					msg = xhr.responseText;
 				}
 			}
 			apifySetEstado('error', msg);
 			$('#btn_apify_buscar').prop('disabled', false);
-			});
+		});
 	});
 
-	// ✅ Auto-cargar resultados recientes del batch al entrar
 	$(function(){
 		apifySetCount(0, 0);
+		cotizaSetEstado('-');
 
 		$.getJSON('/adm/modulos/mlapify/apify_resultados_batch.php?limit=300', function(r){
 			if (r && r.ok) {
