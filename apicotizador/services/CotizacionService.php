@@ -133,7 +133,6 @@ class CotizacionService
             }
         }
 
-        // Si vienen IDs, trabajamos solo con IDs.
         if (!$brandId || !$modelId) {
             $this->logInterno('IDS_FALTANTES', [
                 'brand_in'    => $brandIn,
@@ -297,6 +296,12 @@ class CotizacionService
                 }
             }
 
+            if (!$passes) {
+                continue;
+            }
+
+            $prices[] = $precio;
+
             $itemsParaPersistir[] = [
                 'cotizacion_id'     => null,
                 'run_id'            => $corridaId,
@@ -313,16 +318,10 @@ class CotizacionService
                 'item_year'         => $itemYear,
                 'item_km'           => $itemKm,
                 'location_txt'      => $ubicacion ?: null,
-                'passes_filters'    => $passes ? 1 : 0,
-                'reject_reason'     => $reason,
+                'passes_filters'    => 1,
+                'reject_reason'     => null,
                 'raw_json'          => $pub['raw_json'] ?? json_encode($pub, JSON_UNESCAPED_UNICODE),
             ];
-
-            if (!$passes) {
-                continue;
-            }
-
-            $prices[] = $precio;
         }
 
         $this->logInterno('FILTER_RESULT', [
