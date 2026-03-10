@@ -610,21 +610,21 @@ try {
 	});
 
 	$('#btn_cotiza_simular').on('click', function(){
-		const $btn = $(this);
-		const build = cotizaBuildPayload();
-		const err = cotizaValidar(build);
+	const $btn = $(this);
+	const build = cotizaBuildPayload();
+	const err = cotizaValidar(build);
 
-		cotizaClearResultado();
+	cotizaClearResultado();
 
-		if (err) {
-			cotizaSetEstado('validación', err);
-			return;
-		}
+	if (err) {
+		cotizaSetEstado('validación', err);
+		return;
+	}
 
-		const endpointUrl = '/apicotizador/cotizadorPublico/' + encodeURIComponent(build.urlBrand);
+	const endpointUrl = '/apicotizador/cotizadorPublico/' + encodeURIComponent(build.urlBrand);
 
-		$btn.prop('disabled', true);
-		cotizaSetEstado('enviando', 'Invocando ' + endpointUrl + ' ...');
+	$btn.prop('disabled', true);
+	cotizaSetEstado('enviando', 'Invocando ' + endpointUrl + ' ...');
 
 		$.ajax({
 			url: endpointUrl,
@@ -634,11 +634,19 @@ try {
 			dataType: 'json'
 		})
 		.done(function(res){
-			if (res && res.ok) {
+			const success = !!(res && (
+				res.ok === true ||
+				res.error === 0 ||
+				res.error === '0' ||
+				res.error === false
+			));
+
+			if (success) {
 				cotizaSetEstado('ok', (res.mensaje || res.msg || 'Cotización obtenida correctamente.'));
 			} else {
-				cotizaSetEstado('error', (res && (res.mensaje || res.msg)) ? (res.mensaje || res.msg) : 'La API respondió sin ok=true.');
+				cotizaSetEstado('error', (res && (res.mensaje || res.msg)) ? (res.mensaje || res.msg) : 'La API respondió con error.');
 			}
+
 			cotizaRenderResponse(res, build.payload, endpointUrl);
 		})
 		.fail(function(xhr){
@@ -659,7 +667,11 @@ try {
 			}
 
 			cotizaSetEstado('error', msg);
-			cotizaRenderResponse(res || { ok:false, mensaje: msg }, build.payload, endpointUrl);
+			cotizaRenderResponse(
+				res || { error: true, msg: msg },
+				build.payload,
+				endpointUrl
+			);
 		})
 		.always(function(){
 			$btn.prop('disabled', false);
