@@ -78,6 +78,39 @@ class CotizacionService
         }
     }
 
+    private function actualizarEstadoCotizacion(int $idCotizacion, string $estado, string $detalleEstado, int $mailEnviado = 0, ?string $fechaMailSql = null): void
+    {
+        try {
+            $db = Database::getInstance();
+
+            $sql = "
+                UPDATE " . self::DB_BATCH . ".cotizaciones_generadas
+                SET estado = :estado,
+                    detalle_estado = :detalle_estado,
+                    mail_enviado = :mail_enviado,
+                    fecha_mail = :fecha_mail
+                WHERE id_cotizaciones_generadas = :id
+            ";
+
+            $params = [
+                ':estado' => $estado,
+                ':detalle_estado' => $detalleEstado,
+                ':mail_enviado' => $mailEnviado,
+                ':fecha_mail' => $fechaMailSql,
+                ':id' => $idCotizacion,
+            ];
+
+            $db->mysqlNonQuery($sql, $params);
+        } catch (\Throwable $e) {
+            $this->logInterno('UPDATE_ESTADO_FAIL', [
+                'cotizacion_id' => $idCotizacion,
+                'estado' => $estado,
+                'detalle_estado' => $detalleEstado,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
     public function procesarCotizacionPublica(array $dataIn, string $brand): array
     {
         $this->logInterno('INICIO', [
@@ -412,6 +445,11 @@ class CotizacionService
             $cg_data['porcentajes_aplicados'] = null;
             $cg_data['cuenta'] = null;
 
+            $cg_data['estado'] = 'PENDIENTE';
+            $cg_data['detalle_estado'] = 'Cotización generada pendiente de envío de mail';
+            $cg_data['mail_enviado'] = 0;
+            $cg_data['fecha_mail'] = null;
+
             $cg = new CotizacionGenerada($cg_data);
             $created = $cg->save();
             $id = $created->id_cotizaciones_generadas ?? null;
@@ -438,6 +476,55 @@ class CotizacionService
                 'items_inserted'=> $okItems,
                 'corrida_id'    => $corridaId
             ]);
+
+            try {
+                $mail = new MailService();
+
+                $mail->enviarConfirmacionCotizacion(
+                    [
+                        'nombre' => $cg_data['nombre'],
+                        'email' => $cg_data['email'],
+                        'nombre_auto' => $cg_data['auto'],
+                        'brand' => $brandTxt,
+                        'modelo' => $modeloTxt,
+                        'anio' => $anioIn,
+                        'km' => $kmIn
+                    ],
+                    [
+                        'ok' => true,
+                        'comparables' => $resultado['count'],
+                        'min' => $resultado['min'],
+                        'max' => $resultado['max'],
+                        'avg' => $resultado['avg']
+                    ]
+                );
+
+                $this->actualizarEstadoCotizacion(
+                    (int)$id,
+                    'FINALIZADA',
+                    'Cotización generada y mail enviado',
+                    1,
+                    date('Y-m-d H:i:s')
+                );
+
+                $this->logInterno('MAIL_OK', [
+                    'cotizacion_id' => $id,
+                    'email' => $cg_data['email'] ?? null
+                ]);
+            } catch (\Throwable $e) {
+                $this->actualizarEstadoCotizacion(
+                    (int)$id,
+                    'PENDIENTE',
+                    'Cotización generada pero falló envío de mail: ' . $e->getMessage(),
+                    0,
+                    null
+                );
+
+                $this->logInterno('MAIL_FAIL', [
+                    'cotizacion_id' => $id,
+                    'error' => $e->getMessage()
+                ]);
+            }
         } else {
             $this->logInterno('ITEMS_PERSIST_SKIP_NO_ID', [
                 'items_count' => count($itemsParaPersistir),
