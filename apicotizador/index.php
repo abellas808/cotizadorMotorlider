@@ -714,7 +714,7 @@ $app->post('/cotizadorPublico/{brand}', function (Request $request, Response $re
     }
 
 
-})->add($authorization);
+}); //->add($authorization);
 
 
 

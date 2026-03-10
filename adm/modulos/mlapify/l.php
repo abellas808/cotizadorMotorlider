@@ -163,9 +163,16 @@ try {
 </div>
 
 <div class="row" style="margin-top:10px;">
-	<div class="span6">
+	<div class="span8">
 		<button type="button" class="btn btn-primary btn-small" id="btn_cotiza_simular">Cotizar</button>
 		<span id="cotiza_estado" style="margin-left:10px; font-weight:bold; color:#444;">Estado: -</span>
+		<div id="cotiza_debug" style="margin-top:6px; font-size:12px; color:#666;">-</div>
+	</div>
+</div>
+
+<div class="row" style="margin-top:10px;">
+	<div class="span10">
+		<div id="cotiza_resultado" style="display:none; border:1px solid #ddd; background:#fafafa; padding:10px;"></div>
 	</div>
 </div>
 
@@ -267,8 +274,21 @@ try {
 		$('#apify_progreso').text(sub || '-');
 	}
 
-	function cotizaSetEstado(txt) {
+	function cotizaSetEstado(txt, sub) {
 		$('#cotiza_estado').text('Estado: ' + (txt || '-'));
+		$('#cotiza_debug').text(sub || '-');
+	}
+
+	function cotizaEscapeHtml(v) {
+		return $('<div>').text(v == null ? '' : String(v)).html();
+	}
+
+	function cotizaSetResultadoHtml(html) {
+		$('#cotiza_resultado').html(html).show();
+	}
+
+	function cotizaClearResultado() {
+		$('#cotiza_resultado').hide().html('');
 	}
 
 	function apifySetCount(show, total) {
@@ -415,6 +435,114 @@ try {
 		cargarModelosEnSelect(idMarca, '#cotiza_modelo', '-- Seleccionar --', '-- Seleccionar --');
 	}
 
+	function cotizaBuildPayload() {
+		const marcaId   = ($('#cotiza_marca').val() || '').toString();
+		const marcaTxt  = ($('#cotiza_marca option:selected').text() || '').toString().trim();
+		const modeloId  = ($('#cotiza_modelo').val() || '').toString();
+		const modeloTxt = ($('#cotiza_modelo option:selected').text() || '').toString().trim();
+		const anio      = ($('#cotiza_anio').val() || '').toString().trim();
+		const version   = ($('#cotiza_version').val() || '').toString().trim();
+		const tipoVenta = ($('#cotiza_tipo_venta').val() || '').toString().trim();
+		const ficha     = ($('#cotiza_ficha_oficial').val() || '').toString().trim();
+		const km        = ($('#cotiza_km').val() || '').toString().trim();
+		const valor     = ($('#cotiza_valor').val() || '').toString().trim();
+		const email     = ($('#cotiza_email').val() || '').toString().trim();
+
+		const fichaTecnica = (ficha === 'si') ? 1 : 0;
+		const ventaPermuta = (tipoVenta === 'entrega_forma_pago') ? 1 : 0;
+
+		let nombreAuto = [marcaTxt, modeloTxt, anio, version].join(' ').replace(/\s+/g, ' ').trim();
+		if (!nombreAuto) nombreAuto = 'Vehículo simulado';
+
+		return {
+			urlBrand: marcaId,
+			payload: {
+				marca: marcaId,
+				modelo: modeloId,
+				anio: anio,
+				version: version,
+				km: km,
+				ficha_tecnica: fichaTecnica,
+				cantidad_duenios: 1,
+				valor_pretendido: valor,
+				venta_permuta: ventaPermuta,
+				nombre_auto: nombreAuto,
+				nombre: 'Simulación Backend',
+				email: email,
+				telefono: '000000000'
+			},
+			meta: {
+				marca_txt: marcaTxt,
+				modelo_txt: modeloTxt,
+				tipo_venta_txt: tipoVenta,
+				ficha_txt: ficha
+			}
+		};
+	}
+
+	function cotizaValidar(build) {
+		const p = build.payload;
+
+		if (!build.urlBrand) return 'Debes seleccionar una marca.';
+		if (!p.modelo) return 'Debes seleccionar un modelo.';
+		if (!p.anio) return 'Debes ingresar el año.';
+		if (!p.km) return 'Debes ingresar los kilómetros.';
+		if (!p.valor_pretendido) return 'Debes ingresar el valor pretendido.';
+		if (!p.email) return 'Debes ingresar el email.';
+		if (!build.meta.tipo_venta_txt) return 'Debes seleccionar el tipo de venta.';
+		if (!build.meta.ficha_txt) return 'Debes indicar si posee ficha oficial.';
+
+		return '';
+	}
+
+	function cotizaRenderResponse(res, sentPayload, endpointUrl) {
+		const ok = !!(res && res.ok);
+		const mensaje = (res && (res.mensaje || res.msg)) ? (res.mensaje || res.msg) : (ok ? 'Cotización procesada.' : 'La API devolvió un error.');
+
+		let idCotizacion = '';
+		if (res) {
+			idCotizacion = res.id_cotizacion || res.cotizacion_id || (res.data && (res.data.id_cotizacion || res.data.cotizacion_id)) || '';
+		}
+
+		let valores = null;
+		if (res) {
+			valores = res.valores || res.resultado || res.data || null;
+		}
+
+		let html = '';
+		html += '<div style="font-weight:bold; margin-bottom:8px;">Resultado API cotización</div>';
+		html += '<div><strong>Endpoint:</strong> ' + cotizaEscapeHtml(endpointUrl) + '</div>';
+		html += '<div><strong>Estado:</strong> ' + (ok ? 'OK' : 'ERROR') + '</div>';
+		html += '<div><strong>Mensaje:</strong> ' + cotizaEscapeHtml(mensaje) + '</div>';
+
+		if (idCotizacion) {
+			html += '<div><strong>ID Cotización:</strong> ' + cotizaEscapeHtml(idCotizacion) + '</div>';
+		}
+
+		if (valores && typeof valores === 'object') {
+			const min = (valores.min !== undefined) ? valores.min : ((valores.valores && valores.valores.min !== undefined) ? valores.valores.min : '');
+			const max = (valores.max !== undefined) ? valores.max : ((valores.valores && valores.valores.max !== undefined) ? valores.valores.max : '');
+			const avg = (valores.avg !== undefined) ? valores.avg : ((valores.promedio !== undefined) ? valores.promedio : '');
+
+			if (min !== '' || max !== '' || avg !== '') {
+				html += '<hr style="margin:8px 0;">';
+				html += '<div style="font-weight:bold; margin-bottom:4px;">Resumen</div>';
+				if (min !== '') html += '<div><strong>Mínimo:</strong> ' + cotizaEscapeHtml(min) + '</div>';
+				if (max !== '') html += '<div><strong>Máximo:</strong> ' + cotizaEscapeHtml(max) + '</div>';
+				if (avg !== '') html += '<div><strong>Promedio:</strong> ' + cotizaEscapeHtml(avg) + '</div>';
+			}
+		}
+
+		html += '<hr style="margin:8px 0;">';
+		html += '<div style="font-weight:bold; margin-bottom:4px;">Payload enviado</div>';
+		html += '<pre style="white-space:pre-wrap; font-size:12px; background:#fff; border:1px solid #eee; padding:8px;">' + cotizaEscapeHtml(JSON.stringify(sentPayload, null, 2)) + '</pre>';
+
+		html += '<div style="font-weight:bold; margin:8px 0 4px 0;">Respuesta cruda</div>';
+		html += '<pre style="white-space:pre-wrap; font-size:12px; background:#fff; border:1px solid #eee; padding:8px;">' + cotizaEscapeHtml(JSON.stringify(res, null, 2)) + '</pre>';
+
+		cotizaSetResultadoHtml(html);
+	}
+
 	function apifyPoll() {
 		if (!apifyCorridaId) return;
 
@@ -482,22 +610,60 @@ try {
 	});
 
 	$('#btn_cotiza_simular').on('click', function(){
-		const payload = {
-			marca_id: $('#cotiza_marca').val(),
-			marca_txt: $('#cotiza_marca option:selected').text(),
-			modelo_id: $('#cotiza_modelo').val(),
-			modelo_txt: $('#cotiza_modelo option:selected').text(),
-			anio: $('#cotiza_anio').val(),
-			version: $('#cotiza_version').val(),
-			tipo_venta: $('#cotiza_tipo_venta').val(),
-			ficha_oficial: $('#cotiza_ficha_oficial').val(),
-			km: $('#cotiza_km').val(),
-			valor_pretendido: $('#cotiza_valor').val(),
-			email: $('#cotiza_email').val()
-		};
+		const $btn = $(this);
+		const build = cotizaBuildPayload();
+		const err = cotizaValidar(build);
 
-		console.log('Simulación cotización payload:', payload);
-		cotizaSetEstado('listo para consumir API');
+		cotizaClearResultado();
+
+		if (err) {
+			cotizaSetEstado('validación', err);
+			return;
+		}
+
+		const endpointUrl = '/apicotizador/cotizadorPublico/' + encodeURIComponent(build.urlBrand);
+
+		$btn.prop('disabled', true);
+		cotizaSetEstado('enviando', 'Invocando ' + endpointUrl + ' ...');
+
+		$.ajax({
+			url: endpointUrl,
+			type: 'POST',
+			data: JSON.stringify(build.payload),
+			contentType: 'application/json; charset=utf-8',
+			dataType: 'json'
+		})
+		.done(function(res){
+			if (res && res.ok) {
+				cotizaSetEstado('ok', (res.mensaje || res.msg || 'Cotización obtenida correctamente.'));
+			} else {
+				cotizaSetEstado('error', (res && (res.mensaje || res.msg)) ? (res.mensaje || res.msg) : 'La API respondió sin ok=true.');
+			}
+			cotizaRenderResponse(res, build.payload, endpointUrl);
+		})
+		.fail(function(xhr){
+			let res = null;
+			let msg = 'No se pudo contactar la API de cotización.';
+
+			if (xhr && xhr.responseText) {
+				try {
+					res = JSON.parse(xhr.responseText);
+					if (res && (res.mensaje || res.msg)) {
+						msg = res.mensaje || res.msg;
+					}
+				} catch(e) {
+					msg = 'HTTP ' + (xhr.status || '') + ' - ' + xhr.responseText;
+				}
+			} else if (xhr) {
+				msg = 'HTTP ' + (xhr.status || '');
+			}
+
+			cotizaSetEstado('error', msg);
+			cotizaRenderResponse(res || { ok:false, mensaje: msg }, build.payload, endpointUrl);
+		})
+		.always(function(){
+			$btn.prop('disabled', false);
+		});
 	});
 
 	$('#btn_apify_buscar').on('click', function(){
@@ -555,7 +721,7 @@ try {
 
 	$(function(){
 		apifySetCount(0, 0);
-		cotizaSetEstado('-');
+		cotizaSetEstado('-', '-');
 
 		$.getJSON('/adm/modulos/mlapify/apify_resultados_batch.php?limit=300', function(r){
 			if (r && r.ok) {
