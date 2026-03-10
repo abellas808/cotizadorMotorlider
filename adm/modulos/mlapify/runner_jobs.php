@@ -12,7 +12,7 @@ register_shutdown_function(function () {
         echo json_encode([
             "ok" => false,
             "fatal" => true,
-            "mensaje" => "FATAL: ".$e['message'],
+            "mensaje" => "FATAL: " . $e['message'],
             "file" => $e['file'],
             "line" => $e['line'],
         ], JSON_UNESCAPED_UNICODE);
@@ -77,6 +77,59 @@ if ($actor === '') jerr("Falta APIFY_ACTOR_ID (envPath=".$envPath.")");
 $actor = str_replace('/', '~', $actor);
 
 // ===============================
+// Helpers generales
+// ===============================
+function make_corrida_id($jobId) {
+    return 'corr_' . date('Ymd_His') . '_' . intval($jobId) . '_' . substr(md5(uniqid((string)$jobId, true)), 0, 8);
+}
+
+function update_corrida($db, $esc, $corridaId, $estado, $mensaje, $paramsJson = null, $totalItems = null, $itemsGuardados = null) {
+    $set = [];
+    $set[] = "estado='" . $esc($estado) . "'";
+    $set[] = "mensaje='" . $esc($mensaje) . "'";
+    $set[] = "updated_at=NOW()";
+
+    if ($paramsJson !== null) {
+        $set[] = "params_json='" . $esc($paramsJson) . "'";
+    }
+    if ($totalItems !== null) {
+        $set[] = "total_items=" . intval($totalItems);
+    }
+    if ($itemsGuardados !== null) {
+        $set[] = "items_guardados=" . intval($itemsGuardados);
+    }
+
+    $sql = "
+        UPDATE apify_corridas
+        SET " . implode(",\n            ", $set) . "
+        WHERE corrida_id='" . $esc($corridaId) . "'
+        LIMIT 1
+    ";
+    return $db->query($sql);
+}
+
+function insert_corrida_inicial($db, $esc, $corridaId, $paramsJson, $mensaje = 'Iniciada') {
+    $sql = "
+        INSERT INTO apify_corridas
+        (
+            corrida_id, estado, mensaje, params_json, total_items, items_guardados, created_at, updated_at
+        )
+        VALUES
+        (
+            '" . $esc($corridaId) . "',
+            'corriendo',
+            '" . $esc($mensaje) . "',
+            '" . $esc($paramsJson) . "',
+            0,
+            0,
+            NOW(),
+            NOW()
+        )
+    ";
+    return $db->query($sql);
+}
+
+// ===============================
 // HTTP helpers
 // ===============================
 function apify_post_json($url, $payload) {
@@ -131,12 +184,25 @@ function apify_wait_items($datasetId, $token, $limit = 100, $maxSeconds = 90) {
     }
 }
 
+function findSchemaForTable($db, $tableName) {
+    $t = method_exists($db, 'escape') ? $db->escape($tableName) : addslashes($tableName);
+    $q = $db->query("
+        SELECT TABLE_SCHEMA
+        FROM information_schema.TABLES
+        WHERE TABLE_NAME = '{$t}'
+        ORDER BY TABLE_SCHEMA
+        LIMIT 1
+    ");
+    if (!$q) return null;
+    $r = $db->fetch_array($q);
+    return $r ? ($r['TABLE_SCHEMA'] ?? null) : null;
+}
+
 // ===============================
 // 1) Tomar 1 job (PENDIENTE/REINTENTAR)
 // ===============================
 $now = date('Y-m-d H:i:s');
 
-// OJO: esto reduce mucho el riesgo de que dos runners tomen el mismo job
 $db->query("START TRANSACTION");
 
 $qJob = $db->query("
@@ -170,7 +236,7 @@ $db->query("
 $db->query("COMMIT");
 
 // ===============================
-// 2) Ejecutar Apify para este job
+// 2) Datos job + crear corrida cabecera
 // ===============================
 $brand_id   = intval($job['brand_id']);
 $brand_name = (string)($job['brand_name'] ?? '');
@@ -178,8 +244,33 @@ $model_id   = intval($job['model_id']);
 $model_name = (string)($job['model_name'] ?? '');
 $deep_url   = (string)($job['deep_url'] ?? '');
 
+$corridaId = make_corrida_id($jobId);
+
+$paramsJson = json_encode([
+    'job_id'      => $jobId,
+    'brand_id'    => $brand_id,
+    'brand_name'  => $brand_name,
+    'model_id'    => $model_id,
+    'model_name'  => $model_name,
+    'deep_url'    => $deep_url,
+    'intentos'    => $intentos
+], JSON_UNESCAPED_UNICODE);
+
+$okCorrida = insert_corrida_inicial($db, $esc, $corridaId, $paramsJson, 'Iniciada');
+if (!$okCorrida) {
+    $db->query("
+        UPDATE apify_jobs
+        SET estado='ERROR',
+            finished_at=NOW(),
+            mensaje='No se pudo crear apify_corridas'
+        WHERE id={$jobId}
+    ");
+    jerr("No se pudo crear apify_corridas", ["job_id"=>$jobId, "corrida_id"=>$corridaId]);
+}
+
 if ($deep_url === '') {
-    // job inválido
+    update_corrida($db, $esc, $corridaId, 'error', 'Job sin deep_url', $paramsJson, 0, 0);
+
     $db->query("
         UPDATE apify_jobs
         SET estado='ERROR',
@@ -187,7 +278,7 @@ if ($deep_url === '') {
             mensaje='Job sin deep_url'
         WHERE id={$jobId}
     ");
-    jerr("Job sin deep_url", ["job_id"=>$jobId]);
+    jerr("Job sin deep_url", ["job_id"=>$jobId, "corrida_id"=>$corridaId]);
 }
 
 // construir URL final a scrapear
@@ -197,7 +288,6 @@ if (stripos($mlUrl, 'http') !== 0) {
 }
 $mlUrl = rtrim($mlUrl, '/');
 
-// input del actor (usa urls, como tu run_ml)
 $input = [
     "country_code" => "uy",
     "ignore_url_failures" => false,
@@ -211,25 +301,31 @@ $input = [
     "urls" => [$mlUrl]
 ];
 
+update_corrida($db, $esc, $corridaId, 'corriendo', 'Lanzando actor Apify...', json_encode($input, JSON_UNESCAPED_UNICODE), 0, 0);
+
+// ===============================
+// 3) Ejecutar Apify para este job
+// ===============================
 $runUrl = "https://api.apify.com/v2/acts/".rawurlencode($actor)."/runs?token=".rawurlencode($token)."&wait=240";
 [$code, $resp, $curlErr] = apify_post_json($runUrl, $input);
 
 if ($curlErr || $code >= 400) {
     $msg = $curlErr ? ("cURL: ".$curlErr) : ("HTTP ".$code." al lanzar actor");
-    // backoff: 10min * intentos (máx 60min)
     $mins = min(60, 10 * $intentos);
-    $estado = ($intentos < 5) ? "REINTENTAR" : "ERROR";
+    $estadoJob = ($intentos < 5) ? "REINTENTAR" : "ERROR";
+
+    update_corrida($db, $esc, $corridaId, 'error', $msg, json_encode($input, JSON_UNESCAPED_UNICODE), 0, 0);
 
     $db->query("
         UPDATE apify_jobs
-        SET estado='{$estado}',
+        SET estado='{$estadoJob}',
             finished_at=NOW(),
-            next_run_at = ".(($estado==='REINTENTAR') ? "DATE_ADD(NOW(), INTERVAL {$mins} MINUTE)" : "NULL").",
+            next_run_at = ".(($estadoJob==='REINTENTAR') ? "DATE_ADD(NOW(), INTERVAL {$mins} MINUTE)" : "NULL").",
             mensaje='".$esc($msg)."'
         WHERE id={$jobId}
     ");
 
-    jerr($msg, ["job_id"=>$jobId, "body"=>$resp]);
+    jerr($msg, ["job_id"=>$jobId, "corrida_id"=>$corridaId, "body"=>$resp]);
 }
 
 $run = json_decode($resp, true);
@@ -239,62 +335,59 @@ $runId = is_array($data) ? ($data['id'] ?? null) : null;
 $datasetId = is_array($data) ? ($data['defaultDatasetId'] ?? null) : null;
 
 if (!$datasetId) {
-    $estado = ($intentos < 5) ? "REINTENTAR" : "ERROR";
+    $estadoJob = ($intentos < 5) ? "REINTENTAR" : "ERROR";
     $mins = min(60, 10 * $intentos);
+
+    update_corrida($db, $esc, $corridaId, 'error', 'No defaultDatasetId', json_encode($input, JSON_UNESCAPED_UNICODE), 0, 0);
+
     $db->query("
         UPDATE apify_jobs
-        SET estado='{$estado}',
+        SET estado='{$estadoJob}',
             finished_at=NOW(),
-            next_run_at = ".(($estado==='REINTENTAR') ? "DATE_ADD(NOW(), INTERVAL {$mins} MINUTE)" : "NULL").",
+            next_run_at = ".(($estadoJob==='REINTENTAR') ? "DATE_ADD(NOW(), INTERVAL {$mins} MINUTE)" : "NULL").",
             mensaje='No defaultDatasetId'
         WHERE id={$jobId}
     ");
-    jerr("No vino defaultDatasetId", ["job_id"=>$jobId, "run"=>$run]);
+    jerr("No vino defaultDatasetId", ["job_id"=>$jobId, "corrida_id"=>$corridaId, "run"=>$run]);
 }
 
-// guardar runId en job
 if ($runId) {
     $db->query("UPDATE apify_jobs SET apify_run_id='".$esc($runId)."' WHERE id={$jobId}");
+    update_corrida($db, $esc, $corridaId, 'corriendo', 'Actor ejecutado. Esperando dataset...', json_encode($input, JSON_UNESCAPED_UNICODE), 0, 0);
 }
 
 // ===============================
-// 3) Leer items dataset y persistir
+// 4) Leer items dataset
 // ===============================
 $w = apify_wait_items($datasetId, $token, 100, 90);
 if (!($w['ok'] ?? false)) {
-    $estado = ($intentos < 5) ? "REINTENTAR" : "ERROR";
+    $estadoJob = ($intentos < 5) ? "REINTENTAR" : "ERROR";
     $mins = min(60, 10 * $intentos);
+    $msg = $w['error'] ?? 'Error dataset';
+
+    update_corrida($db, $esc, $corridaId, 'error', $msg, json_encode($input, JSON_UNESCAPED_UNICODE), 0, 0);
 
     $db->query("
         UPDATE apify_jobs
-        SET estado='{$estado}',
+        SET estado='{$estadoJob}',
             finished_at=NOW(),
-            next_run_at = ".(($estado==='REINTENTAR') ? "DATE_ADD(NOW(), INTERVAL {$mins} MINUTE)" : "NULL").",
-            mensaje='".$esc($w['error'] ?? 'Error dataset')."'
+            next_run_at = ".(($estadoJob==='REINTENTAR') ? "DATE_ADD(NOW(), INTERVAL {$mins} MINUTE)" : "NULL").",
+            mensaje='".$esc($msg)."'
         WHERE id={$jobId}
     ");
 
-    jerr($w['error'] ?? 'Error dataset', ["job_id"=>$jobId, "body"=>$w['body'] ?? null]);
+    jerr($msg, ["job_id"=>$jobId, "corrida_id"=>$corridaId, "body"=>$w['body'] ?? null]);
 }
 
 $items = $w['items'] ?? [];
 $total = count($items);
 $guardados = 0;
 
-// schema act_version (si existe)
-function findSchemaForTable($db, $tableName) {
-    $t = method_exists($db, 'escape') ? $db->escape($tableName) : addslashes($tableName);
-    $q = $db->query("
-        SELECT TABLE_SCHEMA
-        FROM information_schema.TABLES
-        WHERE TABLE_NAME = '{$t}'
-        ORDER BY TABLE_SCHEMA
-        LIMIT 1
-    ");
-    if (!$q) return null;
-    $r = $db->fetch_array($q);
-    return $r ? ($r['TABLE_SCHEMA'] ?? null) : null;
-}
+update_corrida($db, $esc, $corridaId, 'corriendo', 'Dataset recibido. Persistiendo publicaciones...', json_encode($input, JSON_UNESCAPED_UNICODE), $total, 0);
+
+// ===============================
+// 5) Persistir publicaciones
+// ===============================
 $schemaVer = findSchemaForTable($db, 'act_version');
 $tblVersion = $schemaVer ? "{$schemaVer}.act_version" : "act_version";
 
@@ -350,15 +443,12 @@ foreach ($items as $it) {
         }
     }
 
-    // versión (si hay tabla y campos)
     $version_id = null;
     $version = null;
 
     if ($brand_id && $model_id && $titulo !== '') {
         $titulo_upper = strtoupper($titulo);
 
-        // OJO: act_version podría usar id_model o id_modelo según tu schema.
-        // Probamos primero con id_model (tu caso), y si falla, cae al catch.
         $qv = $db->query("
             SELECT id_version, nombre
             FROM {$tblVersion}
@@ -395,7 +485,7 @@ foreach ($items as $it) {
         )
         VALUES
         (
-            '".$esc("job_".$jobId)."',
+            '".$esc($corridaId)."',
             'ml',
             '".$esc($mlid)."',
             '".$esc(substr($titulo,0,255))."',
@@ -440,8 +530,19 @@ foreach ($items as $it) {
 }
 
 // ===============================
-// 4) Marcar OK
+// 6) Marcar OK corrida + job
 // ===============================
+update_corrida(
+    $db,
+    $esc,
+    $corridaId,
+    'ok',
+    "OK items={$total} guardados={$guardados}",
+    json_encode($input, JSON_UNESCAPED_UNICODE),
+    $total,
+    $guardados
+);
+
 $db->query("
     UPDATE apify_jobs
     SET estado='OK',
@@ -452,6 +553,7 @@ $db->query("
 
 jok([
     "job_id" => $jobId,
+    "corrida_id" => $corridaId,
     "brand_id" => $brand_id,
     "brand_name" => $brand_name,
     "model_id" => $model_id,

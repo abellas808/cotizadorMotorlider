@@ -46,37 +46,44 @@ $modeloId = isset($_GET['modelo_id']) ? intval($_GET['modelo_id']) : 0;
 
 $sql = "
     SELECT
-        id,
-        corrida_id,
-        marca_id,
-        modelo_id,
-        marca_txt AS marca,
-        modelo_txt AS modelo,
-        version,
-        titulo,
-        precio,
-        moneda,
-        anio,
-        km,
-        ubicacion,
-        url,
-        created_at
-    FROM apify_publicaciones
-    WHERE corrida_id LIKE 'job_%'
+        p.id,
+        p.corrida_id,
+        p.marca_id,
+        p.modelo_id,
+        p.marca_txt AS marca,
+        p.modelo_txt AS modelo,
+        p.version,
+        p.titulo,
+        p.precio,
+        p.moneda,
+        p.anio,
+        p.km,
+        p.ubicacion,
+        p.url,
+        p.created_at
+    FROM apify_publicaciones p
+    INNER JOIN apify_corridas c
+        ON c.corrida_id = p.corrida_id
+    WHERE c.estado = 'ok'
 ";
 
 if ($marcaId > 0) {
-    $sql .= " AND marca_id = ".intval($marcaId)." ";
+    $sql .= " AND p.marca_id = " . intval($marcaId) . " ";
 }
 
 if ($modeloId > 0) {
-    $sql .= " AND modelo_id = ".intval($modeloId)." ";
+    $sql .= " AND p.modelo_id = " . intval($modeloId) . " ";
 }
 
-$sql .= " ORDER BY created_at DESC, id DESC LIMIT ".intval($limit);
+$sql .= "
+    ORDER BY
+        COALESCE(c.updated_at, c.created_at) DESC,
+        p.created_at DESC,
+        p.id DESC
+    LIMIT " . intval($limit);
 
 $q = $db->query($sql);
-if (!$q) jerr("No se pudo consultar apify_publicaciones.");
+if (!$q) jerr("No se pudo consultar apify_publicaciones/apify_corridas.");
 
 $rows = [];
 while ($r = $db->fetch_array($q)) {
@@ -100,7 +107,7 @@ while ($r = $db->fetch_array($q)) {
 }
 
 jok([
-    "rows" => $rows,
+    "rows"  => $rows,
     "count" => count($rows),
     "limit" => $limit
 ]);
