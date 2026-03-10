@@ -33,6 +33,11 @@ class CotizacionGenerada implements JsonSerializable
     public $porcentajes_aplicados;
     public $cuenta;
 
+    public $estado;
+    public $detalle_estado;
+    public $mail_enviado;
+    public $fecha_mail;
+
     public function __construct(array $parametros)
     {
         foreach ($parametros as $key => $val) {
@@ -111,7 +116,11 @@ class CotizacionGenerada implements JsonSerializable
             valor_promedio_autodata = :valor_promedio_autodata,
             msg = :msg,
             porcentajes_aplicados = :porcentajes_aplicados,
-            cuenta = :cuenta';
+            cuenta = :cuenta,
+            estado = :estado,
+            detalle_estado = :detalle_estado,
+            mail_enviado = :mail_enviado,
+            fecha_mail = :fecha_mail';
 
         $id = Database::getInstance()->mysqlNonQuery($sql, $parametros_sql);
 
