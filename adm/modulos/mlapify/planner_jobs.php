@@ -55,7 +55,7 @@ function buildDeepUrl($brandName, $modelName) {
 }
 
 /*
-  Nuevo criterio:
+  Criterio:
   - act_marcas.prioridad = 1
   - act_modelo.prioridad = 1
   - relación por id_marca
@@ -119,13 +119,12 @@ foreach ($jobs as $job) {
   $bnEsc   = db_escape($db, $brand_name);
   $mnEsc   = db_escape($db, $model_name);
 
-  // Verificamos existencia previa
+  // Verificamos existencia previa SOLO por brand_id + model_id
   $qx = $db->query("
     SELECT id, estado
     FROM apify_jobs
     WHERE brand_id = {$brand_id}
       AND model_id = {$model_id}
-      AND deep_url = '{$deepEsc}'
     LIMIT 1
   ");
 
@@ -155,11 +154,14 @@ foreach ($jobs as $job) {
       NULL
     )
     ON DUPLICATE KEY UPDATE
-      brand_name = VALUES(brand_name),
-      model_name = VALUES(model_name),
-      deep_url   = VALUES(deep_url),
-      estado     = IF(estado = 'OK', 'OK', 'PENDIENTE'),
-      updated_at = NOW()
+      brand_name  = VALUES(brand_name),
+      model_name  = VALUES(model_name),
+      deep_url    = VALUES(deep_url),
+      estado      = 'PENDIENTE',
+      intentos    = 0,
+      next_run_at = NULL,
+      mensaje     = NULL,
+      updated_at  = NOW()
   ");
 
   if (!$ok) {
@@ -167,7 +169,8 @@ foreach ($jobs as $job) {
       'brand_id'   => $brand_id,
       'brand_name' => $brand_name,
       'model_id'   => $model_id,
-      'model_name' => $model_name
+      'model_name' => $model_name,
+      'deep_url'   => $deep
     ];
     continue;
   }
@@ -182,7 +185,9 @@ foreach ($jobs as $job) {
 jok([
   "criterio" => [
     "act_marcas.prioridad" => 1,
-    "act_modelo.prioridad" => 1
+    "act_modelo.prioridad" => 1,
+    "clave_job" => "brand_id + model_id",
+    "deep_url_solo_dato" => true
   ],
   "jobs_encontrados" => count($jobs),
   "inserted" => $ins,
