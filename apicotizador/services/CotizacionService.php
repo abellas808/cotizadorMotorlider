@@ -134,11 +134,52 @@ class CotizacionService
         $nombreAuto   = trim((string)($dataIn['nombre_auto'] ?? ''));
         $ver          = trim((string)($versionOther ?: ($versionName ?: $version)));
 
-        $brandId = is_numeric($brandIn) ? (int)$brandIn : null;
-        $modelId = is_numeric($modeloIn) ? (int)$modeloIn : null;
+        $brandId      = is_numeric($brandIn) ? (int)$brandIn : null;
+        $modelInputId = is_numeric($modeloIn) ? (int)$modeloIn : null;
+        $modelId      = null;
 
         $brandTxt  = $brandIn;
         $modeloTxt = $modeloIn;
+
+        if ($brandId && $modelInputId) {
+            try {
+                $resolvedModel = $this->resolveModelIdLocal($brandId, $modelInputId);
+
+                if ($resolvedModel && !empty($resolvedModel['resolved_id'])) {
+                    $modelId = (int)$resolvedModel['resolved_id'];
+
+                    if (!empty($resolvedModel['model_name'])) {
+                        $modeloTxt = trim((string)$resolvedModel['model_name']);
+                    }
+
+                    $this->logInterno('MODEL_ID_MAP_OK', [
+                        'brand_id'       => $brandId,
+                        'model_input_id' => $modelInputId,
+                        'model_id_final' => $modelId,
+                        'source'         => $resolvedModel['source'] ?? null,
+                        'row_brand_id'   => $resolvedModel['row_brand_id'] ?? null,
+                        'model_name'     => $resolvedModel['model_name'] ?? null,
+                    ]);
+                } else {
+                    $modelId = $modelInputId;
+
+                    $this->logInterno('MODEL_ID_MAP_FALLBACK', [
+                        'brand_id'       => $brandId,
+                        'model_input_id' => $modelInputId,
+                        'model_id_final' => $modelId
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                $modelId = $modelInputId;
+
+                $this->logInterno('MODEL_ID_MAP_FAIL', [
+                    'brand_id'       => $brandId,
+                    'model_input_id' => $modelInputId,
+                    'model_id_final' => $modelId,
+                    'error'          => $e->getMessage()
+                ]);
+            }
+        }
 
         if ($brandId && $modelId) {
             try {
@@ -168,9 +209,11 @@ class CotizacionService
 
         if (!$brandId || !$modelId) {
             $this->logInterno('IDS_FALTANTES', [
-                'brand_in'    => $brandIn,
-                'modelo_in'   => $modeloIn,
-                'nombre_auto' => $nombreAuto
+                'brand_in'       => $brandIn,
+                'modelo_in'      => $modeloIn,
+                'model_input_id' => $modelInputId,
+                'model_id_final' => $modelId,
+                'nombre_auto'    => $nombreAuto
             ]);
 
             return [
@@ -430,6 +473,7 @@ class CotizacionService
             $cg_data['datos'] = json_encode([
                 'corrida_id'          => $corridaId,
                 'brand_id'            => $brandId,
+                'model_input_id'      => $modelInputId,
                 'model_id'            => $modelId,
                 'brand_final'         => $brandTxt,
                 'modelo_final'        => $modeloTxt,
@@ -538,6 +582,7 @@ class CotizacionService
             'id_cotizacion' => $id
         ];
     }
+
 
     private function obtenerUltimaCorridaValida(int $brandId, int $modelId): ?array
     {
@@ -814,5 +859,63 @@ class CotizacionService
         }
 
         return 'local_' . date('Ymd_His') . '_' . substr(md5(uniqid('', true)), 0, 8);
+    }
+
+    private function resolveModelIdLocal(int $brandId, int $modelInputId): ?array
+    {
+        $db = Database::getInstance();
+        $tblModelo = self::DB_BATCH . ".act_modelo";
+
+        $rows = $this->dbFetchAll($db, "
+            SELECT *
+            FROM {$tblModelo}
+            WHERE id = " . (int)$modelInputId . "
+            LIMIT 1
+        ");
+
+        if (!empty($rows)) {
+            $row = $rows[0];
+
+            $realModelId = $this->pickArr($row, ['id_model', 'id_modelo', 'modelo_id']);
+            $modelName   = $this->pickArr($row, ['nombre', 'name', 'modelo']);
+            $rowBrandId  = $this->pickArr($row, ['id_marca', 'marca_id']);
+
+            if ($realModelId !== null) {
+                return [
+                    'input_id'      => $modelInputId,
+                    'resolved_id'   => (int)$realModelId,
+                    'model_name'    => $modelName,
+                    'row_brand_id'  => $rowBrandId !== null ? (int)$rowBrandId : null,
+                    'source'        => 'act_modelo.id'
+                ];
+            }
+        }
+
+        $rows2 = $this->dbFetchAll($db, "
+            SELECT *
+            FROM {$tblModelo}
+            WHERE id_model = " . (int)$modelInputId . "
+            LIMIT 1
+        ");
+
+        if (!empty($rows2)) {
+            $row = $rows2[0];
+
+            $realModelId = $this->pickArr($row, ['id_model', 'id_modelo', 'modelo_id']);
+            $modelName   = $this->pickArr($row, ['nombre', 'name', 'modelo']);
+            $rowBrandId  = $this->pickArr($row, ['id_marca', 'marca_id']);
+
+            if ($realModelId !== null) {
+                return [
+                    'input_id'      => $modelInputId,
+                    'resolved_id'   => (int)$realModelId,
+                    'model_name'    => $modelName,
+                    'row_brand_id'  => $rowBrandId !== null ? (int)$rowBrandId : null,
+                    'source'        => 'act_modelo.id_model'
+                ];
+            }
+        }
+
+        return null;
     }
 }
