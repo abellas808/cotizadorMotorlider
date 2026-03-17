@@ -758,10 +758,7 @@ class CotizacionService
             SELECT *
             FROM {$tblModelo}
             WHERE (
-                id_model = " . (int)$modelId . "
-                OR id_modelo = " . (int)$modelId . "
-                OR id = " . (int)$modelId . "
-                OR modelo_id = " . (int)$modelId . "
+                id = " . (int)$modelId . "
             )
             LIMIT 1
         ");

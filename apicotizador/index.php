@@ -572,7 +572,6 @@ $app->post('/versiones/{brand}', function (Request $request, Response $response)
 
 // })->add($authorization);
 
-// COTIZADOR PUBLICO MIN/MAX/PROMEDIO (SIN CURL INTERNO)
 $app->post('/cotizadorPublico/{brand}', function (Request $request, Response $response, array $args = []) {
 
     $rawBody = (string)$request->getBody();
@@ -580,155 +579,95 @@ $app->post('/cotizadorPublico/{brand}', function (Request $request, Response $re
 
     registrarApiLog($request, null, [
         'rawBody' => $rawBody,
-        'tag' => 'Cotizador Inicio',
-        'response_statuscode' => 0,
-        'response_body' => ''
+        'tag' => 'Cotizador Entrada'
     ]);
 
     try {
-        $dataObj = json_decode($rawBody, true);
 
-        if (!is_array($dataObj)) {
+        $data = json_decode($rawBody, true);
+
+        if (!is_array($data)) {
             $return = $response->withJson([
                 "error" => true,
-                "msg"   => "JSON inválido o body vacío"
+                "msg"   => "JSON inválido"
             ], 400);
 
-            registrarApiLog($request, $return, [
-                'rawBody' => $rawBody,
-                'tag' => 'Cotizador JSON invalido'
-            ]);
-
+            registrarApiLog($request, $return, ['tag'=>'Cotizador JSON invalido']);
             return $return;
         }
 
-        $data = $dataObj;
+        /*----------------------------------
+        MODO SISTEMA
+        ----------------------------------*/
 
-        // ------------------------------------------------
-        // PARAMETRO DE SISTEMA: TEST / PRODUCCION
-        // ------------------------------------------------
-        $modoSistema = obtenerParametroSistema('COTIZADOR_MODO', 'COTIZADOR');
+        $modoSistema = obtenerParametroSistema('COTIZADOR_MODO','COTIZADOR');
         $modoSistema = strtoupper(trim((string)$modoSistema));
         $modoTest = ($modoSistema === 'TEST');
 
-        registrarApiLog($request, null, [
-            'rawBody' => json_encode([
-                'modoSistema' => $modoSistema ?: 'SIN_PARAMETRO',
-                'brand_route' => $brandRoute,
-                'brand_body' => $data['marca'] ?? null
-            ], JSON_UNESCAPED_UNICODE),
-            'tag' => 'Cotizador Modo'
-        ]);
+        /*----------------------------------
+        MARCA
+        ----------------------------------*/
 
-        // ------------------------------------------------
-        // DEFAULTS CAMPOS OPCIONALES
-        // ------------------------------------------------
-        $data['version']       = isset($data['version']) && is_string($data['version']) ? trim($data['version']) : '';
-        $data['version_name']  = isset($data['version_name']) && is_string($data['version_name']) ? trim($data['version_name']) : '';
-        $data['version_other'] = isset($data['version_other']) && is_string($data['version_other']) ? trim($data['version_other']) : '';
+        $brandId = isset($data['marca']) && trim($data['marca']) !== ''
+            ? trim($data['marca'])
+            : trim($brandRoute);
 
-        // ------------------------------------------------
-        // RESOLVER MARCA: prioriza body, sino ruta
-        // ------------------------------------------------
-        $brandId = isset($data['marca']) && trim((string)$data['marca']) !== ''
-            ? trim((string)$data['marca'])
-            : trim((string)$brandRoute);
+        if (!$brandId) {
 
-        if ($brandId === '') {
             $return = $response->withJson([
                 "error" => true,
                 "msg"   => "Falta parametro marca"
-            ], 400);
+            ],400);
 
-            registrarApiLog($request, $return, [
-                'rawBody' => $rawBody,
-                'tag' => 'Cotizador Falta marca'
-            ]);
-
+            registrarApiLog($request,$return,['tag'=>'Cotizador falta marca']);
             return $return;
         }
 
-        // ------------------------------------------------
-        // VALIDACION CAMPOS REQUERIDOS
-        // ------------------------------------------------
+        /*----------------------------------
+        CAMPOS REQUERIDOS
+        ----------------------------------*/
+
         $required = [
-            'nombre',
-            'email',
-            'telefono',
-            'modelo',
-            'anio',
-            'km',
-            'ficha_tecnica',
-            'cantidad_duenios',
-            'valor_pretendido',
-            'venta_permuta',
-            'nombre_auto'
+            'nombre','email','telefono','modelo','anio','km',
+            'ficha_tecnica','cantidad_duenios','valor_pretendido',
+            'venta_permuta','nombre_auto'
         ];
 
         foreach ($required as $campo) {
-            if (!array_key_exists($campo, $data) || $data[$campo] === null) {
+
+            if (!isset($data[$campo]) || trim((string)$data[$campo]) === '') {
+
                 $return = $response->withJson([
-                    "error" => true,
-                    "msg"   => "Falta parametro {$campo}"
-                ], 400);
+                    "error"=>true,
+                    "msg"=>"Falta parametro {$campo}"
+                ],400);
 
-                registrarApiLog($request, $return, [
-                    'rawBody' => $rawBody,
-                    'tag' => "Cotizador Falta {$campo}"
-                ]);
-
-                return $return;
-            }
-
-            if (is_string($data[$campo]) && trim($data[$campo]) === '') {
-                $return = $response->withJson([
-                    "error" => true,
-                    "msg"   => "Falta parametro {$campo}"
-                ], 400);
-
-                registrarApiLog($request, $return, [
-                    'rawBody' => $rawBody,
-                    'tag' => "Cotizador Falta {$campo}"
-                ]);
-
+                registrarApiLog($request,$return,['tag'=>"Cotizador falta {$campo}"]);
                 return $return;
             }
         }
 
-        registrarApiLog($request, null, [
-            'rawBody' => json_encode([
-                'tag' => 'DEBUG_ENDPOINT_NUEVO',
-                'brand_resuelto' => $brandId,
-                'keys' => array_keys($data)
-            ], JSON_UNESCAPED_UNICODE),
-            'tag' => 'DEBUG /cotizadorPublico NUEVO'
-        ]);
+        /*----------------------------------
+        DEFAULT VERSIONES
+        ----------------------------------*/
 
-        // ------------------------------------------------
-        // LLAMADA AL SERVICIO
-        // ------------------------------------------------
+        $data['version']       = $data['version'] ?? '';
+        $data['version_name']  = $data['version_name'] ?? '';
+        $data['version_other'] = $data['version_other'] ?? '';
+
+        /*----------------------------------
+        LLAMAR SERVICIO
+        ----------------------------------*/
+
+        registrarApiLog($request,null,['tag'=>'Cotizador Antes Servicio']);
+
         $svc = new CotizacionService();
 
-        registrarApiLog($request, null, [
-            'rawBody' => json_encode([
-                'step' => 'antes_procesarCotizacionPublica',
-                'modo' => $modoSistema
-            ], JSON_UNESCAPED_UNICODE),
-            'tag' => 'Cotizador Step',
-            'response_statuscode' => 0,
-            'response_body' => ''
-        ]);
+        $svcRes = $svc->procesarCotizacionPublica($data,$brandId);
 
-        $svcRes = $svc->procesarCotizacionPublica($data, $brandId);
-
-        registrarApiLog($request, null, [
-            'rawBody' => json_encode([
-                'step' => 'despues_procesarCotizacionPublica',
-                'svcRes_keys' => is_array($svcRes) ? array_keys($svcRes) : null
-            ], JSON_UNESCAPED_UNICODE),
-            'tag' => 'Cotizador Step',
-            'response_statuscode' => 0,
-            'response_body' => ''
+        registrarApiLog($request,null,[
+            'rawBody'=>json_encode($svcRes),
+            'tag'=>'Cotizador Resultado Servicio'
         ]);
 
         $resultado    = $svcRes['resultado'] ?? null;
@@ -736,85 +675,75 @@ $app->post('/cotizadorPublico/{brand}', function (Request $request, Response $re
         $idCotizacion = $svcRes['id_cotizacion'] ?? null;
 
         if ($modoTest) {
-            $msg = '[TEST] ' . $msg;
+            $msg = "[TEST] ".$msg;
         }
 
-        // ------------------------------------------------
-        // SIN RESULTADO
-        // ------------------------------------------------
-        if (!$resultado || !is_array($resultado)) {
+        /*----------------------------------
+        SIN RESULTADO
+        ----------------------------------*/
+
+        if (!$resultado) {
+
             $out = [
                 "error" => false,
                 "msg" => $msg,
                 "id_cotizacion" => $idCotizacion,
-                "valores" => [],
+                "valores" => [
+                    "count"=>0,
+                    "min"=>null,
+                    "max"=>null,
+                    "avg"=>null
+                ],
                 "resultado" => null
             ];
 
-            $return = $response->withJson($out, 200);
+            $return = $response->withJson($out,200);
 
-            registrarApiLog($request, $return, [
-                'rawBody' => $rawBody,
-                'tag' => 'Cotizador Fin SIN RESULTADO'
-            ]);
+            registrarApiLog($request,$return,['tag'=>'Cotizador SIN RESULTADO']);
 
             return $return;
         }
 
-        // ------------------------------------------------
-        // CON RESULTADO
-        // ------------------------------------------------
+        /*----------------------------------
+        CON RESULTADO
+        ----------------------------------*/
+
         $out = [
-            "error" => false,
-            "msg" => $msg,
-            "id_cotizacion" => $idCotizacion,
-            "valores" => [
-                "count" => $resultado['count'] ?? null,
-                "min"   => $resultado['min'] ?? null,
-                "max"   => $resultado['max'] ?? null,
-                "avg"   => $resultado['avg'] ?? null,
+            "error"=>false,
+            "msg"=>$msg,
+            "id_cotizacion"=>$idCotizacion,
+            "valores"=>[
+                "count"=>$resultado['count'] ?? null,
+                "min"=>$resultado['min'] ?? null,
+                "max"=>$resultado['max'] ?? null,
+                "avg"=>$resultado['avg'] ?? null
             ],
-            "url" => $resultado['url'] ?? null,
-            "resultado" => $resultado
+            "url"=>$resultado['url'] ?? null,
+            "resultado"=>$resultado
         ];
 
-        $return = $response->withJson($out, 200);
+        $return = $response->withJson($out,200);
 
-        registrarApiLog($request, $return, [
-            'rawBody' => $rawBody,
-            'tag' => 'Cotizador Fin'
-        ]);
+        registrarApiLog($request,$return,['tag'=>'Cotizador OK']);
 
         return $return;
 
-    } catch (\Throwable $e) {
-        registrarApiLog($request, null, [
-            'rawBody' => json_encode([
-                'error' => $e->getMessage(),
-                'type'  => get_class($e),
-                'file'  => $e->getFile(),
-                'line'  => $e->getLine(),
-                'trace' => substr($e->getTraceAsString(), 0, 5000)
-            ], JSON_UNESCAPED_UNICODE),
-            'tag' => 'Cotizador Throwable',
-            'response_statuscode' => 0,
-            'response_body' => ''
+    } catch(\Throwable $e){
+
+        registrarApiLog($request,null,[
+            'rawBody'=>$e->getMessage(),
+            'tag'=>'Cotizador Exception'
         ]);
 
         $return = $response->withJson([
-            "error" => true,
-            "msg" => "Error interno del cotizador"
-        ], 500);
-
-        registrarApiLog($request, $return, [
-            'rawBody' => $rawBody,
-            'tag' => 'Cotizador Exception Response'
-        ]);
+            "error"=>true,
+            "msg"=>"Error interno del cotizador"
+        ],500);
 
         return $return;
     }
 
-}); //->add($authorization);
+});
 
 
 

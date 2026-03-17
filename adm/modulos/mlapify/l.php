@@ -1050,7 +1050,7 @@ try {
 		apifySetEstado('cargando', 'Actualizando resultados recientes...');
 		$('#tabla_apify_resultados tbody').html('<tr><td colspan="10" style="color:#777;">Cargando...</td></tr>');
 
-		$.getJSON('/adm/modulos/mlapify/apify_resultados_batch.php?limit=300', function(r){
+		$.getJSON('/adm/modulos/mlapify/apify_resultados_batch.php?limit=3000', function(r){
 			if (r && r.ok) {
 				apifyLoadRows((r.rows || []), 'Mostrando resultados recientes del batch.');
 			} else {
@@ -1075,7 +1075,7 @@ try {
 		cotizaSetEstado('-', '-');
 		$('#apify_page_size').val(String(APIFY_PAGE_SIZE));
 
-		$.getJSON('/adm/modulos/mlapify/apify_resultados_batch.php?limit=300', function(r){
+		$.getJSON('/adm/modulos/mlapify/apify_resultados_batch.php?limit=3000', function(r){
 			if (r && r.ok) {
 				apifyLoadRows((r.rows || []), 'Mostrando resultados recientes del batch.');
 			} else {

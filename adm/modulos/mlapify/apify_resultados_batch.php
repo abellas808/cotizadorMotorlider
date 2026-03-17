@@ -37,9 +37,9 @@ if (!isset($db) || !$db) jerr("DB no inicializada (\$db).");
 @($db->suppress_errors = true);
 @($db->debug = false);
 
-$limit = isset($_GET['limit']) ? intval($_GET['limit']) : 300;
-if ($limit <= 0) $limit = 300;
-if ($limit > 1000) $limit = 1000;
+$limit = isset($_GET['limit']) ? intval($_GET['limit']) : 3000;
+if ($limit <= 0) $limit = 3000;
+if ($limit > 1000) $limit = 10000;
 
 $marcaId  = isset($_GET['marca_id']) ? intval($_GET['marca_id']) : 0;
 $modeloId = isset($_GET['modelo_id']) ? intval($_GET['modelo_id']) : 0;
