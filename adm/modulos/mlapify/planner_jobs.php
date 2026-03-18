@@ -51,7 +51,7 @@ function slugify($s) {
 function buildDeepUrl($brandName, $modelName) {
   $b = slugify($brandName);
   $m = slugify($modelName);
-  return rtrim("{$b}/{$m}/usado/montevideo/_NoIndex_True", '/');
+  return rtrim("{$b}/{$m}/usado/_NoIndex_True", '/');
 }
 
 /*

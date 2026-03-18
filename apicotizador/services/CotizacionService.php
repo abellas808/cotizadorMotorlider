@@ -336,6 +336,20 @@ class CotizacionService
             $mlId       = trim((string)($pub['ml_id'] ?? ''));
             $esOficial  = (int)($pub['es_oficial'] ?? 0);
 
+            $this->logInterno('PUB_ANALISIS', [
+                'corrida_id'   => $corridaId,
+                'ml_id'        => $mlId,
+                'titulo'       => $titulo,
+                'pub_version'  => $pubVersion,
+                'anio_pub'     => $itemYear,
+                'km_pub'       => $itemKm,
+                'modelo_id'    => $pub['modelo_id'] ?? null,
+                'modelo_txt'   => $pub['modelo_txt'] ?? null,
+                'version_in'   => $ver,
+                'anio_in'      => $anioIn,
+                'km_in'        => $kmIn
+            ]);
+
             $passes = true;
             $reason = null;
 
@@ -373,6 +387,20 @@ class CotizacionService
             }
 
             if (!$passes) {
+                $this->logInterno('PUB_REJECT', [
+                    'corrida_id'   => $corridaId,
+                    'ml_id'        => $mlId,
+                    'titulo'       => $titulo,
+                    'pub_version'  => $pubVersion,
+                    'anio_pub'     => $itemYear,
+                    'km_pub'       => $itemKm,
+                    'modelo_id'    => $pub['modelo_id'] ?? null,
+                    'modelo_txt'   => $pub['modelo_txt'] ?? null,
+                    'version_in'   => $ver,
+                    'anio_in'      => $anioIn,
+                    'km_in'        => $kmIn,
+                    'reason'       => $reason
+                ]);
                 continue;
             }
 
@@ -459,7 +487,7 @@ class CotizacionService
             $cg_data['precio_pretendido'] = $dataIn['valor_pretendido'] ?? null;
             $cg_data['marca']             = $brandTxt;
             $cg_data['anio']              = $anioIn;
-            $cg_data['familia']           = $modeloTxt;
+            $cg_data['familia']           = $modelId;
             $cg_data['auto']              = $dataIn['nombre_auto'] ?? trim($brandTxt . ' ' . $modeloTxt);
 
             $cg_data['valor_minimo']   = $min;
@@ -583,7 +611,6 @@ class CotizacionService
         ];
     }
 
-
     private function obtenerUltimaCorridaValida(int $brandId, int $modelId): ?array
     {
         $db = Database::getInstance();
@@ -672,10 +699,15 @@ class CotizacionService
         $tokens = array_values(array_filter(explode(' ', $needle)));
         if (count($tokens) > 0) {
             foreach ($haystacks as $h) {
-                if ($h === '') continue;
+                if ($h === '') {
+                    continue;
+                }
+
                 $allFound = true;
                 foreach ($tokens as $tk) {
-                    if (strlen($tk) < 2) continue;
+                    if (strlen($tk) < 2) {
+                        continue;
+                    }
                     if (strpos($h, $tk) === false) {
                         $allFound = false;
                         break;
@@ -705,28 +737,44 @@ class CotizacionService
 
     private function toIntOrNull($v): ?int
     {
-        if ($v === null || $v === '') return null;
-        if (is_int($v)) return $v;
+        if ($v === null || $v === '') {
+            return null;
+        }
+        if (is_int($v)) {
+            return $v;
+        }
 
         $s = trim((string)$v);
-        if ($s === '') return null;
+        if ($s === '') {
+            return null;
+        }
 
         $s = preg_replace('/[^\d\-]/', '', $s);
-        if ($s === '' || $s === '-') return null;
+        if ($s === '' || $s === '-') {
+            return null;
+        }
 
         return (int)$s;
     }
 
     private function toFloatOrNull($v): ?float
     {
-        if ($v === null || $v === '') return null;
-        if (is_float($v) || is_int($v)) return (float)$v;
+        if ($v === null || $v === '') {
+            return null;
+        }
+        if (is_float($v) || is_int($v)) {
+            return (float)$v;
+        }
 
         $s = trim((string)$v);
-        if ($s === '') return null;
+        if ($s === '') {
+            return null;
+        }
 
         $s = preg_replace('/[^0-9,\.\-]/', '', $s);
-        if ($s === '' || $s === '-' || $s === '.' || $s === ',') return null;
+        if ($s === '' || $s === '-' || $s === '.' || $s === ',') {
+            return null;
+        }
 
         if (strpos($s, ',') !== false && strpos($s, '.') !== false) {
             $lastComma = strrpos($s, ',');
@@ -802,9 +850,7 @@ class CotizacionService
         $modelRows = $this->dbFetchAll($db, "
             SELECT *
             FROM {$tblModelo}
-            WHERE (
-                id = " . (int)$modelId . "
-            )
+            WHERE id_model = " . (int)$modelId . "
             LIMIT 1
         ");
 
@@ -813,21 +859,21 @@ class CotizacionService
         }
 
         if (empty($modelRows)) {
-            throw new \Exception("No se pudo resolver nombre de modelo local (ID {$modelId})");
+            throw new \Exception("No se pudo resolver nombre de modelo local (ID_MODEL {$modelId})");
         }
 
         $brandRow = $brandRows[0];
         $modelRow = $modelRows[0];
 
-        $brandName = $this->pickArr($brandRow, ['nombre','name','marca']);
-        $modelName = $this->pickArr($modelRow, ['nombre','name','modelo']);
+        $brandName = $this->pickArr($brandRow, ['nombre', 'name', 'marca']);
+        $modelName = $this->pickArr($modelRow, ['nombre', 'name', 'modelo']);
 
         if (!$brandName) {
             throw new \Exception("La marca local no tiene nombre resoluble (ID {$brandId})");
         }
 
         if (!$modelName) {
-            throw new \Exception("El modelo local no tiene nombre resoluble (ID {$modelId})");
+            throw new \Exception("El modelo local no tiene nombre resoluble (ID_MODEL {$modelId})");
         }
 
         return [
@@ -852,7 +898,8 @@ class CotizacionService
             if (function_exists('random_bytes')) {
                 return 'local_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4));
             }
-        } catch (\Throwable $e) {}
+        } catch (\Throwable $e) {
+        }
 
         if (function_exists('openssl_random_pseudo_bytes')) {
             return 'local_' . date('Ymd_His') . '_' . bin2hex(openssl_random_pseudo_bytes(4));

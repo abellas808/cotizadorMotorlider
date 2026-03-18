@@ -39,11 +39,40 @@ if (!isset($db) || !$db) jerr("DB no inicializada (\$db).");
 
 $limit = isset($_GET['limit']) ? intval($_GET['limit']) : 3000;
 if ($limit <= 0) $limit = 3000;
-if ($limit > 1000) $limit = 10000;
+if ($limit > 10000) $limit = 10000;
 
 $marcaId  = isset($_GET['marca_id']) ? intval($_GET['marca_id']) : 0;
 $modeloId = isset($_GET['modelo_id']) ? intval($_GET['modelo_id']) : 0;
 
+/*
+ * Reglas:
+ * - Sin filtros: solo marcas/modelos con prioridad=1
+ * - Con marca: filtra esa marca
+ * - Con modelo: filtra ese modelo
+ * - Siempre: solo la ÚLTIMA corrida OK por combinación marca_id + modelo_id
+ */
+
+$wherePrioridad = "";
+$whereOuter = "";
+$whereUlt = "";
+
+if ($marcaId > 0) {
+    $wherePrioridad .= " AND am.id_marca = " . intval($marcaId) . " ";
+    $whereOuter     .= " AND p.marca_id = " . intval($marcaId) . " ";
+    $whereUlt       .= " AND p2.marca_id = " . intval($marcaId) . " ";
+}
+
+if ($modeloId > 0) {
+    $wherePrioridad .= " AND amo.id_model = " . intval($modeloId) . " ";
+    $whereOuter     .= " AND p.modelo_id = " . intval($modeloId) . " ";
+    $whereUlt       .= " AND p2.modelo_id = " . intval($modeloId) . " ";
+}
+
+/*
+ * Subconsulta "priorizadas":
+ * devuelve combinaciones válidas marca/modelo según prioridad=1
+ * y opcionalmente filtradas por marca/modelo.
+ */
 $sql = "
     SELECT
         p.id,
@@ -64,26 +93,61 @@ $sql = "
     FROM apify_publicaciones p
     INNER JOIN apify_corridas c
         ON c.corrida_id = p.corrida_id
+    INNER JOIN (
+        SELECT
+            pr.id_marca AS marca_id,
+            pr.id_model AS modelo_id,
+            MAX(ult.id_corrida_db) AS last_corrida_db_id
+        FROM (
+            SELECT
+                am.id_marca,
+                amo.id_model
+            FROM act_marcas am
+            INNER JOIN act_modelo amo
+                ON amo.id_marca = am.id_marca
+            WHERE am.prioridad = 1
+              AND amo.prioridad = 1
+              {$wherePrioridad}
+            GROUP BY am.id_marca, amo.id_model
+        ) pr
+        INNER JOIN (
+            SELECT
+                p2.marca_id,
+                p2.modelo_id,
+                c2.id AS id_corrida_db
+            FROM apify_publicaciones p2
+            INNER JOIN apify_corridas c2
+                ON c2.corrida_id = p2.corrida_id
+            WHERE c2.estado = 'ok'
+              {$whereUlt}
+            GROUP BY
+                p2.marca_id,
+                p2.modelo_id,
+                c2.id
+        ) ult
+            ON ult.marca_id = pr.id_marca
+           AND ult.modelo_id = pr.id_model
+        GROUP BY
+            pr.id_marca,
+            pr.id_model
+    ) x
+        ON x.marca_id = p.marca_id
+       AND x.modelo_id = p.modelo_id
+       AND x.last_corrida_db_id = c.id
     WHERE c.estado = 'ok'
-";
-
-if ($marcaId > 0) {
-    $sql .= " AND p.marca_id = " . intval($marcaId) . " ";
-}
-
-if ($modeloId > 0) {
-    $sql .= " AND p.modelo_id = " . intval($modeloId) . " ";
-}
-
-$sql .= "
+      {$whereOuter}
     ORDER BY
-        COALESCE(c.updated_at, c.created_at) DESC,
-        p.created_at DESC,
+        p.marca_txt ASC,
+        p.modelo_txt ASC,
         p.id DESC
     LIMIT " . intval($limit);
 
 $q = $db->query($sql);
-if (!$q) jerr("No se pudo consultar apify_publicaciones/apify_corridas.");
+if (!$q) {
+    jerr("No se pudo consultar apify_publicaciones/apify_corridas.", [
+        "sql" => $sql
+    ]);
+}
 
 $rows = [];
 while ($r = $db->fetch_array($q)) {
@@ -107,7 +171,9 @@ while ($r = $db->fetch_array($q)) {
 }
 
 jok([
-    "rows"  => $rows,
-    "count" => count($rows),
-    "limit" => $limit
+    "rows"      => $rows,
+    "count"     => count($rows),
+    "limit"     => $limit,
+    "marca_id"  => $marcaId,
+    "modelo_id" => $modeloId
 ]);

@@ -375,7 +375,6 @@ try {
 			<div class="mlapify-actions">
 				<button type="button" class="btn btn-small" id="btn_apify_filtrar">Filtrar</button>
 				<button type="button" class="btn btn-small" id="btn_apify_limpiar">Limpiar</button>
-				<button type="button" class="btn btn-small" id="btn_apify_buscar">Actualizar resultados</button>
 				<span class="mlapify-counter" id="apify_count">0 / 0</span>
 			</div>
 
@@ -680,16 +679,55 @@ try {
 		apifySetCount(APIFY_ROWS_VIEW.length, APIFY_ROWS_ALL.length);
 	}
 
-	function apifyApplyFilters() {
-		const marcaId = ($('#apify_marca').val() || '').toString();
-		const modeloId = ($('#apify_modelo').val() || '').toString();
+	function apifyBuildBatchUrl() {
+		let url = '/adm/modulos/mlapify/apify_resultados_batch.php?limit=3000';
 
-		const marcaTxt = ($('#apify_marca option:selected').text() || '').toString().trim();
-		let modeloTxt = ($('#apify_modelo option:selected').text() || '').toString().trim();
+		const marcaId = ($('#apify_marca').val() || '').toString().trim();
+		const modeloId = ($('#apify_modelo').val() || '').toString().trim();
 
-		const filtraModelo = (modeloId !== '' && modeloTxt !== '' && modeloTxt !== '-- Todos --' && modeloTxt !== '-- Seleccionar --');
-		const filtraMarca  = (marcaId !== '' && marcaTxt !== '' && marcaTxt !== '-- Seleccionar --');
+		if (marcaId !== '') {
+			url += '&marca_id=' + encodeURIComponent(marcaId);
+		}
+		if (modeloId !== '') {
+			url += '&modelo_id=' + encodeURIComponent(modeloId);
+		}
 
+		return url;
+	}
+
+	function apifyFetchBatch(estadoTexto) {
+		const url = apifyBuildBatchUrl();
+
+		apifySetEstado('cargando', 'Consultando última corrida...');
+		$('#tabla_apify_resultados tbody').html('<tr><td colspan="10" style="color:#777;">Cargando...</td></tr>');
+
+		$.getJSON(url, function(r){
+			if (r && r.ok) {
+				apifyLoadRows((r.rows || []), estadoTexto || 'Mostrando resultados de la última corrida.');
+			} else {
+				apifySetEstado('error', (r && r.mensaje) ? r.mensaje : 'No se pudieron cargar resultados.');
+				APIFY_ROWS_ALL = [];
+				APIFY_ROWS_VIEW = [];
+				APIFY_PAGE = 1;
+				apifyRefreshTable();
+			}
+		}).fail(function(xhr){
+			let msg = 'No se pudo cargar apify_resultados_batch.php';
+			if (xhr && xhr.responseText) {
+				try {
+					const j = JSON.parse(xhr.responseText);
+					if (j && j.mensaje) msg = j.mensaje;
+				} catch(e) {}
+			}
+			apifySetEstado('error', msg);
+			APIFY_ROWS_ALL = [];
+			APIFY_ROWS_VIEW = [];
+			APIFY_PAGE = 1;
+			apifyRefreshTable();
+		});
+	}
+
+	function apifyApplyFiltersLocal() {
 		const anioDesde = apifyToIntOrNull($('#apify_anio_desde').val());
 		const anioHasta = apifyToIntOrNull($('#apify_anio_hasta').val());
 		const kmDesde   = apifyToIntOrNull($('#apify_km_desde').val());
@@ -699,19 +737,6 @@ try {
 		const needKm   = (kmDesde !== null || kmHasta !== null);
 
 		APIFY_ROWS_VIEW = (APIFY_ROWS_ALL || []).filter(r => {
-			const rMarca = ((r && r.marca) ? String(r.marca) : '').trim();
-			const rModelo = ((r && r.modelo) ? String(r.modelo) : '').trim();
-
-			if (filtraMarca) {
-				if (!rMarca) return false;
-				if (rMarca.toLowerCase() !== marcaTxt.toLowerCase()) return false;
-			}
-
-			if (filtraModelo) {
-				if (!rModelo) return false;
-				if (rModelo.toLowerCase().indexOf(modeloTxt.toLowerCase()) === -1) return false;
-			}
-
 			const rAnio = apifyToIntOrNull(r ? r.anio : null);
 			const rKm   = apifyToIntOrNull(r ? r.km : null);
 
@@ -732,7 +757,7 @@ try {
 
 		APIFY_PAGE = 1;
 		apifyRefreshTable();
-		apifySetEstado('filtrado', 'Mostrando resultados filtrados (local).');
+		apifySetEstado('ok', 'Mostrando resultados de la última corrida filtrados localmente.');
 	}
 
 	function apifyClearFilters() {
@@ -743,10 +768,12 @@ try {
 		$('#apify_km_desde').val('');
 		$('#apify_km_hasta').val('');
 
-		APIFY_ROWS_VIEW = apifySortRows((APIFY_ROWS_ALL || []).slice(0));
+		APIFY_ROWS_ALL = [];
+		APIFY_ROWS_VIEW = [];
 		APIFY_PAGE = 1;
-		apifyRefreshTable();
-		apifySetEstado('ok', 'Filtros limpiados. Mostrando todo.');
+		apifySetCount(0, 0);
+
+		apifyFetchBatch('Mostrando resultados de la última corrida global.');
 	}
 
 	function cargarModelosEnSelect(idMarca, selectDestino, textoVacio, textoPrimeraOpcion) {
@@ -767,7 +794,7 @@ try {
 	}
 
 	function cargarModelosPorMarca(idMarca) {
-		cargarModelosEnSelect(idMarca, '#apify_modelo', '-- Seleccionar --', '-- Todos --');
+		cargarModelosEnSelect(idMarca, '#apify_modelo', '-- Seleccionar --', '-- Seleccionar --');
 	}
 
 	function cargarModelosCotiza(idMarca) {
@@ -898,7 +925,6 @@ try {
 				apifySetEstado('error', (res && res.mensaje) ? res.mensaje : 'No se pudo leer el estado');
 				if (apifyTimer) clearInterval(apifyTimer);
 				apifyTimer = null;
-				$('#btn_apify_buscar').prop('disabled', false);
 				return;
 			}
 
@@ -908,7 +934,6 @@ try {
 			if (res.estado === 'ok' || res.estado === 'error') {
 				if (apifyTimer) clearInterval(apifyTimer);
 				apifyTimer = null;
-				$('#btn_apify_buscar').prop('disabled', false);
 
 				$.getJSON('/adm/modulos/mlapify/apify_resultados.php', { corrida_id: apifyCorridaId }, function(r2){
 					if (r2 && r2.ok) {
@@ -917,7 +942,7 @@ try {
 				});
 			}
 		}).fail(function(xhr){
-			let msg = 'No se pudo contactar run_ml.php (HTTP ' + (xhr ? xhr.status : '') + ')';
+			let msg = 'No se pudo contactar apify_estado.php (HTTP ' + (xhr ? xhr.status : '') + ')';
 			if (xhr && xhr.responseText) {
 				try {
 					const j = JSON.parse(xhr.responseText);
@@ -928,12 +953,26 @@ try {
 				}
 			}
 			apifySetEstado('error', msg);
-			$('#btn_apify_buscar').prop('disabled', false);
 		});
 	}
 
 	$('#apify_marca').on('change', function(){
 		cargarModelosPorMarca($(this).val());
+		APIFY_ROWS_ALL = [];
+		APIFY_ROWS_VIEW = [];
+		APIFY_PAGE = 1;
+		apifySetCount(0, 0);
+		$('#tabla_apify_resultados tbody').html('<tr><td colspan="10" style="color:#777;">Seleccioná un modelo y presioná "Filtrar".</td></tr>');
+		apifySetEstado('-', 'Marca cambiada. Elegí modelo y presioná Filtrar.');
+	});
+
+	$('#apify_modelo').on('change', function(){
+		APIFY_ROWS_ALL = [];
+		APIFY_ROWS_VIEW = [];
+		APIFY_PAGE = 1;
+		apifySetCount(0, 0);
+		$('#tabla_apify_resultados tbody').html('<tr><td colspan="10" style="color:#777;">Presioná "Filtrar" para ver la última corrida del filtro seleccionado.</td></tr>');
+		apifySetEstado('-', 'Modelo cambiado. Presioná Filtrar.');
 	});
 
 	$('#cotiza_marca').on('change', function(){
@@ -941,11 +980,20 @@ try {
 	});
 
 	$('#btn_apify_filtrar').on('click', function(){
-		if (!APIFY_ROWS_ALL || !APIFY_ROWS_ALL.length) {
-			apifySetEstado('info', 'No hay resultados cargados para filtrar todavía.');
+		const marcaId = ($('#apify_marca').val() || '').toString().trim();
+		const modeloId = ($('#apify_modelo').val() || '').toString().trim();
+
+		if (marcaId !== '' || modeloId !== '') {
+			apifyFetchBatch('Mostrando resultados de la última corrida del filtro seleccionado.');
 			return;
 		}
-		apifyApplyFilters();
+
+		if (!APIFY_ROWS_ALL || !APIFY_ROWS_ALL.length) {
+			apifyFetchBatch('Mostrando resultados de la última corrida global.');
+			return;
+		}
+
+		apifyApplyFiltersLocal();
 	});
 
 	$('#btn_apify_limpiar').on('click', function(){
@@ -1043,54 +1091,11 @@ try {
 		});
 	});
 
-	$('#btn_apify_buscar').on('click', function(){
-		const $btn = $(this);
-		$btn.prop('disabled', true);
-
-		apifySetEstado('cargando', 'Actualizando resultados recientes...');
-		$('#tabla_apify_resultados tbody').html('<tr><td colspan="10" style="color:#777;">Cargando...</td></tr>');
-
-		$.getJSON('/adm/modulos/mlapify/apify_resultados_batch.php?limit=3000', function(r){
-			if (r && r.ok) {
-				apifyLoadRows((r.rows || []), 'Mostrando resultados recientes del batch.');
-			} else {
-				apifySetEstado('error', (r && r.mensaje) ? r.mensaje : 'No se pudieron cargar resultados del batch.');
-			}
-		}).fail(function(xhr){
-			let msg = 'No se pudo cargar apify_resultados_batch.php';
-			if (xhr && xhr.responseText) {
-				try {
-					const j = JSON.parse(xhr.responseText);
-					if (j && j.mensaje) msg = j.mensaje;
-				} catch(e) {}
-			}
-			apifySetEstado('error', msg);
-		}).always(function(){
-			$btn.prop('disabled', false);
-		});
-	});
-
 	$(function(){
 		apifySetCount(0, 0);
 		cotizaSetEstado('-', '-');
 		$('#apify_page_size').val(String(APIFY_PAGE_SIZE));
-
-		$.getJSON('/adm/modulos/mlapify/apify_resultados_batch.php?limit=3000', function(r){
-			if (r && r.ok) {
-				apifyLoadRows((r.rows || []), 'Mostrando resultados recientes del batch.');
-			} else {
-				apifySetEstado('error', (r && r.mensaje) ? r.mensaje : 'No se pudieron cargar resultados del batch.');
-			}
-		}).fail(function(xhr){
-			let msg = 'No se pudo cargar apify_resultados_batch.php';
-			if (xhr && xhr.responseText) {
-				try {
-					const j = JSON.parse(xhr.responseText);
-					if (j && j.mensaje) msg = j.mensaje;
-				} catch(e) {}
-			}
-			apifySetEstado('error', msg);
-		});
+		apifyFetchBatch('Mostrando resultados de la última corrida global.');
 	});
 </script>
 

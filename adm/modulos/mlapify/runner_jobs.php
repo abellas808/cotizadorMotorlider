@@ -164,24 +164,109 @@ function apify_get($url) {
     return [$code, $resp, $err];
 }
 
-function apify_wait_items($datasetId, $token, $limit = 100, $maxSeconds = 90) {
-    $start = time();
-    while (true) {
-        $itemsUrl = "https://api.apify.com/v2/datasets/".rawurlencode($datasetId)."/items?token=".rawurlencode($token)."&clean=true&limit=".$limit;
-        [$code, $resp, $err] = apify_get($itemsUrl);
+function apify_get_run($runId, $token) {
+    $url = "https://api.apify.com/v2/actor-runs/" . rawurlencode($runId) . "?token=" . rawurlencode($token);
+    [$code, $resp, $err] = apify_get($url);
 
-        if ($err) return ["ok"=>false, "error"=>"cURL dataset: ".$err, "items"=>[]];
-        if ($code >= 400) return ["ok"=>false, "error"=>"HTTP $code dataset", "body"=>$resp, "items"=>[]];
+    if ($err) return ["ok" => false, "error" => "cURL run status: " . $err];
+    if ($code >= 400) return ["ok" => false, "error" => "HTTP $code run status", "body" => $resp];
+
+    $json = json_decode($resp, true);
+    if (!is_array($json)) return ["ok" => false, "error" => "Respuesta inválida run status", "body" => $resp];
+
+    $data = $json['data'] ?? $json;
+    return ["ok" => true, "data" => $data];
+}
+
+function apify_wait_run_succeeded($runId, $token, $maxSeconds = 300) {
+    $start = time();
+
+    while (true) {
+        $r = apify_get_run($runId, $token);
+        if (!($r['ok'] ?? false)) {
+            return $r;
+        }
+
+        $data = $r['data'] ?? [];
+        $status = strtoupper((string)($data['status'] ?? ''));
+
+        if ($status === 'SUCCEEDED') {
+            return [
+                "ok" => true,
+                "status" => $status,
+                "data" => $data
+            ];
+        }
+
+        if (in_array($status, ['FAILED', 'ABORTED', 'TIMED-OUT'], true)) {
+            return [
+                "ok" => false,
+                "error" => "Run finalizó con estado {$status}",
+                "status" => $status,
+                "data" => $data
+            ];
+        }
+
+        if ((time() - $start) >= $maxSeconds) {
+            return [
+                "ok" => false,
+                "error" => "Timeout esperando run SUCCEEDED",
+                "status" => $status,
+                "data" => $data
+            ];
+        }
+
+        usleep(1500000);
+    }
+}
+
+function apify_fetch_all_items($datasetId, $token, $batchSize = 200) {
+    $allItems = [];
+    $offset = 0;
+
+    while (true) {
+        $url = "https://api.apify.com/v2/datasets/" . rawurlencode($datasetId) .
+               "/items?token=" . rawurlencode($token) .
+               "&limit=" . intval($batchSize) .
+               "&offset=" . intval($offset);
+
+        [$code, $resp, $err] = apify_get($url);
+
+        if ($err) {
+            return ["ok" => false, "error" => "cURL dataset: " . $err];
+        }
+
+        if ($code >= 400) {
+            return ["ok" => false, "error" => "HTTP $code dataset", "body" => $resp];
+        }
 
         $items = json_decode($resp, true);
-        if (!is_array($items)) $items = [];
+        if (!is_array($items)) {
+            return ["ok" => false, "error" => "Respuesta inválida dataset", "body" => $resp];
+        }
 
-        if (count($items) > 0) return ["ok"=>true, "items"=>$items, "count"=>count($items)];
+        $count = count($items);
 
-        if ((time() - $start) >= $maxSeconds) return ["ok"=>true, "items"=>[], "count"=>0, "timeout"=>true];
+        if ($count === 0) {
+            break;
+        }
 
-        usleep(800000);
+        $allItems = array_merge($allItems, $items);
+
+        // avanzar página
+        $offset += $batchSize;
+
+        // si vino menos que el batch, ya terminamos
+        if ($count < $batchSize) {
+            break;
+        }
     }
+
+    return [
+        "ok" => true,
+        "items" => $allItems,
+        "count" => count($allItems)
+    ];
 }
 
 function findSchemaForTable($db, $tableName) {
@@ -291,13 +376,14 @@ $mlUrl = rtrim($mlUrl, '/');
 $input = [
     "country_code" => "uy",
     "ignore_url_failures" => false,
-    "max_items_per_url" => 100,
+    "max_items_per_url" => 1000,
     "max_retries_per_url" => 5,
     "proxy" => [
         "useApifyProxy" => true,
         "apifyProxyGroups" => ["RESIDENTIAL"],
         "apifyProxyCountry" => "US"
     ],
+    "sort_by" => "PRICE",
     "urls" => [$mlUrl]
 ];
 
@@ -357,9 +443,53 @@ if ($runId) {
 }
 
 // ===============================
-// 4) Leer items dataset
+// 4) Esperar run completo y luego leer dataset
 // ===============================
-$w = apify_wait_items($datasetId, $token, 100, 90);
+if (!$runId) {
+    $estadoJob = ($intentos < 5) ? "REINTENTAR" : "ERROR";
+    $mins = min(60, 10 * $intentos);
+
+    update_corrida($db, $esc, $corridaId, 'error', 'No vino runId', json_encode($input, JSON_UNESCAPED_UNICODE), 0, 0);
+
+    $db->query("
+        UPDATE apify_jobs
+        SET estado='{$estadoJob}',
+            finished_at=NOW(),
+            next_run_at = ".(($estadoJob==='REINTENTAR') ? "DATE_ADD(NOW(), INTERVAL {$mins} MINUTE)" : "NULL").",
+            mensaje='No vino runId'
+        WHERE id={$jobId}
+    ");
+
+    jerr("No vino runId", ["job_id"=>$jobId, "corrida_id"=>$corridaId, "run"=>$run]);
+}
+
+$waitRun = apify_wait_run_succeeded($runId, $token, 300);
+if (!($waitRun['ok'] ?? false)) {
+    $estadoJob = ($intentos < 5) ? "REINTENTAR" : "ERROR";
+    $mins = min(60, 10 * $intentos);
+    $msg = $waitRun['error'] ?? 'Error esperando run';
+
+    update_corrida($db, $esc, $corridaId, 'error', $msg, json_encode($input, JSON_UNESCAPED_UNICODE), 0, 0);
+
+    $db->query("
+        UPDATE apify_jobs
+        SET estado='{$estadoJob}',
+            finished_at=NOW(),
+            next_run_at = ".(($estadoJob==='REINTENTAR') ? "DATE_ADD(NOW(), INTERVAL {$mins} MINUTE)" : "NULL").",
+            mensaje='".$esc($msg)."'
+        WHERE id={$jobId}
+    ");
+
+    jerr($msg, [
+        "job_id"=>$jobId,
+        "corrida_id"=>$corridaId,
+        "run_status"=>$waitRun['status'] ?? null
+    ]);
+}
+
+update_corrida($db, $esc, $corridaId, 'corriendo', 'Run SUCCEEDED. Leyendo dataset final...', json_encode($input, JSON_UNESCAPED_UNICODE), 0, 0);
+
+$w = apify_fetch_all_items($datasetId, $token, 1000);
 if (!($w['ok'] ?? false)) {
     $estadoJob = ($intentos < 5) ? "REINTENTAR" : "ERROR";
     $mins = min(60, 10 * $intentos);

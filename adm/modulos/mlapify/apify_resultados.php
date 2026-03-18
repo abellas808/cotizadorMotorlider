@@ -26,12 +26,22 @@ $q = $db->query("
 		marca_txt  AS marca,
 		modelo_txt AS modelo,
 		version,
-		titulo, precio, moneda, anio, km, ubicacion, url
+		titulo,
+        precio,
+        moneda,
+        anio,
+        km,
+        ubicacion,
+        url
 	FROM apify_publicaciones
 	WHERE corrida_id='" . $db->escape($corridaId) . "'
 	ORDER BY id DESC
-	LIMIT 200
 ");
+
+if (!$q) {
+	echo json_encode(['ok' => false, 'mensaje' => 'No se pudo consultar apify_publicaciones'], JSON_UNESCAPED_UNICODE);
+	exit;
+}
 
 while ($r = $db->fetch_array($q)) {
 	$rows[] = [
@@ -48,4 +58,9 @@ while ($r = $db->fetch_array($q)) {
 	];
 }
 
-echo json_encode(['ok' => true, 'rows' => $rows], JSON_UNESCAPED_UNICODE);
+echo json_encode([
+    'ok' => true,
+    'rows' => $rows,
+    'count' => count($rows),
+    'corrida_id' => $corridaId
+], JSON_UNESCAPED_UNICODE);
