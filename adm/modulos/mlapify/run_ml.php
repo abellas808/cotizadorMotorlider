@@ -90,8 +90,8 @@ function slugify($s) {
     ];
     $s = strtr($s, $map);
     $s = strtolower($s);
-    $s = preg_replace('/[^a-z0-9]+/','-', $s);
-    $s = preg_replace('/-+/','-', $s);
+    $s = preg_replace('/[^a-z0-9]+/', '-', $s);
+    $s = preg_replace('/-+/', '-', $s);
     $s = trim($s, '-');
     return $s;
 }
@@ -176,7 +176,7 @@ function apify_get($url) {
     return [$code, $resp, $err];
 }
 
-// ✅ Espera a que el dataset tenga items (evita items=0 por timing)
+// ✅ Espera a que el dataset tenga items
 function apify_wait_items($datasetId, $token, $limit = 100, $maxSeconds = 90) {
     $start = time();
     while (true) {
@@ -193,7 +193,7 @@ function apify_wait_items($datasetId, $token, $limit = 100, $maxSeconds = 90) {
 
         if ((time() - $start) >= $maxSeconds) return ["ok"=>true, "items"=>[], "count"=>0, "timeout"=>true];
 
-        usleep(800000); // 0.8s
+        usleep(800000);
     }
 }
 
@@ -201,7 +201,7 @@ function apify_wait_items($datasetId, $token, $limit = 100, $maxSeconds = 90) {
 // 1) Leer marca paramétrica
 // ===============================
 $manual_brand_id = intval(get_app_param($db, 'manual_brand_id', 0));
-$manual_limit_models = intval(get_app_param($db, 'manual_limit_models', 0)); // opcional
+$manual_limit_models = intval(get_app_param($db, 'manual_limit_models', 0));
 
 if ($manual_brand_id <= 0) {
     jerr("No está configurado app_params.manual_brand_id (marcos2022_api).");
@@ -276,7 +276,6 @@ foreach ($modelos as $m) {
 
     $mlUrl = build_ml_url($marca_txt, $modelo_txt);
 
-    // actualizar estado (texto)
     $now = date('Y-m-d H:i:s');
     $db->query("
         UPDATE apify_corridas
@@ -285,7 +284,6 @@ foreach ($modelos as $m) {
         WHERE corrida_id='".(method_exists($db,'escape')?$db->escape($corridaId):addslashes($corridaId))."'
     ");
 
-    // ====== run actor ======
     $input = [
         "country_code" => "uy",
         "ignore_url_failures" => false,
@@ -311,7 +309,6 @@ foreach ($modelos as $m) {
             "body"=>($code >= 400 ? $resp : null),
             "ml_url"=>$mlUrl,
         ];
-        // seguimos con el próximo modelo
         usleep(250000);
         continue;
     }
@@ -334,7 +331,6 @@ foreach ($modelos as $m) {
         continue;
     }
 
-    // ====== get dataset items (con espera) ======
     $w = apify_wait_items($datasetId, $token, 100, 90);
     if (!($w['ok'] ?? false)) {
         $modelos_error++;
@@ -364,7 +360,6 @@ foreach ($modelos as $m) {
         $vendedor = '';
         $es_oficial = 0;
 
-        // Parseo components
         $components = $it['components'] ?? [];
         if (is_array($components)) {
             foreach ($components as $c) {
@@ -400,7 +395,6 @@ foreach ($modelos as $m) {
             }
         }
 
-        // Detectar versión DESPUÉS del título
         $version_id = null;
         $version = null;
 
@@ -430,7 +424,6 @@ foreach ($modelos as $m) {
             }
         }
 
-        // Persistir
         $raw = json_encode($it, JSON_UNESCAPED_UNICODE);
         $now = date('Y-m-d H:i:s');
 
@@ -466,26 +459,6 @@ foreach ($modelos as $m) {
                 '".(method_exists($db,'escape')?$db->escape($raw):addslashes($raw))."',
                 '".$now."'
             )
-            ON DUPLICATE KEY UPDATE
-                corrida_id  = VALUES(corrida_id),
-                ml_id       = VALUES(ml_id),
-                titulo      = VALUES(titulo),
-                precio      = VALUES(precio),
-                moneda      = VALUES(moneda),
-                anio        = VALUES(anio),
-                km          = VALUES(km),
-                ubicacion   = VALUES(ubicacion),
-                vendedor    = VALUES(vendedor),
-                es_oficial  = VALUES(es_oficial),
-
-                marca_id    = VALUES(marca_id),
-                modelo_id   = VALUES(modelo_id),
-                marca_txt   = VALUES(marca_txt),
-                modelo_txt  = VALUES(modelo_txt),
-                version_id  = VALUES(version_id),
-                version     = VALUES(version),
-
-                raw_json    = VALUES(raw_json)
         ";
 
         $r = $db->query($sql);
@@ -496,7 +469,6 @@ foreach ($modelos as $m) {
     $guardados_global += $guardados;
     $modelos_ok++;
 
-    // mini pausa para no pegarle como loco
     usleep(300000);
 }
 
@@ -507,7 +479,7 @@ if ($modelos_error > 0) $msgFinal .= " (ver errores en respuesta)";
 
 $db->query("
     UPDATE apify_corridas
-    SET estado='".($modelos_error > 0 ? "ok" : "ok")."',
+    SET estado='ok',
         mensaje='".(method_exists($db,'escape')?$db->escape($msgFinal):addslashes($msgFinal))."',
         total_items=".intval($total_global).",
         items_guardados=".intval($guardados_global).",

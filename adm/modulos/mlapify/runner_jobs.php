@@ -25,7 +25,7 @@ function jerr($m, $a = []) { http_response_code(500); echo json_encode(array_mer
 
 if (!function_exists('curl_init')) jerr("PHP sin cURL (curl_init no existe).");
 
-// ====== DB del admin (igual que planner/run_ml) ======
+// ====== DB del admin ======
 require_once(__DIR__ . "/../../config/config.inc.php");
 require_once(__DIR__ . "/../../includes/database.php");
 require_once(__DIR__ . "/../../includes/funciones.php");
@@ -54,7 +54,9 @@ function load_env_file($path) {
         if ($v !== '' && (
             ($v[0] === '"' && substr($v, -1) === '"') ||
             ($v[0] === "'" && substr($v, -1) === "'")
-        )) $v = substr($v, 1, -1);
+        )) {
+            $v = substr($v, 1, -1);
+        }
 
         if (getenv($k) === false || getenv($k) === '') {
             putenv("$k=$v");
@@ -65,7 +67,6 @@ function load_env_file($path) {
     return true;
 }
 
-// ✅ Ruta: public_html/apicotizador/.env
 $envPath = dirname(__DIR__, 3) . "/apicotizador/.env";
 load_env_file($envPath);
 
@@ -252,11 +253,8 @@ function apify_fetch_all_items($datasetId, $token, $batchSize = 200) {
         }
 
         $allItems = array_merge($allItems, $items);
-
-        // avanzar página
         $offset += $batchSize;
 
-        // si vino menos que el batch, ya terminamos
         if ($count < $batchSize) {
             break;
         }
@@ -286,8 +284,6 @@ function findSchemaForTable($db, $tableName) {
 // ===============================
 // 1) Tomar 1 job (PENDIENTE/REINTENTAR)
 // ===============================
-$now = date('Y-m-d H:i:s');
-
 $db->query("START TRANSACTION");
 
 $qJob = $db->query("
@@ -636,23 +632,6 @@ foreach ($items as $it) {
             '".$esc($raw)."',
             '".$created_at."'
         )
-        ON DUPLICATE KEY UPDATE
-            ml_id=VALUES(ml_id),
-            titulo=VALUES(titulo),
-            precio=VALUES(precio),
-            moneda=VALUES(moneda),
-            anio=VALUES(anio),
-            km=VALUES(km),
-            ubicacion=VALUES(ubicacion),
-            vendedor=VALUES(vendedor),
-            es_oficial=VALUES(es_oficial),
-            marca_id=VALUES(marca_id),
-            modelo_id=VALUES(modelo_id),
-            marca_txt=VALUES(marca_txt),
-            modelo_txt=VALUES(modelo_txt),
-            version_id=VALUES(version_id),
-            version=VALUES(version),
-            raw_json=VALUES(raw_json)
     ";
 
     $r = $db->query($sql);

@@ -81,7 +81,7 @@ try {
 
 		$raw = json_encode($it, JSON_UNESCAPED_UNICODE);
 
-		$sql = "
+				$sql = "
 			INSERT INTO apify_publicaciones
 			(corrida_id, fuente, ml_id, titulo, precio, moneda, anio, km, ubicacion, url, vendedor, es_oficial, raw_json, created_at)
 			VALUES
@@ -101,22 +101,10 @@ try {
 				'".$db->escape($raw)."',
 				'".$now."'
 			)
-			ON DUPLICATE KEY UPDATE
-				corrida_id = VALUES(corrida_id),
-				ml_id = VALUES(ml_id),
-				titulo = VALUES(titulo),
-				precio = VALUES(precio),
-				moneda = VALUES(moneda),
-				anio = VALUES(anio),
-				km = VALUES(km),
-				ubicacion = VALUES(ubicacion),
-				vendedor = VALUES(vendedor),
-				es_oficial = VALUES(es_oficial),
-				raw_json = VALUES(raw_json)
 		";
 
-		$db->query($sql);
-		$guardados++;
+		$r = $db->query($sql);
+		if ($r) $guardados++;
 	}
 
 	// 4) Finalizar corrida
