@@ -9,6 +9,7 @@ class CotizacionService
 {
     private const DB_BATCH = 'marcos2022_api';
     private const DB_COTIZADOR = 'marcos2022_api_cotizador';
+    private const MAX_COMPARABLES = 6;
 
     private function logInterno(string $tag, array $payload = []): void
     {
@@ -319,8 +320,7 @@ class CotizacionService
             ];
         }
 
-        $itemsParaPersistir = [];
-        $prices = [];
+        $comparables = [];
 
         foreach ($publicaciones as $pub) {
             $precio = $this->toFloatOrNull($pub['precio'] ?? null);
@@ -404,40 +404,41 @@ class CotizacionService
                 continue;
             }
 
-            $prices[] = $precio;
-
-            $itemsParaPersistir[] = [
-                'cotizacion_id'     => null,
-                'run_id'            => $corridaId,
-                'brand'             => $brandTxt,
-                'modelo'            => $modeloTxt,
-                'source'            => 'apify_publicaciones',
-                'item_url'          => $url ?: null,
-                'item_id'           => $mlId ?: null,
-                'title'             => $titulo ?: null,
-                'seller'            => $vendedor ?: null,
-                'is_official_store' => $esOficial ? 1 : 0,
-                'price_value'       => $precio,
-                'price_currency'    => $moneda ?: null,
-                'item_year'         => $itemYear,
-                'item_km'           => $itemKm,
-                'location_txt'      => $ubicacion ?: null,
-                'passes_filters'    => 1,
-                'reject_reason'     => null,
-                'raw_json'          => $pub['raw_json'] ?? json_encode($pub, JSON_UNESCAPED_UNICODE),
+            $comparables[] = [
+                'precio' => $precio,
+                'row' => [
+                    'cotizacion_id'     => null,
+                    'run_id'            => $corridaId,
+                    'brand'             => $brandTxt,
+                    'modelo'            => $modeloTxt,
+                    'source'            => 'apify_publicaciones',
+                    'item_url'          => $url ?: null,
+                    'item_id'           => $mlId ?: null,
+                    'title'             => $titulo ?: null,
+                    'seller'            => $vendedor ?: null,
+                    'is_official_store' => $esOficial ? 1 : 0,
+                    'price_value'       => $precio,
+                    'price_currency'    => $moneda ?: null,
+                    'item_year'         => $itemYear,
+                    'item_km'           => $itemKm,
+                    'location_txt'      => $ubicacion ?: null,
+                    'passes_filters'    => 1,
+                    'reject_reason'     => null,
+                    'raw_json'          => $pub['raw_json'] ?? json_encode($pub, JSON_UNESCAPED_UNICODE),
+                ]
             ];
         }
 
         $this->logInterno('FILTER_RESULT', [
             'corrida_id'          => $corridaId,
             'publicaciones_total' => count($publicaciones),
-            'comparables_ok'      => count($prices),
+            'comparables_ok'      => count($comparables),
             'version_filtro'      => $ver,
             'anio_in'             => $anioIn,
             'km_in'               => $kmIn
         ]);
 
-        if (count($prices) === 0) {
+        if (count($comparables) === 0) {
             return [
                 'msg' => 'No se encontraron publicaciones comparables en la última corrida válida.',
                 'resultado' => null,
@@ -452,20 +453,60 @@ class CotizacionService
             ];
         }
 
+        usort($comparables, function (array $a, array $b) {
+            return $a['precio'] <=> $b['precio'];
+        });
+
+        $comparablesSeleccionados = array_slice($comparables, 0, self::MAX_COMPARABLES);
+        $itemsParaPersistir = [];
+        $prices = [];
+
+        foreach ($comparablesSeleccionados as $cmp) {
+            $prices[] = (float)$cmp['precio'];
+            $itemsParaPersistir[] = $cmp['row'];
+        }
+
         sort($prices);
-        $min = $prices[0];
-        $max = $prices[count($prices) - 1];
+
+        $min = round($prices[0], 2);
+        $max = round($prices[count($prices) - 1], 2);
         $avg = round(array_sum($prices) / count($prices), 2);
 
+        $this->logInterno('TOP_COMPARABLES_SELECTED', [
+            'corrida_id'              => $corridaId,
+            'comparables_filtrados'   => count($comparables),
+            'comparables_seleccionados'=> count($comparablesSeleccionados),
+            'prices'                  => $prices
+        ]);
+
+        $motorliderCalc = $this->calcularValoresMotorlider(
+            $brandTxt,
+            $modeloTxt,
+            $anioIn,
+            $kmIn,
+            $ver,
+            $avg,
+            $dataIn
+        );
+
         $resultado = [
-            'count'      => count($prices),
-            'min'        => $min,
-            'max'        => $max,
-            'avg'        => $avg,
-            'corrida_id' => $corridaId,
-            'brand'      => $brandTxt,
-            'modelo'     => $modeloTxt,
-            'version'    => $ver,
+            'count'                   => count($prices),
+            'count_filtrados'         => count($comparables),
+            'count_total_publicaciones'=> count($publicaciones),
+            'min'                     => $min,
+            'max'                     => $max,
+            'avg'                     => $avg,
+            'corrida_id'              => $corridaId,
+            'brand'                   => $brandTxt,
+            'modelo'                  => $modeloTxt,
+            'version'                 => $ver,
+            'comparables_limit'       => self::MAX_COMPARABLES,
+            'valor_minimo_motorlider' => $motorliderCalc['valor_minimo_motorlider'],
+            'valor_maximo_motorlider' => $motorliderCalc['valor_maximo_motorlider'],
+            'valor_promedio_motorlider' => $motorliderCalc['valor_promedio_motorlider'],
+            'promedio_mercado_6'      => $avg,
+            'promedio_base_motorlider'=> $motorliderCalc['promedio_base_motorlider'],
+            'porcentajes_aplicados'   => $motorliderCalc['porcentajes_aplicados'],
         ];
 
         $this->logInterno('RESULTADO_OK', $resultado);
@@ -494,27 +535,30 @@ class CotizacionService
             $cg_data['valor_maximo']   = $max;
             $cg_data['valor_promedio'] = $avg;
 
-            $cg_data['valor_minimo_autodata']   = null;
-            $cg_data['valor_maximo_autodata']   = null;
-            $cg_data['valor_promedio_autodata'] = null;
+            $cg_data['valor_minimo_autodata']   = $motorliderCalc['valor_minimo_motorlider'];
+            $cg_data['valor_maximo_autodata']   = $motorliderCalc['valor_maximo_motorlider'];
+            $cg_data['valor_promedio_autodata'] = $motorliderCalc['valor_promedio_motorlider'];
 
             $cg_data['datos'] = json_encode([
-                'corrida_id'          => $corridaId,
-                'brand_id'            => $brandId,
-                'model_input_id'      => $modelInputId,
-                'model_id'            => $modelId,
-                'brand_final'         => $brandTxt,
-                'modelo_final'        => $modeloTxt,
-                'anio'                => $anioIn,
-                'version'             => $ver,
-                'publicaciones_total' => count($publicaciones),
-                'items_ok'            => count($prices),
-                'fuente'              => 'apify_publicaciones'
+                'corrida_id'            => $corridaId,
+                'brand_id'              => $brandId,
+                'model_input_id'        => $modelInputId,
+                'model_id'              => $modelId,
+                'brand_final'           => $brandTxt,
+                'modelo_final'          => $modeloTxt,
+                'anio'                  => $anioIn,
+                'version'               => $ver,
+                'publicaciones_total'   => count($publicaciones),
+                'comparables_filtrados' => count($comparables),
+                'comparables_usados'    => count($prices),
+                'comparables_limit'     => self::MAX_COMPARABLES,
+                'fuente'                => 'apify_publicaciones',
+                'comparables_prices'    => $prices
             ], JSON_UNESCAPED_UNICODE);
 
             $cg_data['respuesta'] = json_encode($resultado, JSON_UNESCAPED_UNICODE);
             $cg_data['msg'] = 'OK';
-            $cg_data['porcentajes_aplicados'] = null;
+            $cg_data['porcentajes_aplicados'] = json_encode($motorliderCalc['porcentajes_aplicados'], JSON_UNESCAPED_UNICODE);
             $cg_data['cuenta'] = null;
 
             $cg_data['estado'] = 'PENDIENTE';
@@ -567,7 +611,10 @@ class CotizacionService
                         'comparables' => $resultado['count'],
                         'min' => $resultado['min'],
                         'max' => $resultado['max'],
-                        'avg' => $resultado['avg']
+                        'avg' => $resultado['avg'],
+                        'valor_minimo_motorlider' => $resultado['valor_minimo_motorlider'],
+                        'valor_maximo_motorlider' => $resultado['valor_maximo_motorlider'],
+                        'valor_promedio_motorlider' => $resultado['valor_promedio_motorlider']
                     ]
                 );
 
@@ -609,6 +656,325 @@ class CotizacionService
             'resultado' => $resultado,
             'id_cotizacion' => $id
         ];
+    }
+
+    private function calcularValoresMotorlider(
+        string $brandTxt,
+        string $modeloTxt,
+        ?int $anioIn,
+        ?int $kmIn,
+        string $version,
+        float $promedioMercado,
+        array $dataIn
+    ): array {
+        $porcentajesAplicados = [
+            'comparables_limit' => self::MAX_COMPARABLES,
+            'promedio_mercado_6' => $promedioMercado,
+            'tramo' => null,
+            'porcentaje_tramo' => null,
+            'nominal_tramo' => null,
+            'ajuste_ficha_tecnica' => 0,
+            'ajuste_duenios' => 0,
+            'ajuste_stock' => 0,
+            'tipo_operacion' => $dataIn['venta_permuta'] ?? null,
+            'factor_operacion_min' => null,
+            'factor_operacion_max' => null,
+        ];
+
+        $promedioBaseMotorlider = $promedioMercado;
+        $valorMinMotorlider = $promedioMercado;
+        $valorMaxMotorlider = $promedioMercado;
+        $valorPromMotorlider = $promedioMercado;
+
+        try {
+            $promedioBaseData = $this->calcularPromedioBaseMotorlider($promedioMercado);
+            $promedioBaseMotorlider = $promedioBaseData['valor'];
+            $porcentajesAplicados['tramo'] = $promedioBaseData['tramo'];
+            $porcentajesAplicados['porcentaje_tramo'] = $promedioBaseData['porcentaje'];
+            $porcentajesAplicados['nominal_tramo'] = $promedioBaseData['nominal'];
+
+            $ajusteFicha = $this->calcularAjusteVariablePorPorcentaje(
+                3,
+                'ficha_oficial',
+                (string)($dataIn['ficha_tecnica'] ?? ''),
+                $promedioBaseMotorlider
+            );
+
+            $ajusteDuenios = $this->calcularAjusteVariablePorPorcentaje(
+                4,
+                'cantidad_duenios',
+                $this->toIntOrNull($dataIn['cantidad_duenios'] ?? null),
+                $promedioBaseMotorlider
+            );
+
+            $ajusteStock = $this->calcularAjusteStock(
+                $brandTxt,
+                $modeloTxt,
+                $anioIn,
+                $kmIn,
+                $version,
+                $promedioBaseMotorlider
+            );
+
+            $porcentajesAplicados['ajuste_ficha_tecnica'] = $ajusteFicha;
+            $porcentajesAplicados['ajuste_duenios'] = $ajusteDuenios;
+            $porcentajesAplicados['ajuste_stock'] = $ajusteStock;
+
+            $valorMinMotorlider = round($promedioBaseMotorlider + $ajusteFicha + $ajusteDuenios + $ajusteStock, 2);
+
+            $tipoOperacion = trim((string)($dataIn['venta_permuta'] ?? ''));
+
+            if (strcasecmp($tipoOperacion, 'Entrega') === 0) {
+                $be = $this->obtenerPonderadorVenalPorKey('BE');
+                $bf = $this->obtenerPonderadorVenalPorKey('BF');
+
+                $porcentajesAplicados['factor_operacion_min'] = $be;
+                $porcentajesAplicados['factor_operacion_max'] = $bf;
+
+                $valorMinMotorlider = round($valorMinMotorlider * $be, 2);
+                $valorMaxMotorlider = round($valorMinMotorlider * $bf, 2);
+                $valorPromMotorlider = round(($valorMinMotorlider + $valorMaxMotorlider) / 2, 2);
+            } else {
+                $bd = $this->obtenerPonderadorVenalPorKey('BD');
+
+                $porcentajesAplicados['factor_operacion_min'] = 1;
+                $porcentajesAplicados['factor_operacion_max'] = $bd;
+
+                $valorMaxMotorlider = round($valorMinMotorlider * $bd, 2);
+                $valorPromMotorlider = round(($valorMinMotorlider + $valorMaxMotorlider) / 2, 2);
+            }
+        } catch (\Throwable $e) {
+            $this->logInterno('CALCULO_MOTORLIDER_FAIL', [
+                'error' => $e->getMessage(),
+                'brand' => $brandTxt,
+                'modelo' => $modeloTxt,
+                'anio' => $anioIn,
+                'km' => $kmIn,
+                'version' => $version,
+                'promedio_mercado' => $promedioMercado
+            ]);
+        }
+
+        return [
+            'promedio_base_motorlider' => $promedioBaseMotorlider,
+            'valor_minimo_motorlider' => $valorMinMotorlider,
+            'valor_maximo_motorlider' => $valorMaxMotorlider,
+            'valor_promedio_motorlider' => $valorPromMotorlider,
+            'porcentajes_aplicados' => $porcentajesAplicados
+        ];
+    }
+
+    private function calcularPromedioBaseMotorlider(float $average): array
+    {
+        $db = Database::getInstance();
+
+        $rowsVenal = $this->dbFetchAll($db, "SELECT `key`, porcentaje FROM " . self::DB_BATCH . ".ponderador_valor_venal");
+        $rowsNominal = $this->dbFetchAll($db, "SELECT `key`, nominal FROM " . self::DB_BATCH . ".ponderador_valor");
+
+        $mapPct = [];
+        foreach ($rowsVenal as $r) {
+            $mapPct[(string)$r['key']] = (float)$r['porcentaje'];
+        }
+
+        $mapNom = [];
+        foreach ($rowsNominal as $r) {
+            $mapNom[(string)$r['key']] = (float)$r['nominal'];
+        }
+
+        $tramos = [
+            ['name' => 'A/C',   'min' => 0,     'max' => 5000,  'pct' => 'A',  'nom' => 'C'],
+            ['name' => 'E/G',   'min' => 5000,  'max' => 10000, 'pct' => 'E',  'nom' => 'G'],
+            ['name' => 'I/K',   'min' => 10000, 'max' => 15000, 'pct' => 'I',  'nom' => 'K'],
+            ['name' => 'M/Ñ',   'min' => 15000, 'max' => 20000, 'pct' => 'M',  'nom' => 'Ñ'],
+            ['name' => 'P/R',   'min' => 20000, 'max' => 25000, 'pct' => 'P',  'nom' => 'R'],
+            ['name' => 'T/Y',   'min' => 25000, 'max' => 30000, 'pct' => 'T',  'nom' => 'Y'],
+            ['name' => 'AA/AC', 'min' => 30000, 'max' => 35000, 'pct' => 'AA', 'nom' => 'AC'],
+            ['name' => 'AE/AG', 'min' => 35000, 'max' => 40000, 'pct' => 'AE', 'nom' => 'AG'],
+            ['name' => 'AI/AK', 'min' => 40000, 'max' => 45000, 'pct' => 'AI', 'nom' => 'AK'],
+            ['name' => 'AM/AÑ', 'min' => 45000, 'max' => 50000, 'pct' => 'AM', 'nom' => 'AÑ'],
+            ['name' => 'AP/AR', 'min' => 50000, 'max' => 60000, 'pct' => 'AP', 'nom' => 'AR'],
+            ['name' => 'AT/AY', 'min' => 60000, 'max' => 70000, 'pct' => 'AT', 'nom' => 'AY'],
+        ];
+
+        foreach ($tramos as $t) {
+            $ok = false;
+
+            if ($t['min'] == 0) {
+                $ok = ($average < $t['max']);
+            } else {
+                $ok = ($average >= $t['min'] && $average <= $t['max']);
+            }
+
+            if ($ok) {
+                $pct = isset($mapPct[$t['pct']]) ? (float)$mapPct[$t['pct']] : 1.0;
+                $nom = isset($mapNom[$t['nom']]) ? (float)$mapNom[$t['nom']] : 0.0;
+
+                return [
+                    'valor' => round(($average * $pct) - $nom, 2),
+                    'tramo' => $t['name'],
+                    'porcentaje' => $pct,
+                    'nominal' => $nom
+                ];
+            }
+        }
+
+        return [
+            'valor' => round($average, 2),
+            'tramo' => 'SIN_TRAMO',
+            'porcentaje' => 1,
+            'nominal' => 0
+        ];
+    }
+
+    private function calcularAjusteVariablePorPorcentaje(int $tipo, string $campo, $valorBuscado, float $base): float
+    {
+        if ($valorBuscado === null || $valorBuscado === '') {
+            return 0.0;
+        }
+
+        $db = Database::getInstance();
+
+        if (is_numeric($valorBuscado)) {
+            $sql = "
+                SELECT porcentaje, operador
+                FROM " . self::DB_BATCH . ".variables
+                WHERE tipo = " . (int)$tipo . "
+                  AND {$campo} = " . (int)$valorBuscado . "
+                LIMIT 1
+            ";
+        } else {
+            $sql = "
+                SELECT porcentaje, operador
+                FROM " . self::DB_BATCH . ".variables
+                WHERE tipo = " . (int)$tipo . "
+                  AND {$campo} = " . $this->sqlQuote((string)$valorBuscado) . "
+                LIMIT 1
+            ";
+        }
+
+        $row = $this->dbFetchOne($db, $sql);
+        if (!$row) {
+            return 0.0;
+        }
+
+        $porcentaje = (float)($row['porcentaje'] ?? 0);
+        $operador = trim((string)($row['operador'] ?? '+'));
+        $valor = round(($porcentaje / 100) * $base, 2);
+
+        return ($operador === '-') ? -$valor : $valor;
+    }
+
+    private function calcularAjusteStock(
+        string $brandTxt,
+        string $modeloTxt,
+        ?int $anioIn,
+        ?int $kmIn,
+        string $version,
+        float $base
+    ): float {
+        if ($anioIn === null || $kmIn === null) {
+            return $this->calcularAjusteStockDefault($base);
+        }
+
+        $db = Database::getInstance();
+
+        $versionBuscar = trim((string)$version);
+        $sqlVersion = $versionBuscar !== ''
+            ? " AND version = " . $this->sqlQuote($versionBuscar) . " "
+            : " ";
+
+        $sql = "
+            SELECT kilometros, stock
+            FROM " . self::DB_BATCH . ".ponderador_valor_stock
+            WHERE marca = " . $this->sqlQuote($brandTxt) . "
+              AND modelo = " . $this->sqlQuote($modeloTxt) . "
+              AND anio = " . (int)$anioIn . "
+              {$sqlVersion}
+            LIMIT 1
+        ";
+
+        $row = $this->dbFetchOne($db, $sql);
+
+        if (!$row) {
+            return $this->calcularAjusteStockDefault($base);
+        }
+
+        $kmRef = $this->toIntOrNull($row['kilometros'] ?? null);
+        $stock = $this->toIntOrNull($row['stock'] ?? null);
+
+        if ($kmRef === null || $stock === null) {
+            return $this->calcularAjusteStockDefault($base);
+        }
+
+        $rowBusqueda = $this->dbFetchOne($db, "
+            SELECT busqueda
+            FROM " . self::DB_BATCH . ".ponderador_valor_busqueda
+            LIMIT 1
+        ");
+
+        $busqueda = $this->toIntOrNull($rowBusqueda['busqueda'] ?? null);
+        if ($busqueda === null) {
+            $busqueda = 0;
+        }
+
+        $maxKm = $kmRef + $busqueda;
+        $minKm = max(0, $kmRef - $busqueda);
+
+        if ($kmIn < $minKm || $kmIn > $maxKm) {
+            return $this->calcularAjusteStockPorNumero(0, $base);
+        }
+
+        if ($stock > 5) {
+            $stock = 5;
+        }
+
+        return $this->calcularAjusteStockPorNumero($stock, $base);
+    }
+
+    private function calcularAjusteStockDefault(float $base): float
+    {
+        return $this->calcularAjusteStockPorNumero(0, $base);
+    }
+
+    private function calcularAjusteStockPorNumero(int $stock, float $base): float
+    {
+        $db = Database::getInstance();
+
+        $row = $this->dbFetchOne($db, "
+            SELECT porcentaje, operador
+            FROM " . self::DB_BATCH . ".variables
+            WHERE tipo = 6
+              AND stock = " . (int)$stock . "
+            LIMIT 1
+        ");
+
+        if (!$row) {
+            return 0.0;
+        }
+
+        $porcentaje = (float)($row['porcentaje'] ?? 0);
+        $operador = trim((string)($row['operador'] ?? '+'));
+        $valor = round(($porcentaje / 100) * $base, 2);
+
+        return ($operador === '-') ? -$valor : $valor;
+    }
+
+    private function obtenerPonderadorVenalPorKey(string $key): float
+    {
+        $db = Database::getInstance();
+
+        $row = $this->dbFetchOne($db, "
+            SELECT porcentaje
+            FROM " . self::DB_BATCH . ".ponderador_valor_venal
+            WHERE `key` = " . $this->sqlQuote($key) . "
+            LIMIT 1
+        ");
+
+        if (!$row) {
+            return 1.0;
+        }
+
+        return (float)($row['porcentaje'] ?? 1);
     }
 
     private function obtenerUltimaCorridaValida(int $brandId, int $modelId): ?array
@@ -831,6 +1197,12 @@ class CotizacionService
         }
 
         throw new \Exception('No se pudo ejecutar dbFetchAll: interfaz DB no soportada.');
+    }
+
+    private function dbFetchOne($db, string $sql): ?array
+    {
+        $rows = $this->dbFetchAll($db, $sql);
+        return $rows[0] ?? null;
     }
 
     private function resolveBrandAndModelNamesLocal(int $brandId, int $modelId): array
