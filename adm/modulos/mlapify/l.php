@@ -680,7 +680,7 @@ try {
 	}
 
 	function apifyBuildBatchUrl() {
-		let url = '/adm/modulos/mlapify/apify_resultados_batch.php?limit=3000';
+		let url = '/adm/modulos/mlapify/apify_resultados_batch.php?limit=10000';
 
 		const marcaId = ($('#apify_marca').val() || '').toString().trim();
 		const modeloId = ($('#apify_modelo').val() || '').toString().trim();
