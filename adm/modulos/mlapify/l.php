@@ -872,12 +872,15 @@ try {
 			(res?.estado === 'ok') ||
 			(res?.estado === 'OK') ||
 			(res?.mensaje === 'OK') ||
+			(res?.msg === 'OK') ||
 			!!r;
 
 		let idCotizacion =
 			res?.id_cotizacion ||
 			res?.cotizacion_id ||
 			res?.id ||
+			res?.resultado?.id_cotizacion ||
+			res?.resultado?.cotizacion_id ||
 			'';
 
 		if (!ok || !r) {
@@ -886,7 +889,7 @@ try {
 					Error generando la cotización
 				</div>
 				<div style="margin-top:6px; color:#666;">
-					No vino un resultado válido desde la API.
+					${cotizaEscapeHtml(res?.mensaje || res?.msg || 'No vino un resultado válido desde la API.')}
 				</div>
 			`);
 			return;
@@ -896,6 +899,13 @@ try {
 		const max = r.max || r.valor_maximo || 0;
 		const avg = r.avg || r.valor_promedio || 0;
 		const count = r.count || r.total || 0;
+
+		const valorMinMotorlider = r.valor_minimo_motorlider || 0;
+		const valorMaxMotorlider = r.valor_maximo_motorlider || 0;
+		const valorPromMotorlider = r.valor_promedio_motorlider || 0;
+		const promedioBaseMotorlider = r.promedio_base_motorlider || 0;
+		const vpretendidoAplicado = !!r.vpretendido_aplicado;
+		const valorPretendidoCliente = r.valor_pretendido_cliente || sentPayload.valor_pretendido || '';
 
 		const nombre =
 			(sentPayload.nombre || '') +
@@ -911,44 +921,69 @@ try {
 		let html = '';
 
 		html += `
-			<div style="font-size:18px; font-weight:bold; color:#2d7a2d; margin-bottom:10px;">
+			<div style="font-size:18px; font-weight:bold; color:#2d7a2d; margin-bottom:12px;">
 				✔ Cotización OK
 			</div>
 		`;
 
-		html += `
-			<div style="margin-bottom:15px; line-height:1.8;">
-				<div><strong>ID Cotización:</strong> ${cotizaEscapeHtml(String(idCotizacion || ''))}</div>
-				<div><strong>Solicitante:</strong> ${cotizaEscapeHtml(nombre)}</div>
-				<div><strong>Email:</strong> ${cotizaEscapeHtml(email)}</div>
-				<div><strong>Vehículo:</strong> ${cotizaEscapeHtml(marca)} ${cotizaEscapeHtml(modelo)}</div>
-				<div><strong>Año:</strong> ${cotizaEscapeHtml(anio)}</div>
-				<div><strong>Kilómetros:</strong> ${cotizaEscapeHtml(km)}</div>
-				<div><strong>Valor pretendido:</strong> USD ${cotizaEscapeHtml(valor)}</div>
-			</div>
-		`;
+		if (vpretendidoAplicado) {
+			html += `
+				<div style="
+					background:#fff8e6;
+					border:1px solid #eed58f;
+					border-radius:8px;
+					padding:12px 14px;
+					margin-bottom:15px;
+					color:#7a5a00;
+				">
+					<strong>Observación:</strong> se tomó el valor pretendido del cliente porque es menor al valor mínimo calculado por Motorlider.
+				</div>
+			`;
+		}
 
 		html += `
-			<div style="
-				background:#f4f8ff;
-				border:1px solid #d0def5;
-				border-radius:8px;
-				padding:15px;
-				margin-bottom:15px;
-			">
-				<div style="font-size:18px; font-weight:bold; margin-bottom:8px;">
-					💰 Valor estimado: USD ${cotizaEscapeHtml(avg)}
+			<div style="display:flex; flex-wrap:wrap; gap:16px; margin-bottom:16px;">
+				<div style="flex:1 1 320px; background:#fff; border:1px solid #ddd; border-radius:8px; padding:14px;">
+					<div style="font-size:16px; font-weight:bold; margin-bottom:10px;">Datos de la solicitud</div>
+					<div style="line-height:1.8;">
+						<div><strong>ID Cotización:</strong> ${cotizaEscapeHtml(String(idCotizacion || ''))}</div>
+						<div><strong>Solicitante:</strong> ${cotizaEscapeHtml(nombre)}</div>
+						<div><strong>Email:</strong> ${cotizaEscapeHtml(email)}</div>
+						<div><strong>Vehículo:</strong> ${cotizaEscapeHtml(marca)} ${cotizaEscapeHtml(modelo)}</div>
+						<div><strong>Año:</strong> ${cotizaEscapeHtml(anio)}</div>
+						<div><strong>Kilómetros:</strong> ${cotizaEscapeHtml(km)}</div>
+						<div><strong>Valor pretendido:</strong> USD ${cotizaEscapeHtml(valor)}</div>
+					</div>
 				</div>
-				<div><strong>Mínimo:</strong> USD ${cotizaEscapeHtml(min)}</div>
-				<div><strong>Máximo:</strong> USD ${cotizaEscapeHtml(max)}</div>
-				<div><strong>Comparables usados:</strong> ${cotizaEscapeHtml(count)}</div>
+
+				<div style="flex:1 1 320px; background:#f4f8ff; border:1px solid #d0def5; border-radius:8px; padding:14px;">
+					<div style="font-size:16px; font-weight:bold; margin-bottom:10px;">Resultado de mercado</div>
+					<div style="line-height:1.8;">
+						<div><strong>Comparables usados:</strong> ${cotizaEscapeHtml(count)}</div>
+						<div><strong>Valor mínimo:</strong> USD ${cotizaEscapeHtml(min)}</div>
+						<div><strong>Valor máximo:</strong> USD ${cotizaEscapeHtml(max)}</div>
+						<div><strong>Promedio mercado:</strong> USD ${cotizaEscapeHtml(avg)}</div>
+					</div>
+				</div>
+
+				<div style="flex:1 1 320px; background:#f6fff5; border:1px solid #cfe6cc; border-radius:8px; padding:14px;">
+					<div style="font-size:16px; font-weight:bold; margin-bottom:10px;">Resultado Motorlider</div>
+					<div style="line-height:1.8;">
+						<div><strong>Promedio base Motorlider:</strong> USD ${cotizaEscapeHtml(promedioBaseMotorlider)}</div>
+						<div><strong>Valor mínimo Motorlider:</strong> USD ${cotizaEscapeHtml(valorMinMotorlider)}</div>
+						<div><strong>Valor máximo Motorlider:</strong> USD ${cotizaEscapeHtml(valorMaxMotorlider)}</div>
+						<div><strong>Valor promedio Motorlider:</strong> USD ${cotizaEscapeHtml(valorPromMotorlider)}</div>
+						<div><strong>Valor pretendido aplicado:</strong> ${vpretendidoAplicado ? 'Sí' : 'No'}</div>
+						<div><strong>Valor pretendido cliente:</strong> USD ${cotizaEscapeHtml(valorPretendidoCliente)}</div>
+					</div>
+				</div>
 			</div>
 		`;
 
 		if (idCotizacion) {
 			html += `
 				<div style="margin-top:10px;">
-					<div style="font-weight:bold; margin-bottom:8px;">
+					<div style="font-size:16px; font-weight:bold; margin-bottom:10px;">
 						Publicaciones utilizadas
 					</div>
 					<div id="tabla_comparables">Cargando...</div>
@@ -959,8 +994,12 @@ try {
 		cotizaSetResultadoHtml(html);
 
 		if (idCotizacion) {
+			const itemsUrl = window.location.origin + '/adm/modulos/mlapify/cotizacion_items.php?id=' + encodeURIComponent(idCotizacion) + '&_ts=' + Date.now();
+
 			setTimeout(function () {
-				$.getJSON('/adm/modulos/mlapify/cotizacion_items.php?id=' + idCotizacion, function (resp) {
+				$.getJSON(itemsUrl, function (resp) {
+
+					console.log('RESP ITEMS', resp);
 
 					if (!resp || !resp.ok || !resp.rows || !resp.rows.length) {
 						$('#tabla_comparables').html('<div style="color:#666;">Sin publicaciones.</div>');

@@ -112,7 +112,7 @@ class CotizacionService
                 ':id' => $idCotizacion,
             ];
 
-            $db->mysqlNonQuery($sql, $params);
+            $db->mysqlNonQuery(trim($sql), $params);
         } catch (\Throwable $e) {
             $this->logInterno('UPDATE_ESTADO_FAIL', [
                 'cotizacion_id' => $idCotizacion,
@@ -484,10 +484,10 @@ class CotizacionService
         $avg = round(array_sum($prices) / count($prices), 2);
 
         $this->logInterno('TOP_COMPARABLES_SELECTED', [
-            'corrida_id'              => $corridaId,
-            'comparables_filtrados'   => count($comparables),
+            'corrida_id'               => $corridaId,
+            'comparables_filtrados'    => count($comparables),
             'comparables_seleccionados'=> count($comparablesSeleccionados),
-            'prices'                  => $prices
+            'prices'                   => $prices
         ]);
 
         $motorliderCalc = $this->calcularValoresMotorlider(
@@ -501,23 +501,25 @@ class CotizacionService
         );
 
         $resultado = [
-            'count'                   => count($prices),
-            'count_filtrados'         => count($comparables),
-            'count_total_publicaciones'=> count($publicaciones),
-            'min'                     => $min,
-            'max'                     => $max,
-            'avg'                     => $avg,
-            'corrida_id'              => $corridaId,
-            'brand'                   => $brandTxt,
-            'modelo'                  => $modeloTxt,
-            'version'                 => $ver,
-            'comparables_limit'       => self::MAX_COMPARABLES,
-            'valor_minimo_motorlider' => $motorliderCalc['valor_minimo_motorlider'],
-            'valor_maximo_motorlider' => $motorliderCalc['valor_maximo_motorlider'],
+            'count'                     => count($prices),
+            'count_filtrados'           => count($comparables),
+            'count_total_publicaciones' => count($publicaciones),
+            'min'                       => $min,
+            'max'                       => $max,
+            'avg'                       => $avg,
+            'corrida_id'                => $corridaId,
+            'brand'                     => $brandTxt,
+            'modelo'                    => $modeloTxt,
+            'version'                   => $ver,
+            'comparables_limit'         => self::MAX_COMPARABLES,
+            'valor_minimo_motorlider'   => $motorliderCalc['valor_minimo_motorlider'],
+            'valor_maximo_motorlider'   => $motorliderCalc['valor_maximo_motorlider'],
             'valor_promedio_motorlider' => $motorliderCalc['valor_promedio_motorlider'],
-            'promedio_mercado_6'      => $avg,
-            'promedio_base_motorlider'=> $motorliderCalc['promedio_base_motorlider'],
-            'porcentajes_aplicados'   => $motorliderCalc['porcentajes_aplicados'],
+            'promedio_mercado_6'        => $avg,
+            'promedio_base_motorlider'  => $motorliderCalc['promedio_base_motorlider'],
+            'vpretendido_aplicado'      => $motorliderCalc['vpretendido_aplicado'],
+            'valor_pretendido_cliente'  => $motorliderCalc['valor_pretendido_cliente'],
+            'porcentajes_aplicados'     => $motorliderCalc['porcentajes_aplicados'],
         ];
 
         $this->logInterno('RESULTADO_OK', $resultado);
@@ -625,7 +627,8 @@ class CotizacionService
                         'avg' => $resultado['avg'],
                         'valor_minimo_motorlider' => $resultado['valor_minimo_motorlider'],
                         'valor_maximo_motorlider' => $resultado['valor_maximo_motorlider'],
-                        'valor_promedio_motorlider' => $resultado['valor_promedio_motorlider']
+                        'valor_promedio_motorlider' => $resultado['valor_promedio_motorlider'],
+                        'vpretendido_aplicado' => $resultado['vpretendido_aplicado'] ?? false
                     ]
                 );
 
@@ -690,12 +693,16 @@ class CotizacionService
             'tipo_operacion' => $dataIn['venta_permuta'] ?? null,
             'factor_operacion_min' => null,
             'factor_operacion_max' => null,
+            'vpretendido_aplicado' => false,
+            'valor_pretendido_cliente' => null,
         ];
 
         $promedioBaseMotorlider = $promedioMercado;
         $valorMinMotorlider = $promedioMercado;
         $valorMaxMotorlider = $promedioMercado;
         $valorPromMotorlider = $promedioMercado;
+        $vpretendidoAplicado = false;
+        $valorPretendidoCliente = $this->toFloatOrNull($dataIn['valor_pretendido'] ?? null);
 
         try {
             $promedioBaseData = $this->calcularPromedioBaseMotorlider($promedioMercado);
@@ -754,6 +761,28 @@ class CotizacionService
                 $valorMaxMotorlider = round($valorMinMotorlider * $bd, 2);
                 $valorPromMotorlider = round(($valorMinMotorlider + $valorMaxMotorlider) / 2, 2);
             }
+
+            // Regla heredada del sistema viejo:
+            // si el valor pretendido es menor al mínimo calculado por Motorlider,
+            // se usa el valor pretendido del cliente.
+            if ($valorPretendidoCliente !== null && $valorPretendidoCliente > 0) {
+                $porcentajesAplicados['valor_pretendido_cliente'] = $valorPretendidoCliente;
+
+                if ($valorPretendidoCliente < $valorMinMotorlider) {
+                    $vpretendidoAplicado = true;
+                    $porcentajesAplicados['vpretendido_aplicado'] = true;
+
+                    $this->logInterno('REGLA_VPRETENDIDO_APLICADA', [
+                        'valor_pretendido' => $valorPretendidoCliente,
+                        'valor_min_motorlider_calculado' => $valorMinMotorlider,
+                        'tipo_operacion' => $tipoOperacion
+                    ]);
+
+                    $valorMinMotorlider = round($valorPretendidoCliente, 2);
+                    $valorMaxMotorlider = round($valorPretendidoCliente, 2);
+                    $valorPromMotorlider = round($valorPretendidoCliente, 2);
+                }
+            }
         } catch (\Throwable $e) {
             $this->logInterno('CALCULO_MOTORLIDER_FAIL', [
                 'error' => $e->getMessage(),
@@ -771,6 +800,8 @@ class CotizacionService
             'valor_minimo_motorlider' => $valorMinMotorlider,
             'valor_maximo_motorlider' => $valorMaxMotorlider,
             'valor_promedio_motorlider' => $valorPromMotorlider,
+            'vpretendido_aplicado' => $vpretendidoAplicado,
+            'valor_pretendido_cliente' => $valorPretendidoCliente,
             'porcentajes_aplicados' => $porcentajesAplicados
         ];
     }
