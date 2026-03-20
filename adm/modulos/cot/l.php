@@ -7,8 +7,8 @@ if (!isset($sistema_iniciado)) exit();
 // ***************************************************************************************************
 // Paginado
 // ***************************************************************************************************
-$pagina = intval($_GET['p']);
-if ($pagina == 0) {
+$pagina = isset($_GET['p']) ? intval($_GET['p']) : 1;
+if ($pagina <= 0) {
 	$pagina = 1;
 }
 
@@ -25,10 +25,13 @@ if ($busqueda != '') {
 		$term = trim($busqueda_array[$i]);
 		if ($term == '') continue;
 
+		$term = addslashes($term);
+
 		$sql_b .= ' and (
 			c.id_cotizaciones_generadas like "%' . $term . '%"
-			or am.nombre like "%' . $term . '%"
-			or mo.nombre like "%' . $term . '%"
+			or c.auto like "%' . $term . '%"
+			or c.marca like "%' . $term . '%"
+			or c.familia like "%' . $term . '%"
 			or c.anio like "%' . $term . '%"
 			or c.kilometros like "%' . $term . '%"
 			or c.nombre like "%' . $term . '%"
@@ -46,8 +49,8 @@ if ($sql_b != '') $sql_b = ' and ' . $sql_b;
 // ***************************************************************************************************
 // Ordenado
 // ***************************************************************************************************
-$orden_campo = intval($_GET['o']);
-$orden_dir = intval($_GET['od']);
+$orden_campo = isset($_GET['o']) ? intval($_GET['o']) : 0;
+$orden_dir = isset($_GET['od']) ? intval($_GET['od']) : 0;
 
 switch ($orden_dir) {
 	case 1:
@@ -61,30 +64,27 @@ switch ($orden_dir) {
 
 switch ($orden_campo) {
 	case 1:
-		$sql_o = 'am.nombre';
+		$sql_o = 'c.auto';
 		break;
 	case 2:
-		$sql_o = 'mo.nombre';
-		break;
-	case 3:
 		$sql_o = 'c.anio';
 		break;
-	case 4:
+	case 3:
 		$sql_o = 'c.kilometros';
 		break;
-	case 5:
+	case 4:
 		$sql_o = 'c.nombre';
 		break;
-	case 6:
+	case 5:
 		$sql_o = 'c.telefono';
 		break;
-	case 7:
+	case 6:
 		$sql_o = 'c.email';
 		break;
-	case 8:
+	case 7:
 		$sql_o = 'c.fecha';
 		break;
-	case 9:
+	case 8:
 		$sql_o = 'c.estado';
 		break;
 	default:
@@ -103,8 +103,6 @@ $anio_get = isset($_GET['anio']) ? intval($_GET['anio']) : date('Y');
 // ***************************************************************************************************
 $sql_from = '
 	FROM cotizaciones_generadas c
-	LEFT JOIN act_marcas am ON am.id_marca = c.marca
-	LEFT JOIN act_modelo mo ON mo.id_model = c.familia AND mo.id_marca = c.marca
 	WHERE MONTH(c.fecha) = ' . $mes_get . '
 	  AND YEAR(c.fecha) = ' . $anio_get . '
 	  ' . $sql_b . '
@@ -112,9 +110,7 @@ $sql_from = '
 
 $listado = $db->query('
 	SELECT SQL_CALC_FOUND_ROWS
-		c.*,
-		am.nombre AS marca_nombre,
-		mo.nombre AS modelo_nombre
+		c.*
 	' . $sql_from . '
 	ORDER BY ' . $sql_o . ' ' . $sql_od . '
 	LIMIT ' . (($pagina - 1) * $config['pagina_cant']) . ', ' . $config['pagina_cant'] . ';
@@ -139,7 +135,7 @@ $cant_cotizaciones = $db->query_first('
 		<input
 			type="text"
 			id="b"
-			onkeypress="if (event.keyCode == 13) { window.location.href='?m=<?php echo $modulo['prefijo'] . '_l'; ?>&mes='+$('#mes').val()+'&anio='+$('#anio').val()<?php if ($orden_campo != 0) { echo '&o=' . $orden_campo; } ?><?php if ($orden_dir != 0) { echo '&od=' . $orden_dir; } ?><?php if ($inactivo != 0) { echo '&e=' . $inactivo; } ?>&b='+$('#b').val(); }"
+			onkeypress="if (event.keyCode == 13) { window.location.href='?m=<?php echo $modulo['prefijo'] . '_l'; ?>&mes='+$('#mes').val()+'&anio='+$('#anio').val()<?php if ($orden_campo != 0) { echo '&o=' . $orden_campo; } ?><?php if ($orden_dir != 0) { echo '&od=' . $orden_dir; } ?><?php if (isset($inactivo) && $inactivo != 0) { echo '&e=' . $inactivo; } ?>&b='+$('#b').val(); }"
 			value="<?php echo_s($busqueda); ?>"
 			maxlength="30"
 		/>
@@ -148,14 +144,14 @@ $cant_cotizaciones = $db->query_first('
 			<button
 				type="button"
 				class="btn btn-default btn-small btn_cerrar"
-				onclick="window.location.href='?m=<?php echo $modulo['prefijo'] . '_l'; ?>&mes='+$('#mes').val()+'&anio='+$('#anio').val()<?php if ($orden_campo != 0) { echo '&o=' . $orden_campo; } ?><?php if ($orden_dir != 0) { echo '&od=' . $orden_dir; } ?><?php if ($inactivo != 0) { echo '&e=' . $inactivo; } ?>';"
+				onclick="window.location.href='?m=<?php echo $modulo['prefijo'] . '_l'; ?>&mes='+$('#mes').val()+'&anio='+$('#anio').val()<?php if ($orden_campo != 0) { echo '&o=' . $orden_campo; } ?><?php if ($orden_dir != 0) { echo '&od=' . $orden_dir; } ?><?php if (isset($inactivo) && $inactivo != 0) { echo '&e=' . $inactivo; } ?>';"
 			>X</button>
 		<?php } ?>
 
 		<button
 			type="button"
 			class="btn btn-default btn-small"
-			onclick="window.location.href='?m=<?php echo $modulo['prefijo'] . '_l'; ?>&mes='+$('#mes').val()+'&anio='+$('#anio').val()<?php if ($orden_campo != 0) { echo '&o=' . $orden_campo; } ?><?php if ($orden_dir != 0) { echo '&od=' . $orden_dir; } ?><?php if ($inactivo != 0) { echo '&e=' . $inactivo; } ?>&b='+$('#b').val();"
+			onclick="window.location.href='?m=<?php echo $modulo['prefijo'] . '_l'; ?>&mes='+$('#mes').val()+'&anio='+$('#anio').val()<?php if ($orden_campo != 0) { echo '&o=' . $orden_campo; } ?><?php if ($orden_dir != 0) { echo '&od=' . $orden_dir; } ?><?php if (isset($inactivo) && $inactivo != 0) { echo '&e=' . $inactivo; } ?>&b='+$('#b').val();"
 		>Buscar</button>
 	</div>
 
@@ -163,7 +159,7 @@ $cant_cotizaciones = $db->query_first('
 	<hr>
 
 	<div style="margin-bottom: 10px; display: inline;">Mes:
-		<select name="mes" id="mes" style="width: 110px" onchange="window.location.href='?m=<?php echo $modulo['prefijo']; ?>_l&mes='+$(this).val()+'&anio='+$('#anio').val()<?php if ($busqueda != '') { echo '&b=' . $busqueda; } ?><?php if ($orden_campo != 0) { echo '&o=' . $orden_campo; } ?><?php if ($orden_dir != 0) { echo '&od=' . $orden_dir; } ?>'">
+		<select name="mes" id="mes" style="width: 110px" onchange="window.location.href='?m=<?php echo $modulo['prefijo']; ?>_l&mes='+$(this).val()+'&anio='+$('#anio').val()<?php if ($busqueda != '') { echo '&b=' . urlencode($busqueda); } ?><?php if ($orden_campo != 0) { echo '&o=' . $orden_campo; } ?><?php if ($orden_dir != 0) { echo '&od=' . $orden_dir; } ?>'">
 			<option value="1" <?php echo $mes_get == 1 ? 'selected' : ''; ?>>Enero</option>
 			<option value="2" <?php echo $mes_get == 2 ? 'selected' : ''; ?>>Febrero</option>
 			<option value="3" <?php echo $mes_get == 3 ? 'selected' : ''; ?>>Marzo</option>
@@ -180,7 +176,7 @@ $cant_cotizaciones = $db->query_first('
 	</div>
 
 	<div style="display: inline; margin-left: 10px;">Año:
-		<select id="anio" name="anio" style="width: 110px" onchange="window.location.href='?m=<?php echo $modulo['prefijo']; ?>_l&mes='+$('#mes').val()+'&anio='+$(this).val()<?php if ($busqueda != '') { echo '&b=' . $busqueda; } ?><?php if ($orden_campo != 0) { echo '&o=' . $orden_campo; } ?><?php if ($orden_dir != 0) { echo '&od=' . $orden_dir; } ?>'">
+		<select id="anio" name="anio" style="width: 110px" onchange="window.location.href='?m=<?php echo $modulo['prefijo']; ?>_l&mes='+$('#mes').val()+'&anio='+$(this).val()<?php if ($busqueda != '') { echo '&b=' . urlencode($busqueda); } ?><?php if ($orden_campo != 0) { echo '&o=' . $orden_campo; } ?><?php if ($orden_dir != 0) { echo '&od=' . $orden_dir; } ?>'">
 			<?php for ($i = 2021; $i <= date('Y'); $i++) : ?>
 				<option value="<?php echo $i; ?>" <?php echo $i == $anio_get ? 'selected' : ''; ?>><?php echo $i; ?></option>
 			<?php endfor; ?>
@@ -207,81 +203,73 @@ $cant_cotizaciones = $db->query_first('
 			<tr>
 				<th>
 					<?php if ($orden_campo == 0) { ?>
-						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . $busqueda; } ?><?php if ($inactivo != 0) { echo '&e=' . $inactivo; } ?>&o=0&od=<?php echo $orden_dir == 0 ? 1 : 0; ?>"><strong>Codigo <?php echo $od_chr; ?></strong></a>
+						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . urlencode($busqueda); } ?><?php if (isset($inactivo) && $inactivo != 0) { echo '&e=' . $inactivo; } ?>&o=0&od=<?php echo $orden_dir == 0 ? 1 : 0; ?>"><strong>Codigo <?php echo $od_chr; ?></strong></a>
 					<?php } else { ?>
-						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . $busqueda; } ?><?php if ($inactivo != 0) { echo '&e=' . $inactivo; } ?>&o=0">Codigo</a>
+						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . urlencode($busqueda); } ?><?php if (isset($inactivo) && $inactivo != 0) { echo '&e=' . $inactivo; } ?>&o=0">Codigo</a>
 					<?php } ?>
 				</th>
 
 				<th>
 					<?php if ($orden_campo == 1) { ?>
-						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . $busqueda; } ?>&o=1&od=<?php echo $orden_dir == 0 ? 1 : 0; ?>"><strong>Marca <?php echo $od_chr; ?></strong></a>
+						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . urlencode($busqueda); } ?>&o=1&od=<?php echo $orden_dir == 0 ? 1 : 0; ?>"><strong>Auto <?php echo $od_chr; ?></strong></a>
 					<?php } else { ?>
-						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . $busqueda; } ?>&o=1">Marca</a>
+						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . urlencode($busqueda); } ?>&o=1">Auto</a>
 					<?php } ?>
 				</th>
 
 				<th>
 					<?php if ($orden_campo == 2) { ?>
-						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . $busqueda; } ?>&o=2&od=<?php echo $orden_dir == 0 ? 1 : 0; ?>"><strong>Modelo <?php echo $od_chr; ?></strong></a>
+						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . urlencode($busqueda); } ?>&o=2&od=<?php echo $orden_dir == 0 ? 1 : 0; ?>"><strong>Año <?php echo $od_chr; ?></strong></a>
 					<?php } else { ?>
-						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . $busqueda; } ?>&o=2">Modelo</a>
+						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . urlencode($busqueda); } ?>&o=2">Año</a>
 					<?php } ?>
 				</th>
 
 				<th>
 					<?php if ($orden_campo == 3) { ?>
-						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . $busqueda; } ?>&o=3&od=<?php echo $orden_dir == 0 ? 1 : 0; ?>"><strong>Año <?php echo $od_chr; ?></strong></a>
+						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . urlencode($busqueda); } ?>&o=3&od=<?php echo $orden_dir == 0 ? 1 : 0; ?>"><strong>Km <?php echo $od_chr; ?></strong></a>
 					<?php } else { ?>
-						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . $busqueda; } ?>&o=3">Año</a>
+						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . urlencode($busqueda); } ?>&o=3">Km</a>
 					<?php } ?>
 				</th>
 
 				<th>
 					<?php if ($orden_campo == 4) { ?>
-						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . $busqueda; } ?>&o=4&od=<?php echo $orden_dir == 0 ? 1 : 0; ?>"><strong>Km <?php echo $od_chr; ?></strong></a>
+						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . urlencode($busqueda); } ?>&o=4&od=<?php echo $orden_dir == 0 ? 1 : 0; ?>"><strong>Nombre <?php echo $od_chr; ?></strong></a>
 					<?php } else { ?>
-						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . $busqueda; } ?>&o=4">Km</a>
+						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . urlencode($busqueda); } ?>&o=4">Nombre</a>
 					<?php } ?>
 				</th>
 
 				<th>
 					<?php if ($orden_campo == 5) { ?>
-						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . $busqueda; } ?>&o=5&od=<?php echo $orden_dir == 0 ? 1 : 0; ?>"><strong>Nombre <?php echo $od_chr; ?></strong></a>
+						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . urlencode($busqueda); } ?>&o=5&od=<?php echo $orden_dir == 0 ? 1 : 0; ?>"><strong>Telefono <?php echo $od_chr; ?></strong></a>
 					<?php } else { ?>
-						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . $busqueda; } ?>&o=5">Nombre</a>
+						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . urlencode($busqueda); } ?>&o=5">Telefono</a>
 					<?php } ?>
 				</th>
 
 				<th>
 					<?php if ($orden_campo == 6) { ?>
-						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . $busqueda; } ?>&o=6&od=<?php echo $orden_dir == 0 ? 1 : 0; ?>"><strong>Telefono <?php echo $od_chr; ?></strong></a>
+						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . urlencode($busqueda); } ?>&o=6&od=<?php echo $orden_dir == 0 ? 1 : 0; ?>"><strong>Email <?php echo $od_chr; ?></strong></a>
 					<?php } else { ?>
-						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . $busqueda; } ?>&o=6">Telefono</a>
+						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . urlencode($busqueda); } ?>&o=6">Email</a>
 					<?php } ?>
 				</th>
 
 				<th>
 					<?php if ($orden_campo == 7) { ?>
-						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . $busqueda; } ?>&o=7&od=<?php echo $orden_dir == 0 ? 1 : 0; ?>"><strong>Email <?php echo $od_chr; ?></strong></a>
+						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . urlencode($busqueda); } ?>&o=7&od=<?php echo $orden_dir == 0 ? 1 : 0; ?>"><strong>Fecha <?php echo $od_chr; ?></strong></a>
 					<?php } else { ?>
-						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . $busqueda; } ?>&o=7">Email</a>
+						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . urlencode($busqueda); } ?>&o=7">Fecha</a>
 					<?php } ?>
 				</th>
 
 				<th>
 					<?php if ($orden_campo == 8) { ?>
-						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . $busqueda; } ?>&o=8&od=<?php echo $orden_dir == 0 ? 1 : 0; ?>"><strong>Fecha <?php echo $od_chr; ?></strong></a>
+						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . urlencode($busqueda); } ?>&o=8&od=<?php echo $orden_dir == 0 ? 1 : 0; ?>"><strong>Estado <?php echo $od_chr; ?></strong></a>
 					<?php } else { ?>
-						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . $busqueda; } ?>&o=8">Fecha</a>
-					<?php } ?>
-				</th>
-
-				<th>
-					<?php if ($orden_campo == 9) { ?>
-						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . $busqueda; } ?>&o=9&od=<?php echo $orden_dir == 0 ? 1 : 0; ?>"><strong>Estado <?php echo $od_chr; ?></strong></a>
-					<?php } else { ?>
-						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . $busqueda; } ?>&o=9">Estado</a>
+						<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . urlencode($busqueda); } ?>&o=8">Estado</a>
 					<?php } ?>
 				</th>
 			</tr>
@@ -289,7 +277,7 @@ $cant_cotizaciones = $db->query_first('
 
 		<tfoot>
 			<tr>
-				<td height="30" colspan="10" valign="bottom">
+				<td height="30" colspan="9" valign="bottom">
 					<div class="info_seleccionados">
 						<span id="cantidad_seleccionados"></span>
 						<?php if ($_SESSION[$config['codigo_unico']]['login_permisos']['mod'] > 1) { ?>
@@ -302,7 +290,7 @@ $cant_cotizaciones = $db->query_first('
 					<?php if ($total_paginas > 1) { ?>
 						<div class="paginas">
 							<?php if ($pagina > 1) { ?>
-								<a href="?m=<?php echo $modulo['prefijo']; ?>_l&p=<?php echo $pagina - 1; ?>&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . $busqueda; } ?><?php if ($orden_campo != 0) { echo '&o=' . $orden_campo; } ?><?php if ($orden_dir != 0) { echo '&od=' . $orden_dir; } ?><?php if ($inactivo != 0) { echo '&e=' . $inactivo; } ?>">< anterior</a>
+								<a href="?m=<?php echo $modulo['prefijo']; ?>_l&p=<?php echo $pagina - 1; ?>&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . urlencode($busqueda); } ?><?php if ($orden_campo != 0) { echo '&o=' . $orden_campo; } ?><?php if ($orden_dir != 0) { echo '&od=' . $orden_dir; } ?><?php if (isset($inactivo) && $inactivo != 0) { echo '&e=' . $inactivo; } ?>">< anterior</a>
 							<?php } ?>
 
 							<select id="select_pagina" class="input-mini">
@@ -312,7 +300,7 @@ $cant_cotizaciones = $db->query_first('
 							</select> / <?php echo $total_paginas; ?>
 
 							<?php if ($pagina < $total_paginas) { ?>
-								<a href="?m=<?php echo $modulo['prefijo']; ?>_l&p=<?php echo $pagina + 1; ?>&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . $busqueda; } ?><?php if ($orden_campo != 0) { echo '&o=' . $orden_campo; } ?><?php if ($orden_dir != 0) { echo '&od=' . $orden_dir; } ?><?php if ($inactivo != 0) { echo '&e=' . $inactivo; } ?>">siguiente ></a>
+								<a href="?m=<?php echo $modulo['prefijo']; ?>_l&p=<?php echo $pagina + 1; ?>&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($busqueda != '') { echo '&b=' . urlencode($busqueda); } ?><?php if ($orden_campo != 0) { echo '&o=' . $orden_campo; } ?><?php if ($orden_dir != 0) { echo '&od=' . $orden_dir; } ?><?php if (isset($inactivo) && $inactivo != 0) { echo '&e=' . $inactivo; } ?>">siguiente ></a>
 							<?php } ?>
 						</div>
 					<?php } ?>
@@ -334,6 +322,9 @@ $cant_cotizaciones = $db->query_first('
 					$estado_color = '#856404';
 					$estado_bg = '#fff3cd';
 				}
+
+				$autoMostrar = trim((string)($entrada['auto'] ?? ''));
+				if ($autoMostrar === '') $autoMostrar = '-';
 				?>
 				<tr>
 					<td>
@@ -342,8 +333,7 @@ $cant_cotizaciones = $db->query_first('
 						</a>
 					</td>
 
-					<td><?php echo_s($entrada['marca_nombre']); ?></td>
-					<td><?php echo_s($entrada['modelo_nombre']); ?></td>
+					<td><?php echo_s($autoMostrar); ?></td>
 					<td><?php echo_s($entrada['anio']); ?></td>
 					<td><?php echo_s($entrada['kilometros']); ?></td>
 					<td><?php echo_s($entrada['nombre']); ?></td>
@@ -379,10 +369,10 @@ $cant_cotizaciones = $db->query_first('
 		$('#select_pagina').bind('change', function(e) {
 			window.location.href = '?m=<?php echo $modulo['prefijo']; ?>_l&p=' + $(this).val() +
 				'&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?>' +
-				'<?php if ($busqueda != '') { echo '&b=' . $busqueda; } ?>' +
+				'<?php if ($busqueda != '') { echo '&b=' . urlencode($busqueda); } ?>' +
 				'<?php if ($orden_campo != 0) { echo '&o=' . $orden_campo; } ?>' +
 				'<?php if ($orden_dir != 0) { echo '&od=' . $orden_dir; } ?>' +
-				'<?php if ($inactivo != 0) { echo '&e=' . $inactivo; } ?>';
+				'<?php if (isset($inactivo) && $inactivo != 0) { echo '&e=' . $inactivo; } ?>';
 		});
 
 		function eliminar() {
@@ -398,7 +388,7 @@ $cant_cotizaciones = $db->query_first('
 		<div class="info_resultado">
 			<div class="tc">No se encontraron elementos con <strong>"<?php echo_s($busqueda); ?>"</strong>.</div>
 			<div class="tc">
-				<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($orden_campo != 0) { echo '&o=' . $orden_campo; } ?><?php if ($orden_dir != 0) { echo '&od=' . $orden_dir; } ?><?php if ($inactivo != 0) { echo '&e=' . $inactivo; } ?>">Ver todos</a>
+				<a href="?m=<?php echo $modulo['prefijo']; ?>_l&mes=<?php echo $mes_get; ?>&anio=<?php echo $anio_get; ?><?php if ($orden_campo != 0) { echo '&o=' . $orden_campo; } ?><?php if ($orden_dir != 0) { echo '&od=' . $orden_dir; } ?><?php if (isset($inactivo) && $inactivo != 0) { echo '&e=' . $inactivo; } ?>">Ver todos</a>
 			</div>
 		</div>
 	<?php } else { ?>
