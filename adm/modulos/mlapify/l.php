@@ -862,51 +862,146 @@ try {
 	}
 
 	function cotizaRenderResponse(res, sentPayload, endpointUrl) {
-		const ok = !!(res && res.ok);
-		const mensaje = (res && (res.mensaje || res.msg)) ? (res.mensaje || res.msg) : (ok ? 'Cotización procesada.' : 'La API devolvió un error.');
 
-		let idCotizacion = '';
-		if (res) {
-			idCotizacion = res.id_cotizacion || res.cotizacion_id || (res.data && (res.data.id_cotizacion || res.data.cotizacion_id)) || '';
+		console.log('RESP COTIZACION', res);
+
+		const r = res?.resultado || res?.data || res?.valores || null;
+
+		const ok =
+			(res?.ok === true) ||
+			(res?.estado === 'ok') ||
+			(res?.estado === 'OK') ||
+			(res?.mensaje === 'OK') ||
+			!!r;
+
+		let idCotizacion =
+			res?.id_cotizacion ||
+			res?.cotizacion_id ||
+			res?.id ||
+			'';
+
+		if (!ok || !r) {
+			cotizaSetResultadoHtml(`
+				<div style="color:#b30000; font-weight:bold;">
+					Error generando la cotización
+				</div>
+				<div style="margin-top:6px; color:#666;">
+					No vino un resultado válido desde la API.
+				</div>
+			`);
+			return;
 		}
 
-		let valores = null;
-		if (res) {
-			valores = res.valores || res.resultado || res.data || null;
-		}
+		const min = r.min || r.valor_minimo || 0;
+		const max = r.max || r.valor_maximo || 0;
+		const avg = r.avg || r.valor_promedio || 0;
+		const count = r.count || r.total || 0;
+
+		const nombre =
+			(sentPayload.nombre || '') +
+			(sentPayload.apellido ? ' ' + sentPayload.apellido : '');
+
+		const email = sentPayload.email || '';
+		const marca = $('#cotiza_marca option:selected').text();
+		const modelo = $('#cotiza_modelo option:selected').text();
+		const anio = sentPayload.anio || '';
+		const km = sentPayload.km || '';
+		const valor = sentPayload.valor_pretendido || '';
 
 		let html = '';
-		html += '<div style="font-weight:bold; font-size:16px; margin-bottom:10px;">Resultado API cotización</div>';
-		html += '<div><strong>Endpoint:</strong> ' + cotizaEscapeHtml(endpointUrl) + '</div>';
-		html += '<div><strong>Estado:</strong> ' + (ok ? 'OK' : 'ERROR') + '</div>';
-		html += '<div><strong>Mensaje:</strong> ' + cotizaEscapeHtml(mensaje) + '</div>';
+
+		html += `
+			<div style="font-size:18px; font-weight:bold; color:#2d7a2d; margin-bottom:10px;">
+				✔ Cotización OK
+			</div>
+		`;
+
+		html += `
+			<div style="margin-bottom:15px; line-height:1.8;">
+				<div><strong>ID Cotización:</strong> ${cotizaEscapeHtml(String(idCotizacion || ''))}</div>
+				<div><strong>Solicitante:</strong> ${cotizaEscapeHtml(nombre)}</div>
+				<div><strong>Email:</strong> ${cotizaEscapeHtml(email)}</div>
+				<div><strong>Vehículo:</strong> ${cotizaEscapeHtml(marca)} ${cotizaEscapeHtml(modelo)}</div>
+				<div><strong>Año:</strong> ${cotizaEscapeHtml(anio)}</div>
+				<div><strong>Kilómetros:</strong> ${cotizaEscapeHtml(km)}</div>
+				<div><strong>Valor pretendido:</strong> USD ${cotizaEscapeHtml(valor)}</div>
+			</div>
+		`;
+
+		html += `
+			<div style="
+				background:#f4f8ff;
+				border:1px solid #d0def5;
+				border-radius:8px;
+				padding:15px;
+				margin-bottom:15px;
+			">
+				<div style="font-size:18px; font-weight:bold; margin-bottom:8px;">
+					💰 Valor estimado: USD ${cotizaEscapeHtml(avg)}
+				</div>
+				<div><strong>Mínimo:</strong> USD ${cotizaEscapeHtml(min)}</div>
+				<div><strong>Máximo:</strong> USD ${cotizaEscapeHtml(max)}</div>
+				<div><strong>Comparables usados:</strong> ${cotizaEscapeHtml(count)}</div>
+			</div>
+		`;
 
 		if (idCotizacion) {
-			html += '<div><strong>ID Cotización:</strong> ' + cotizaEscapeHtml(idCotizacion) + '</div>';
+			html += `
+				<div style="margin-top:10px;">
+					<div style="font-weight:bold; margin-bottom:8px;">
+						Publicaciones utilizadas
+					</div>
+					<div id="tabla_comparables">Cargando...</div>
+				</div>
+			`;
 		}
-
-		if (valores && typeof valores === 'object') {
-			const min = (valores.min !== undefined) ? valores.min : ((valores.valores && valores.valores.min !== undefined) ? valores.valores.min : '');
-			const max = (valores.max !== undefined) ? valores.max : ((valores.valores && valores.valores.max !== undefined) ? valores.valores.max : '');
-			const avg = (valores.avg !== undefined) ? valores.avg : ((valores.promedio !== undefined) ? valores.promedio : '');
-
-			if (min !== '' || max !== '' || avg !== '') {
-				html += '<hr style="margin:10px 0;">';
-				html += '<div style="font-weight:bold; margin-bottom:6px;">Resumen</div>';
-				if (min !== '') html += '<div><strong>Mínimo:</strong> ' + cotizaEscapeHtml(min) + '</div>';
-				if (max !== '') html += '<div><strong>Máximo:</strong> ' + cotizaEscapeHtml(max) + '</div>';
-				if (avg !== '') html += '<div><strong>Promedio:</strong> ' + cotizaEscapeHtml(avg) + '</div>';
-			}
-		}
-
-		html += '<hr style="margin:10px 0;">';
-		html += '<div style="font-weight:bold; margin-bottom:4px;">Payload enviado</div>';
-		html += '<pre style="white-space:pre-wrap;">' + cotizaEscapeHtml(JSON.stringify(sentPayload, null, 2)) + '</pre>';
-
-		html += '<div style="font-weight:bold; margin:10px 0 4px 0;">Respuesta cruda</div>';
-		html += '<pre style="white-space:pre-wrap;">' + cotizaEscapeHtml(JSON.stringify(res, null, 2)) + '</pre>';
 
 		cotizaSetResultadoHtml(html);
+
+		if (idCotizacion) {
+			setTimeout(function () {
+				$.getJSON('/adm/modulos/mlapify/cotizacion_items.php?id=' + idCotizacion, function (resp) {
+
+					if (!resp || !resp.ok || !resp.rows || !resp.rows.length) {
+						$('#tabla_comparables').html('<div style="color:#666;">Sin publicaciones.</div>');
+						return;
+					}
+
+					let t = '<table class="table table-bordered table-striped">';
+					t += '<thead><tr>';
+					t += '<th>Marca</th>';
+					t += '<th>Modelo</th>';
+					t += '<th>Título</th>';
+					t += '<th>Link</th>';
+					t += '</tr></thead><tbody>';
+
+					resp.rows.forEach(function(it){
+						t += '<tr>';
+						t += '<td>' + cotizaEscapeHtml(it.brand || '') + '</td>';
+						t += '<td>' + cotizaEscapeHtml(it.modelo || '') + '</td>';
+						t += '<td>' + cotizaEscapeHtml(it.title || '') + '</td>';
+						t += '<td>';
+						if (it.item_url) {
+							t += '<a href="' + it.item_url + '" target="_blank" rel="noopener noreferrer">Ver publicación</a>';
+						} else {
+							t += '-';
+						}
+						t += '</td>';
+						t += '</tr>';
+					});
+
+					t += '</tbody></table>';
+
+					$('#tabla_comparables').html(t);
+				}).fail(function (xhr) {
+					let txt = 'No se pudieron cargar las publicaciones.';
+					if (xhr && xhr.responseText) {
+						txt += '<br><small>' + cotizaEscapeHtml(xhr.responseText) + '</small>';
+					}
+					$('#tabla_comparables').html('<div style="color:#b30000;">' + txt + '</div>');
+				});
+			}, 300);
+		}
 	}
 
 	function apifyLoadRows(rows, estadoTexto) {

@@ -43,14 +43,14 @@ class CotizacionService
 
             $sql = "INSERT INTO " . self::DB_COTIZADOR . ".cotizacion_items
                 (cotizacion_id, run_id, brand, modelo, source, item_url, item_id,
-                 title, seller, is_official_store,
-                 price_value, price_currency, item_year, item_km, location_txt,
-                 passes_filters, reject_reason, raw_json)
+                title, seller, is_official_store,
+                price_value, price_currency, item_year, item_km, location_txt,
+                passes_filters, reject_reason, raw_json)
                 VALUES
                 (:cotizacion_id, :run_id, :brand, :modelo, :source, :item_url, :item_id,
-                 :title, :seller, :is_official_store,
-                 :price_value, :price_currency, :item_year, :item_km, :location_txt,
-                 :passes_filters, :reject_reason, :raw_json)";
+                :title, :seller, :is_official_store,
+                :price_value, :price_currency, :item_year, :item_km, :location_txt,
+                :passes_filters, :reject_reason, :raw_json)";
 
             $params = [
                 ':cotizacion_id'     => $row['cotizacion_id'] ?? null,
@@ -73,9 +73,20 @@ class CotizacionService
                 ':raw_json'          => $row['raw_json'] ?? null,
             ];
 
-            $db->mysqlNonQuery($sql, $params);
+            $db->mysqlNonQuery(trim($sql), $params);
+
+            $this->logInterno('ITEM_INSERT_OK', [
+                'cotizacion_id' => $row['cotizacion_id'] ?? null,
+                'item_id' => $row['item_id'] ?? null,
+                'title' => $row['title'] ?? null
+            ]);
         } catch (\Throwable $e) {
-            $this->logInterno('PERSIST_ITEM_FAIL', ['error' => $e->getMessage()]);
+            $this->logInterno('PERSIST_ITEM_FAIL', [
+                'cotizacion_id' => $row['cotizacion_id'] ?? null,
+                'item_id' => $row['item_id'] ?? null,
+                'title' => $row['title'] ?? null,
+                'error' => $e->getMessage()
+            ]);
         }
     }
 
