@@ -414,7 +414,7 @@ try {
 			<div class="mlapify-actions">
 				<button type="button" class="btn btn-small" id="btn_apify_filtrar">Filtrar</button>
 				<button type="button" class="btn btn-small" id="btn_apify_limpiar">Limpiar</button>
-				<span class="mlapify-counter" id="apify_count">0 / 0</span>
+				<span class="mlapify-counter" id="apify_count_filtros">0 / 0</span>
 			</div>
 
 			<div class="mlapify-help">
@@ -579,6 +579,9 @@ try {
 	let APIFY_PAGE = 1;
 	let APIFY_PAGE_SIZE = 20;
 
+	let COTIZA_POST = null;
+	let COTIZA_ID = null;
+
 	function apifySetEstado(txt, sub) {
 		$('#apify_estado').text('Estado: ' + (txt || '-'));
 		$('#apify_progreso').text(sub || '-');
@@ -603,6 +606,7 @@ try {
 
 	function apifySetCount(show, total) {
 		$('#apify_count').text(String(show || 0) + ' / ' + String(total || 0));
+		$('#apify_count_filtros').text(String(show || 0) + ' / ' + String(total || 0));
 	}
 
 	function apifyToIntOrNull(v) {
@@ -971,7 +975,7 @@ try {
 	function cotizaIniciarAgenda(idCotizacion) {
 		console.log('Iniciando agenda para cotización:', idCotizacion);
 
-		const url = '/ws/index.php?peticion=sucursales';
+		const url = '/ws/index.php?peticion=locations';
 		const $box = $('#agenda_container');
 
 		if ($box.length) {
@@ -1050,13 +1054,9 @@ try {
 			return;
 		}
 
-		const today = new Date();
-		const anio = today.getFullYear();
-		const mes = today.getMonth() + 1;
+		const url = '/ws/index.php?peticion=availability';
 
-		const url = '/ws/index.php?peticion=calendar';
-
-		$('#agenda_calendario').html('Cargando calendario...');
+		$('#agenda_calendario').html('Cargando disponibilidad...');
 		$('#agenda_horarios').html('');
 
 		$.ajax({
@@ -1064,55 +1064,38 @@ try {
 			type: 'POST',
 			dataType: 'json',
 			data: {
-				location: sucursal,
-				anio: anio,
-				mes: mes
+				location: sucursal
 			}
 		})
 		.done(function(res){
-			console.log('RESP CALENDARIO', res);
+			console.log('RESP AVAILABILITY', res);
 
-			const rows =
-				(res && Array.isArray(res.data) && res.data) ||
-				(res && Array.isArray(res.days) && res.days) ||
-				(res && Array.isArray(res.calendario) && res.calendario) ||
-				(res && Array.isArray(res.rows) && res.rows) ||
-				[];
+			const rows = (res && res.availability) ? res.availability : [];
 
 			if (!rows.length) {
-				$('#agenda_calendario').html('<div style="color:red;">No hay días disponibles</div>');
+				$('#agenda_calendario').html('<div style="color:red;">No hay disponibilidad</div>');
 				return;
 			}
+
+			window.AVAILABILITY_DATA = rows;
 
 			let html = '<div><strong>Seleccionar día:</strong></div><div style="margin-top:8px;">';
 
 			rows.forEach(function(d){
-				const fecha =
-					d.fecha ??
-					d.date ??
-					d.dia ??
-					d.valor ??
-					'';
-
-				const label =
-					d.label ??
-					d.fecha ??
-					d.date ??
-					d.texto ??
-					fecha;
-
+				const fecha = d.fecha;
 				if (!fecha) return;
 
-				html += '<button type="button" class="btn btn-small" style="margin:4px;" onclick="cotizaCargarHorarios(\'' + String(fecha).replace(/'/g, "\\'") + '\')">' +
-					$('<div>').text(label).html() +
-					'</button>';
+				html += '<button type="button" class="btn btn-small" style="margin:4px;" onclick="cotizaMostrarHorariosAvailability(\'' +
+					String(fecha).replace(/'/g, "\\'") +
+					'\')">' + cotizaEscapeHtml(fecha) + '</button>';
 			});
 
 			html += '</div>';
+
 			$('#agenda_calendario').html(html);
 		})
 		.fail(function(xhr){
-			let txt = 'Error cargando calendario';
+			let txt = 'Error cargando disponibilidad';
 			if (xhr && xhr.responseText) {
 				txt += '<br><small>' + $('<div>').text(xhr.responseText).html() + '</small>';
 			}
@@ -1120,71 +1103,124 @@ try {
 		});
 	}
 
-	function cotizaCargarHorarios(fecha) {
-		const sucursal = $('#agenda_sucursal').val();
-		if (!sucursal) {
-			alert('Seleccioná una sucursal');
+	function cotizaMostrarHorariosAvailability(fecha) {
+		const data = window.AVAILABILITY_DATA || [];
+		const dia = data.find(x => x.fecha === fecha);
+
+		if (!dia || !dia.horas || !dia.horas.length) {
+			$('#agenda_horarios').html('<div style="color:red;">Sin horarios</div>');
 			return;
 		}
 
-		const url = '/ws/index.php?peticion=schedules';
+		let html = '<div><strong>Horarios para ' + cotizaEscapeHtml(fecha) + ':</strong></div><div style="margin-top:8px;">';
 
-		$('#agenda_horarios').html('Cargando horarios...');
-
-		$.ajax({
-			url: url,
-			type: 'POST',
-			dataType: 'json',
-			data: {
-				location: sucursal,
-				date: fecha
-			}
-		})
-		.done(function(res){
-			console.log('RESP HORARIOS', res);
-
-			const rows =
-				(res && Array.isArray(res.data) && res.data) ||
-				(res && res.schedules && Array.isArray(res.schedules.horas_disponibles) && res.schedules.horas_disponibles) ||
-				(res && Array.isArray(res.horas_disponibles) && res.horas_disponibles) ||
-				(res && Array.isArray(res.rows) && res.rows) ||
-				[];
-
-			if (!rows.length) {
-				$('#agenda_horarios').html('<div style="color:red;">No hay horarios disponibles para ese día</div>');
-				return;
-			}
-
-			let html = '<div><strong>Horarios para ' + $('<div>').text(fecha).html() + ':</strong></div><div style="margin-top:8px;">';
-
-			rows.forEach(function(h){
-				const hora =
-					(typeof h === 'string') ? h :
-					(h.hora ?? h.hour ?? h.hora_comienzo ?? h.valor ?? '');
-
-				if (!hora) return;
-
-				html += '<button type="button" class="btn btn-small" style="margin:4px;" onclick="cotizaConfirmarAgenda(\'' +
-					String(fecha).replace(/'/g, "\\'") + '\', \'' +
-					String(hora).replace(/'/g, "\\'") + '\')">' +
-					$('<div>').text(hora).html() +
-					'</button>';
-			});
-
-			html += '</div>';
-			$('#agenda_horarios').html(html);
-		})
-		.fail(function(xhr){
-			let txt = 'Error cargando horarios';
-			if (xhr && xhr.responseText) {
-				txt += '<br><small>' + $('<div>').text(xhr.responseText).html() + '</small>';
-			}
-			$('#agenda_horarios').html('<div style="color:red;">' + txt + '</div>');
+		dia.horas.forEach(function(h){
+			html += '<button type="button" class="btn btn-small" style="margin:4px;" onclick="cotizaConfirmarAgenda(\'' +
+				String(fecha).replace(/'/g, "\\'") + '\', \'' +
+				String(h).replace(/'/g, "\\'") + '\')">' +
+				cotizaEscapeHtml(h) + '</button>';
 		});
+
+		html += '</div>';
+
+		$('#agenda_horarios').html(html);
 	}
 
 	function cotizaConfirmarAgenda(fecha, hora) {
-		alert('Turno seleccionado: ' + fecha + ' ' + hora);
+
+		if (window.AGENDA_EN_PROCESO) {
+			return;
+		}
+
+		if (!confirm('¿Confirmar turno para ' + fecha + ' ' + hora + '?')) {
+			return;
+		}
+
+		const sucursal = $('#agenda_sucursal').val();
+		if (!sucursal) {
+			alert('Falta seleccionar sucursal.');
+			return;
+		}
+
+		if (!COTIZA_ID) {
+			alert('No se encontró el id de cotización.');
+			return;
+		}
+
+		if (!COTIZA_POST) {
+			alert('No se encontró la información de post-cotización.');
+			return;
+		}
+
+		window.AGENDA_EN_PROCESO = true;
+
+		$('#agenda_horarios button').prop('disabled', true);
+		$('#agenda_guardando').remove();
+		$('#agenda_horarios').append('<div id="agenda_guardando" style="margin-top:10px; color:#666;">Guardando agenda...</div>');
+
+		const cliente = COTIZA_POST.cliente || {};
+		const vehiculo = COTIZA_POST.vehiculo || {};
+
+		const payload = {
+			location: sucursal,
+			date: fecha,
+			hora: hora,
+			modelo: vehiculo.modelo || '',
+			marca: vehiculo.marca || '',
+			anio: vehiculo.anio || '',
+			familia: vehiculo.familia || vehiculo.version || '',
+			auto: vehiculo.auto || vehiculo.nombre_auto || '',
+			nombre: cliente.nombre || '',
+			email: cliente.email || '',
+			telefono: cliente.telefono || '',
+			id_cotizacion: COTIZA_ID
+		};
+
+		console.log('AGENDAR payload', payload);
+
+		$.ajax({
+			url: '/ws/index.php?peticion=scheduleInspection',
+			type: 'POST',
+			dataType: 'json',
+			data: payload
+		})
+		.done(function(res){
+			console.log('RESP AGENDAR', res);
+
+			if (res && (res.codigo == 200 || res.error === 0 || res.error === '0')) {
+				$('#agenda_guardando').html('<div style="color:green; font-weight:bold;">Agenda confirmada correctamente.</div>');
+				alert(res.mensaje || 'Agenda confirmada correctamente.');
+				return;
+			}
+
+			let msg = (res && (res.mensaje || res.msg)) ? (res.mensaje || res.msg) : 'No se pudo confirmar la agenda.';
+			$('#agenda_guardando').html('<div style="color:red;">' + $('<div>').text(msg).html() + '</div>');
+			alert(msg);
+
+			window.AGENDA_EN_PROCESO = false;
+			$('#agenda_horarios button').prop('disabled', false);
+		})
+		.fail(function(xhr){
+			let msg = 'Error al guardar la agenda.';
+			if (xhr && xhr.responseText) {
+				try {
+					const j = JSON.parse(xhr.responseText);
+					if (j && (j.mensaje || j.msg)) {
+						msg = j.mensaje || j.msg;
+					} else {
+						msg = xhr.responseText;
+					}
+				} catch(e) {
+					msg = xhr.responseText;
+				}
+			}
+
+			$('#agenda_guardando').html('<div style="color:red;">' + $('<div>').text(msg).html() + '</div>');
+			alert(msg);
+
+			window.AGENDA_EN_PROCESO = false;
+			$('#agenda_horarios button').prop('disabled', false);
+		});
 	}
 
 	function cotizaRenderResponse(res, sentPayload, endpointUrl) {
@@ -1209,6 +1245,9 @@ try {
 			res?.resultado?.cotizacion_id ||
 			post?.id_cotizacion ||
 			'';
+
+		COTIZA_ID = idCotizacion || null;
+		COTIZA_POST = post || null;
 
 		if (!ok || !r) {
 			cotizaSetResultadoHtml(`

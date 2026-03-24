@@ -1089,6 +1089,62 @@ $app->post('/agendarInspeccion/{location}', function (Request $request, Response
     return $return;
 })->add($authorization);
 
+$app->post('/availability/{location}', function (Request $request, Response $response) {
+	global $modoTesting;
+	global $urlBase;
+
+    try{
+		$location = $request->getAttribute('location');
+        $headers = $request->getHeaders();
+        $token = $headers['HTTP_AUTHORIZATION'][0];
+
+		if($modoTesting){
+			$token = "[Modo Testing] ".$token;
+
+			$data = array(
+        		'location'=>$location
+            );   
+        	
+			$urlRecarga = $urlBase."ws/availability";
+	        
+	        $curl = curl_init($urlRecarga);
+	        curl_setopt($curl, CURLOPT_URL, $urlRecarga);
+	        curl_setopt($curl, CURLOPT_POST, true);
+			curl_setopt($curl, CURLOPT_POSTFIELDS, http_build_query($data, '', '&'));
+	        curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
+	        curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, false); 
+	        curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
+
+	        $respCotizador = json_decode(curl_exec($curl));
+
+	        curl_close($curl);
+
+			if($respCotizador->codigo === 500){
+				$return = $response->withJson([
+					'msg'=>$respCotizador->mensaje,
+					"error"=>$respCotizador->error
+				],500);
+			} else {
+				$return = $response->withJson([
+					'msg'=>$respCotizador->mensaje,
+					"error"=>0,
+					"availability"=>$respCotizador->availability
+				],200);
+			}
+
+		} else {
+			$return = $response->withJson([
+				'msg'=>'Modo productivo sin implementar',
+				'error'=>1
+			],500);
+		}
+    } catch (Exception $e) {
+        $return = $response->withJson(['error'=>$e->getMessage()],500);
+	}
+
+    return $return;
+})->add($authorization);
+
 $g = function($req, $res, $next)
 {
     $res->write('In1');
@@ -1279,3 +1335,4 @@ function validateDate($date, $format = 'Y-m-d'){
     $d = DateTime::createFromFormat($format, $date);
     return $d && $d->format($format) == $date;
 }
+
