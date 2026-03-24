@@ -528,6 +528,14 @@ class CotizacionService
         $motorliderCalc['porcentajes_aplicados']['vpretendido_aplicado'] = $vpretendidoAplicado;
         $motorliderCalc['porcentajes_aplicados']['valor_pretendido_cliente'] = $valorPretendidoClienteRedondeado;
 
+        $msgCliente = $this->construirMensajeCliente(
+            $dataIn,
+            $vpretendidoAplicado,
+            $valorPretendidoClienteRedondeado,
+            $motorliderCalc['valor_minimo_motorlider'],
+            $motorliderCalc['valor_maximo_motorlider']
+        );
+
         $resultado = [
             'count'                     => count($prices),
             'count_filtrados'           => count($comparables),
@@ -548,6 +556,7 @@ class CotizacionService
             'vpretendido_aplicado'      => $vpretendidoAplicado,
             'valor_pretendido_cliente'  => $valorPretendidoClienteRedondeado,
             'porcentajes_aplicados'     => $motorliderCalc['porcentajes_aplicados'],
+            'msg_cliente'               => $msgCliente,
         ];
 
         $this->logInterno('RESULTADO_OK', $resultado);
@@ -597,7 +606,7 @@ class CotizacionService
             ], JSON_UNESCAPED_UNICODE);
 
             $cg_data['respuesta'] = json_encode($resultado, JSON_UNESCAPED_UNICODE);
-            $cg_data['msg'] = 'OK';
+            $cg_data['msg'] = $msgCliente;
             $cg_data['porcentajes_aplicados'] = json_encode($motorliderCalc['porcentajes_aplicados'], JSON_UNESCAPED_UNICODE);
             $cg_data['cuenta'] = null;
 
@@ -637,26 +646,34 @@ class CotizacionService
                 $mail = new MailService();
 
                 $mail->enviarConfirmacionCotizacion(
-                    [
-                        'nombre' => $cg_data['nombre'],
-                        'email' => $cg_data['email'],
-                        'nombre_auto' => $cg_data['auto'],
-                        'brand' => $brandTxt,
-                        'modelo' => $modeloTxt,
-                        'anio' => $anioIn,
-                        'km' => $kmIn
-                    ],
-                    [
-                        'ok' => true,
-                        'comparables' => $resultado['count'],
-                        'min' => $resultado['min'],
-                        'max' => $resultado['max'],
-                        'avg' => $resultado['avg'],
-                        'valor_minimo_motorlider' => $resultado['valor_minimo_motorlider'],
-                        'valor_maximo_motorlider' => $resultado['valor_maximo_motorlider'],
-                        'valor_promedio_motorlider' => $resultado['valor_promedio_motorlider']
-                    ]
-                );
+                [
+                    'nombre' => $cg_data['nombre'],
+                    'email' => $cg_data['email'],
+                    'telefono' => $cg_data['telefono'],
+                    'nombre_auto' => $cg_data['auto'],
+                    'brand' => $brandTxt,
+                    'modelo' => $modeloTxt,
+                    'anio' => $anioIn,
+                    'km' => $kmIn,
+                    'valor_pretendido' => $valorPretendidoClienteRedondeado
+                ],
+                [
+                    'ok' => true,
+                    'id_cotizacion' => $id,
+                    'msg' => $resultado['msg_cliente'],
+                    'msg_cliente' => $resultado['msg_cliente'],
+                    'comparables' => $resultado['count'],
+                    'count' => $resultado['count'],
+                    'min' => $resultado['min'],
+                    'max' => $resultado['max'],
+                    'avg' => $resultado['avg'],
+                    'valor_minimo_motorlider' => $resultado['valor_minimo_motorlider'],
+                    'valor_maximo_motorlider' => $resultado['valor_maximo_motorlider'],
+                    'valor_promedio_motorlider' => $resultado['valor_promedio_motorlider'],
+                    'vpretendido_aplicado' => $resultado['vpretendido_aplicado'],
+                    'valor_pretendido_cliente' => $resultado['valor_pretendido_cliente']
+                ]
+            );
 
                 $this->actualizarEstadoCotizacion(
                     (int)$id,
@@ -745,6 +762,26 @@ class CotizacionService
                 'schedule_inspection_template' => '/ws/index.php?peticion=scheduleInspection&location={location}',
             ]
         ];
+    }
+
+    private function construirMensajeCliente(
+        array $dataIn,
+        bool $vpretendidoAplicado,
+        ?float $valorPretendidoCliente,
+        int $valorMinMotorlider,
+        int $valorMaxMotorlider
+    ): string {
+        if ($vpretendidoAplicado && $valorPretendidoCliente !== null) {
+            return 'Su Vehículo lo estaríamos comprando en: <strong> U$S ' .
+                number_format($valorPretendidoCliente, 0, ',', '.') .
+                ' </strong>';
+        }
+
+        return 'Su Vehículo se encuentra valorado en el entorno de <strong> U$S ' .
+            number_format($valorMinMotorlider, 0, ',', '.') .
+            ' </strong> y <strong> U$S ' .
+            number_format($valorMaxMotorlider, 0, ',', '.') .
+            '</strong>';
     }
 
     private function calcularValoresMotorlider(

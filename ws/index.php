@@ -1819,7 +1819,13 @@ function obtenerContenidoURLConCurl($url) {
 		$mail->FromName = "MOTORLIDER";
 		$mail->AddAddress($email, $nombre);
 		$mail->Subject = "Reserva de Agenda";
-		$mail->Body = "Tu agenda fue confirmada.";
+		$mail->Body =
+		"Tu agenda fue confirmada.<br><br>" .
+		"<strong>Fecha:</strong> " . date('d/m/Y', strtotime($fecha)) . "<br>" .
+		"<strong>Hora:</strong> " . $hora . "<br>" .
+		"<strong>Sucursal:</strong> " . $suc_name . "<br>" .
+		"<strong>Dirección:</strong> " . $suc_direccion . "<br>" .
+		"<strong>Vehículo:</strong> " . $auto;
 
 		$mail->send();
 		$msg = "Agenda confirmada y email enviado.";
