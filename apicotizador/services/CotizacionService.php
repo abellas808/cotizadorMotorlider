@@ -112,7 +112,7 @@ class CotizacionService
                 ':id' => $idCotizacion,
             ];
 
-            $db->mysqlNonQuery(trim($sql), $params);
+            $db->mysqlNonQuery($sql, $params);
         } catch (\Throwable $e) {
             $this->logInterno('UPDATE_ESTADO_FAIL', [
                 'cotizacion_id' => $idCotizacion,
@@ -231,7 +231,8 @@ class CotizacionService
             return [
                 'msg' => 'Marca o modelo inválidos (faltan IDs).',
                 'resultado' => null,
-                'id_cotizacion' => null
+                'id_cotizacion' => null,
+                'post_cotizacion' => null
             ];
         }
 
@@ -239,7 +240,8 @@ class CotizacionService
             return [
                 'msg' => 'Marca o modelo inválidos (no se pudo resolver).',
                 'resultado' => null,
-                'id_cotizacion' => null
+                'id_cotizacion' => null,
+                'post_cotizacion' => null
             ];
         }
 
@@ -264,7 +266,8 @@ class CotizacionService
             return [
                 'msg' => 'Error buscando última corrida válida: ' . $e->getMessage(),
                 'resultado' => null,
-                'id_cotizacion' => null
+                'id_cotizacion' => null,
+                'post_cotizacion' => null
             ];
         }
 
@@ -279,7 +282,8 @@ class CotizacionService
             return [
                 'msg' => 'No existe una corrida válida reciente para esa marca/modelo.',
                 'resultado' => null,
-                'id_cotizacion' => null
+                'id_cotizacion' => null,
+                'post_cotizacion' => null
             ];
         }
 
@@ -314,7 +318,8 @@ class CotizacionService
             return [
                 'msg' => 'Error buscando publicaciones de corrida: ' . $e->getMessage(),
                 'resultado' => null,
-                'id_cotizacion' => null
+                'id_cotizacion' => null,
+                'post_cotizacion' => null
             ];
         }
 
@@ -327,7 +332,8 @@ class CotizacionService
             return [
                 'msg' => 'No se encontraron publicaciones para la última corrida válida.',
                 'resultado' => null,
-                'id_cotizacion' => null
+                'id_cotizacion' => null,
+                'post_cotizacion' => null
             ];
         }
 
@@ -454,6 +460,7 @@ class CotizacionService
                 'msg' => 'No se encontraron publicaciones comparables en la última corrida válida.',
                 'resultado' => null,
                 'id_cotizacion' => null,
+                'post_cotizacion' => null,
                 'debug' => [
                     'corrida_id' => $corridaId,
                     'publicaciones_total' => count($publicaciones),
@@ -479,15 +486,19 @@ class CotizacionService
 
         sort($prices);
 
-        $min = round($prices[0], 2);
-        $max = round($prices[count($prices) - 1], 2);
-        $avg = round(array_sum($prices) / count($prices), 2);
+        $minRaw = (float)$prices[0];
+        $maxRaw = (float)$prices[count($prices) - 1];
+        $avgRaw = (float)(array_sum($prices) / count($prices));
+
+        $min = $this->redondearMotorlider($minRaw);
+        $max = $this->redondearMotorlider($maxRaw);
+        $avg = $this->redondearMotorlider($avgRaw);
 
         $this->logInterno('TOP_COMPARABLES_SELECTED', [
-            'corrida_id'               => $corridaId,
-            'comparables_filtrados'    => count($comparables),
-            'comparables_seleccionados'=> count($comparablesSeleccionados),
-            'prices'                   => $prices
+            'corrida_id'                => $corridaId,
+            'comparables_filtrados'     => count($comparables),
+            'comparables_seleccionados' => count($comparablesSeleccionados),
+            'prices'                    => $prices
         ]);
 
         $motorliderCalc = $this->calcularValoresMotorlider(
@@ -499,6 +510,23 @@ class CotizacionService
             $avg,
             $dataIn
         );
+
+        $valorPretendidoCliente = $this->toFloatOrNull($dataIn['valor_pretendido'] ?? null);
+        $valorPretendidoClienteRedondeado = $valorPretendidoCliente !== null
+            ? $this->redondearMotorlider($valorPretendidoCliente)
+            : null;
+
+        $vpretendidoAplicado = false;
+        if (
+            $valorPretendidoClienteRedondeado !== null &&
+            $motorliderCalc['valor_minimo_motorlider'] > 0 &&
+            $valorPretendidoClienteRedondeado < $motorliderCalc['valor_minimo_motorlider']
+        ) {
+            $vpretendidoAplicado = true;
+        }
+
+        $motorliderCalc['porcentajes_aplicados']['vpretendido_aplicado'] = $vpretendidoAplicado;
+        $motorliderCalc['porcentajes_aplicados']['valor_pretendido_cliente'] = $valorPretendidoClienteRedondeado;
 
         $resultado = [
             'count'                     => count($prices),
@@ -517,18 +545,17 @@ class CotizacionService
             'valor_promedio_motorlider' => $motorliderCalc['valor_promedio_motorlider'],
             'promedio_mercado_6'        => $avg,
             'promedio_base_motorlider'  => $motorliderCalc['promedio_base_motorlider'],
-            'vpretendido_aplicado'      => $motorliderCalc['vpretendido_aplicado'],
-            'valor_pretendido_cliente'  => $motorliderCalc['valor_pretendido_cliente'],
+            'vpretendido_aplicado'      => $vpretendidoAplicado,
+            'valor_pretendido_cliente'  => $valorPretendidoClienteRedondeado,
             'porcentajes_aplicados'     => $motorliderCalc['porcentajes_aplicados'],
         ];
 
         $this->logInterno('RESULTADO_OK', $resultado);
 
         $id = null;
+        $cg_data = [];
 
         try {
-            $cg_data = [];
-
             $cg_data['nombre']            = $dataIn['nombre'] ?? null;
             $cg_data['email']             = $dataIn['email'] ?? null;
             $cg_data['telefono']          = $dataIn['telefono'] ?? null;
@@ -537,8 +564,8 @@ class CotizacionService
             $cg_data['kilometros']        = $kmIn;
             $cg_data['ficha_tecnica']     = $dataIn['ficha_tecnica'] ?? null;
             $cg_data['duenios']           = $dataIn['cantidad_duenios'] ?? null;
-            $cg_data['tipo_venta']        = $dataIn['venta_permuta'] ?? null;
-            $cg_data['precio_pretendido'] = $dataIn['valor_pretendido'] ?? null;
+            $cg_data['tipo_venta']        = $this->mapTipoVentaTexto($dataIn['venta_permuta'] ?? null);
+            $cg_data['precio_pretendido'] = $valorPretendidoClienteRedondeado;
             $cg_data['marca']             = $brandTxt;
             $cg_data['anio']              = $anioIn;
             $cg_data['familia']           = $modelId;
@@ -581,7 +608,7 @@ class CotizacionService
 
             $cg = new CotizacionGenerada($cg_data);
             $created = $cg->save();
-            $id = $created->id_cotizaciones_generadas ?? null;
+            $id = isset($created->id_cotizaciones_generadas) ? (int)$created->id_cotizaciones_generadas : null;
 
             $this->logInterno('PERSIST_OK', ['id_cotizaciones_generadas' => $id]);
         } catch (\Throwable $e) {
@@ -627,8 +654,7 @@ class CotizacionService
                         'avg' => $resultado['avg'],
                         'valor_minimo_motorlider' => $resultado['valor_minimo_motorlider'],
                         'valor_maximo_motorlider' => $resultado['valor_maximo_motorlider'],
-                        'valor_promedio_motorlider' => $resultado['valor_promedio_motorlider'],
-                        'vpretendido_aplicado' => $resultado['vpretendido_aplicado'] ?? false
+                        'valor_promedio_motorlider' => $resultado['valor_promedio_motorlider']
                     ]
                 );
 
@@ -665,10 +691,59 @@ class CotizacionService
             ]);
         }
 
+        $postCotizacion = $this->buildPostCotizacionPayload(
+            $id,
+            $brandTxt,
+            $modeloTxt,
+            $modelId,
+            $anioIn,
+            $kmIn,
+            $ver,
+            $dataIn
+        );
+
         return [
             'msg' => 'OK',
             'resultado' => $resultado,
-            'id_cotizacion' => $id
+            'id_cotizacion' => $id,
+            'post_cotizacion' => $postCotizacion
+        ];
+    }
+
+    private function buildPostCotizacionPayload(
+        ?int $idCotizacion,
+        string $brandTxt,
+        string $modeloTxt,
+        ?int $modelId,
+        ?int $anioIn,
+        ?int $kmIn,
+        string $version,
+        array $dataIn
+    ): array {
+        $auto = trim((string)($dataIn['nombre_auto'] ?? trim($brandTxt . ' ' . $modeloTxt)));
+
+        return [
+            'agenda_habilitada' => $idCotizacion ? true : false,
+            'id_cotizacion' => $idCotizacion,
+            'cliente' => [
+                'nombre' => $dataIn['nombre'] ?? '',
+                'email' => $dataIn['email'] ?? '',
+                'telefono' => $dataIn['telefono'] ?? '',
+            ],
+            'vehiculo' => [
+                'marca' => $brandTxt,
+                'modelo' => $modeloTxt,
+                'anio' => $anioIn,
+                'familia' => $modelId,
+                'version' => $version,
+                'auto' => $auto,
+                'km' => $kmIn,
+            ],
+            'endpoints' => [
+                'calendar_template' => '/ws/index.php?peticion=calendar&location={location}',
+                'schedules_template' => '/ws/index.php?peticion=schedules&location={location}',
+                'schedule_inspection_template' => '/ws/index.php?peticion=scheduleInspection&location={location}',
+            ]
         ];
     }
 
@@ -693,16 +768,12 @@ class CotizacionService
             'tipo_operacion' => $dataIn['venta_permuta'] ?? null,
             'factor_operacion_min' => null,
             'factor_operacion_max' => null,
-            'vpretendido_aplicado' => false,
-            'valor_pretendido_cliente' => null,
         ];
 
         $promedioBaseMotorlider = $promedioMercado;
         $valorMinMotorlider = $promedioMercado;
         $valorMaxMotorlider = $promedioMercado;
         $valorPromMotorlider = $promedioMercado;
-        $vpretendidoAplicado = false;
-        $valorPretendidoCliente = $this->toFloatOrNull($dataIn['valor_pretendido'] ?? null);
 
         try {
             $promedioBaseData = $this->calcularPromedioBaseMotorlider($promedioMercado);
@@ -711,17 +782,20 @@ class CotizacionService
             $porcentajesAplicados['porcentaje_tramo'] = $promedioBaseData['porcentaje'];
             $porcentajesAplicados['nominal_tramo'] = $promedioBaseData['nominal'];
 
+            $fichaValor = $this->normalizarFichaTecnica($dataIn['ficha_tecnica'] ?? null);
+            $dueniosValor = $this->toIntOrNull($dataIn['cantidad_duenios'] ?? null);
+
             $ajusteFicha = $this->calcularAjusteVariablePorPorcentaje(
                 3,
                 'ficha_oficial',
-                (string)($dataIn['ficha_tecnica'] ?? ''),
+                $fichaValor,
                 $promedioBaseMotorlider
             );
 
             $ajusteDuenios = $this->calcularAjusteVariablePorPorcentaje(
                 4,
                 'cantidad_duenios',
-                $this->toIntOrNull($dataIn['cantidad_duenios'] ?? null),
+                $dueniosValor,
                 $promedioBaseMotorlider
             );
 
@@ -740,9 +814,9 @@ class CotizacionService
 
             $valorMinMotorlider = round($promedioBaseMotorlider + $ajusteFicha + $ajusteDuenios + $ajusteStock, 2);
 
-            $tipoOperacion = trim((string)($dataIn['venta_permuta'] ?? ''));
+            $esEntrega = $this->esEntregaComoFormaDePago($dataIn['venta_permuta'] ?? null);
 
-            if (strcasecmp($tipoOperacion, 'Entrega') === 0) {
+            if ($esEntrega) {
                 $be = $this->obtenerPonderadorVenalPorKey('BE');
                 $bf = $this->obtenerPonderadorVenalPorKey('BF');
 
@@ -761,28 +835,6 @@ class CotizacionService
                 $valorMaxMotorlider = round($valorMinMotorlider * $bd, 2);
                 $valorPromMotorlider = round(($valorMinMotorlider + $valorMaxMotorlider) / 2, 2);
             }
-
-            // Regla heredada del sistema viejo:
-            // si el valor pretendido es menor al mínimo calculado por Motorlider,
-            // se usa el valor pretendido del cliente.
-            if ($valorPretendidoCliente !== null && $valorPretendidoCliente > 0) {
-                $porcentajesAplicados['valor_pretendido_cliente'] = $valorPretendidoCliente;
-
-                if ($valorPretendidoCliente < $valorMinMotorlider) {
-                    $vpretendidoAplicado = true;
-                    $porcentajesAplicados['vpretendido_aplicado'] = true;
-
-                    $this->logInterno('REGLA_VPRETENDIDO_APLICADA', [
-                        'valor_pretendido' => $valorPretendidoCliente,
-                        'valor_min_motorlider_calculado' => $valorMinMotorlider,
-                        'tipo_operacion' => $tipoOperacion
-                    ]);
-
-                    $valorMinMotorlider = round($valorPretendidoCliente, 2);
-                    $valorMaxMotorlider = round($valorPretendidoCliente, 2);
-                    $valorPromMotorlider = round($valorPretendidoCliente, 2);
-                }
-            }
         } catch (\Throwable $e) {
             $this->logInterno('CALCULO_MOTORLIDER_FAIL', [
                 'error' => $e->getMessage(),
@@ -795,13 +847,16 @@ class CotizacionService
             ]);
         }
 
+        $promedioBaseMotorlider = $this->redondearMotorlider($promedioBaseMotorlider);
+        $valorMinMotorlider = $this->redondearMotorlider($valorMinMotorlider);
+        $valorMaxMotorlider = $this->redondearMotorlider($valorMaxMotorlider);
+        $valorPromMotorlider = $this->redondearMotorlider($valorPromMotorlider);
+
         return [
             'promedio_base_motorlider' => $promedioBaseMotorlider,
             'valor_minimo_motorlider' => $valorMinMotorlider,
             'valor_maximo_motorlider' => $valorMaxMotorlider,
             'valor_promedio_motorlider' => $valorPromMotorlider,
-            'vpretendido_aplicado' => $vpretendidoAplicado,
-            'valor_pretendido_cliente' => $valorPretendidoCliente,
             'porcentajes_aplicados' => $porcentajesAplicados
         ];
     }
@@ -1143,6 +1198,19 @@ class CotizacionService
         return trim($txt);
     }
 
+    private function redondearMotorlider($valor): int
+    {
+        $n = (float)$valor;
+        $entero = floor($n);
+        $decimal = $n - $entero;
+
+        if ($decimal <= 0.50) {
+            return (int)$entero;
+        }
+
+        return (int)ceil($n);
+    }
+
     private function toIntOrNull($v): ?int
     {
         if ($v === null || $v === '') {
@@ -1306,22 +1374,6 @@ class CotizacionService
         return $default;
     }
 
-    private function makeRunId(): string
-    {
-        try {
-            if (function_exists('random_bytes')) {
-                return 'local_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4));
-            }
-        } catch (\Throwable $e) {
-        }
-
-        if (function_exists('openssl_random_pseudo_bytes')) {
-            return 'local_' . date('Ymd_His') . '_' . bin2hex(openssl_random_pseudo_bytes(4));
-        }
-
-        return 'local_' . date('Ymd_His') . '_' . substr(md5(uniqid('', true)), 0, 8);
-    }
-
     private function resolveModelIdLocal(int $brandId, int $modelInputId): ?array
     {
         $db = Database::getInstance();
@@ -1378,5 +1430,38 @@ class CotizacionService
         }
 
         return null;
+    }
+
+    private function normalizarFichaTecnica($valor): string
+    {
+        $v = trim((string)$valor);
+
+        if ($v === '1' || strcasecmp($v, 'si') === 0 || strcasecmp($v, 'sí') === 0) {
+            return 'Si';
+        }
+
+        if ($v === '0' || strcasecmp($v, 'no') === 0) {
+            return 'No';
+        }
+
+        return $v !== '' ? ucfirst(mb_strtolower($v, 'UTF-8')) : '';
+    }
+
+    private function esEntregaComoFormaDePago($valor): bool
+    {
+        $v = trim((string)$valor);
+
+        if ($v === '1') {
+            return true;
+        }
+
+        return strcasecmp($v, 'Entrega') === 0
+            || strcasecmp($v, 'entrega_forma_pago') === 0
+            || strcasecmp($v, 'Entrega como forma de pago') === 0;
+    }
+
+    private function mapTipoVentaTexto($valor): string
+    {
+        return $this->esEntregaComoFormaDePago($valor) ? 'Entrega' : 'Venta';
     }
 }

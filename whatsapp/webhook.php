@@ -4,18 +4,18 @@ declare(strict_types=1);
 date_default_timezone_set('America/Montevideo');
 
 /**
- * Webhook WhatsApp Twilio - corregido con lookup real de marca/modelo
+ * Webhook WhatsApp Twilio - Fase 4
  * - recibe mensaje entrante
  * - valida firma Twilio
  * - guarda estado simple por usuario en storage.json
- * - resuelve marca/modelo contra BD
- * - llama al cotizador real con IDs
+ * - flujo guiado completo
+ * - al finalizar llama al cotizador real
  */
 
 // =========================
 // CONFIG
 // =========================
-const TWILIO_AUTH_TOKEN = 'REEMPLAZAR_POR_TU_AUTH_TOKEN';
+const TWILIO_AUTH_TOKEN = '58f767d26211d9d0c20ea687df00b4c3';
 const COTIZADOR_BASE_URL = 'https://carplay.uy/apicotizador/cotizadorPublico/';
 
 function wa_log_file(): string
@@ -29,7 +29,7 @@ function wa_storage_file(): string
 }
 
 // =========================
-// HELPERS GENERALES
+// HELPERS
 // =========================
 function wa_log(string $tag, array $data = []): void
 {
@@ -61,8 +61,8 @@ function build_current_url(): string
 
 function validate_twilio_signature(string $authToken): bool
 {
-    if ($authToken === '' || $authToken === 'REEMPLAZAR_POR_TU_AUTH_TOKEN') {
-        wa_log('SIGNATURE_SKIPPED', ['reason' => 'auth token no configurado']);
+    if ($authToken === '') {
+        wa_log('SIGNATURE_SKIPPED', ['reason' => 'auth token vacío']);
         return true;
     }
 
@@ -219,256 +219,15 @@ function is_valid_email_simple(string $email): bool
     return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
 }
 
-function wa_number($value, int $decimals = 0): string
+function normalize_brand_for_url(string $brand): string
 {
-    if ($value === null || $value === '') {
-        return '-';
-    }
-
-    if (!is_numeric((string)$value)) {
-        return (string)$value;
-    }
-
-    return number_format((float)$value, $decimals, '.', '');
+    return trim($brand);
 }
 
-function wa_normalize_text(string $txt): string
+function cotizar_api(string $brand, array $payload): array
 {
-    $txt = trim($txt);
-    $txt = body_to_lower($txt);
+    $url = COTIZADOR_BASE_URL . rawurlencode($brand);
 
-    $map = [
-        'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u',
-        'ä' => 'a', 'ë' => 'e', 'ï' => 'i', 'ö' => 'o', 'ü' => 'u',
-        'ñ' => 'n'
-    ];
-
-    $txt = strtr($txt, $map);
-    $txt = preg_replace('/[^a-z0-9]+/u', ' ', $txt);
-    $txt = preg_replace('/\s+/u', ' ', $txt);
-
-    return trim((string)$txt);
-}
-
-// =========================
-// DB HELPERS
-// =========================
-function wa_require_db(): void
-{
-    static $loaded = false;
-
-    if ($loaded) {
-        return;
-    }
-
-    $paths = [
-        __DIR__ . '/../apicotizador/src/db.php',
-        __DIR__ . '/../public_html/apicotizador/src/db.php',
-        __DIR__ . '/../adm/includes/database.php'
-    ];
-
-    foreach ($paths as $path) {
-        if (file_exists($path)) {
-            require_once $path;
-            $loaded = true;
-            wa_log('DB_LOADED', ['path' => $path]);
-            return;
-        }
-    }
-
-    throw new RuntimeException('No se pudo cargar db.php');
-}
-
-function wa_db(): object
-{
-    wa_require_db();
-
-    if (class_exists('Database') && method_exists('Database', 'getInstance')) {
-        return Database::getInstance();
-    }
-
-    throw new RuntimeException('Database::getInstance() no disponible');
-}
-
-function wa_db_fetch_all(string $sql): array
-{
-    $db = wa_db();
-
-    if (method_exists($db, 'mysqlQuery')) {
-        $res = $db->mysqlQuery($sql);
-
-        if (is_array($res)) {
-            return $res;
-        }
-
-        if (method_exists($db, 'fetch_array')) {
-            $rows = [];
-            while ($r = $db->fetch_array($res)) {
-                $rows[] = $r;
-            }
-            return $rows;
-        }
-    }
-
-    if (method_exists($db, 'query')) {
-        $res = $db->query($sql);
-
-        if (method_exists($db, 'fetch_array')) {
-            $rows = [];
-            while ($r = $db->fetch_array($res)) {
-                $rows[] = $r;
-            }
-            return $rows;
-        }
-    }
-
-    throw new RuntimeException('Interfaz DB no soportada en webhook');
-}
-
-function wa_sql_quote(string $value): string
-{
-    return "'" . str_replace(["\\", "'"], ["\\\\", "\\'"], $value) . "'";
-}
-
-function wa_find_schema_for_table(string $tableName): ?string
-{
-    $sql = "
-        SELECT TABLE_SCHEMA
-        FROM information_schema.TABLES
-        WHERE TABLE_NAME = " . wa_sql_quote($tableName) . "
-        ORDER BY TABLE_SCHEMA
-        LIMIT 1
-    ";
-
-    $rows = wa_db_fetch_all($sql);
-    if (!$rows) {
-        return null;
-    }
-
-    return $rows[0]['TABLE_SCHEMA'] ?? $rows[0]['table_schema'] ?? null;
-}
-
-function wa_pick_arr(array $row, array $keys, $default = null)
-{
-    foreach ($keys as $k) {
-        if (isset($row[$k]) && $row[$k] !== '' && $row[$k] !== null) {
-            return $row[$k];
-        }
-    }
-    return $default;
-}
-
-function wa_get_brand_table(): string
-{
-    $schema = wa_find_schema_for_table('act_marcas');
-    return $schema ? ($schema . '.act_marcas') : 'act_marcas';
-}
-
-function wa_get_model_table(): string
-{
-    $schema = wa_find_schema_for_table('act_modelo');
-    return $schema ? ($schema . '.act_modelo') : 'act_modelo';
-}
-
-function wa_resolve_brand(string $brandText): ?array
-{
-    $brandTextNorm = wa_normalize_text($brandText);
-    if ($brandTextNorm === '') {
-        return null;
-    }
-
-    $tblMarca = wa_get_brand_table();
-    $rows = wa_db_fetch_all("SELECT * FROM {$tblMarca} ORDER BY nombre");
-
-    $best = null;
-
-    foreach ($rows as $row) {
-        $id = wa_pick_arr($row, ['id_marca', 'id', 'marca_id']);
-        $name = wa_pick_arr($row, ['nombre', 'name', 'marca']);
-
-        if ($id === null || $name === null) {
-            continue;
-        }
-
-        $nameNorm = wa_normalize_text((string)$name);
-
-        if ($nameNorm === $brandTextNorm) {
-            return [
-                'id' => (string)$id,
-                'nombre' => (string)$name
-            ];
-        }
-
-        if ($best === null && strpos($nameNorm, $brandTextNorm) !== false) {
-            $best = [
-                'id' => (string)$id,
-                'nombre' => (string)$name
-            ];
-        }
-    }
-
-    return $best;
-}
-
-function wa_get_models_for_brand(string $brandId): array
-{
-    $tblModelo = wa_get_model_table();
-    $rows = wa_db_fetch_all("
-        SELECT *
-        FROM {$tblModelo}
-        WHERE id_marca = " . (int)$brandId . "
-        ORDER BY nombre
-    ");
-
-    $models = [];
-
-    foreach ($rows as $row) {
-        $id = wa_pick_arr($row, ['id_model', 'id_modelo', 'id_mdoelo', 'id', 'modelo_id']);
-        $name = wa_pick_arr($row, ['nombre', 'name', 'modelo']);
-
-        if ($id === null || $name === null) {
-            continue;
-        }
-
-        $models[] = [
-            'id' => (string)$id,
-            'nombre' => (string)$name,
-            'norm' => wa_normalize_text((string)$name)
-        ];
-    }
-
-    return $models;
-}
-
-function wa_resolve_model(string $brandId, string $modelText): ?array
-{
-    $modelNorm = wa_normalize_text($modelText);
-    if ($modelNorm === '') {
-        return null;
-    }
-
-    $models = wa_get_models_for_brand($brandId);
-    $best = null;
-
-    foreach ($models as $model) {
-        if ($model['norm'] === $modelNorm) {
-            return $model;
-        }
-
-        if ($best === null && strpos($model['norm'], $modelNorm) !== false) {
-            $best = $model;
-        }
-    }
-
-    return $best;
-}
-
-// =========================
-// API
-// =========================
-function cotizar_api(string $brandId, array $payload): array
-{
-    $url = COTIZADOR_BASE_URL . rawurlencode($brandId);
     $jsonPayload = json_encode($payload, JSON_UNESCAPED_UNICODE);
 
     wa_log('API_REQUEST', [
@@ -529,6 +288,49 @@ function cotizar_api(string $brandId, array $payload): array
 
     $decoded['_http_code'] = $httpCode;
     return $decoded;
+}
+
+function wa_redondear_motorlider($valor): int
+{
+    $n = (float)$valor;
+    $entero = floor($n);
+    $decimal = $n - $entero;
+
+    if ($decimal <= 0.50) {
+        return (int)$entero;
+    }
+
+    return (int)ceil($n);
+}
+
+function wa_money($value): string
+{
+    if ($value === null || $value === '') {
+        return '-';
+    }
+
+    if (!is_numeric((string)$value)) {
+        return (string)$value;
+    }
+
+    return number_format((float)wa_redondear_motorlider((float)$value), 0, ',', '.');
+}
+
+function wa_number($value, int $decimals = 0): string
+{
+    if ($value === null || $value === '') {
+        return '-';
+    }
+
+    if (!is_numeric((string)$value)) {
+        return (string)$value;
+    }
+
+    if ($decimals <= 0) {
+        return (string)wa_redondear_motorlider((float)$value);
+    }
+
+    return number_format((float)$value, $decimals, '.', '');
 }
 
 function build_whatsapp_result_message(
@@ -601,15 +403,15 @@ function build_whatsapp_result_message(
         "Tipo de venta: " . format_tipo_venta_label($tipoVenta) . "\n" .
         "Valor pretendido: USD {$valor}\n\n" .
         "📊 Mercado\n" .
-        "- Comparables usados: " . wa_number($count, 0) . "\n" .
-        "- Mínimo: USD " . wa_number($min, 2) . "\n" .
-        "- Máximo: USD " . wa_number($max, 2) . "\n" .
-        "- Promedio: USD " . wa_number($avg, 2) . "\n\n" .
+        "- Comparables usados: " . wa_money($count) . "\n" .
+        "- Mínimo: USD " . wa_money($min) . "\n" .
+        "- Máximo: USD " . wa_money($max) . "\n" .
+        "- Promedio: USD " . wa_money($avg) . "\n\n" .
         "🏷️ Motorlider\n" .
-        "- Base: USD " . wa_number($promedioBaseMotorlider, 2) . "\n" .
-        "- Mínimo: USD " . wa_number($valorMinMotorlider, 2) . "\n" .
-        "- Máximo: USD " . wa_number($valorMaxMotorlider, 2) . "\n" .
-        "- Promedio: USD " . wa_number($valorPromMotorlider, 2);
+        "- Base: USD " . wa_money($promedioBaseMotorlider) . "\n" .
+        "- Mínimo: USD " . wa_money($valorMinMotorlider) . "\n" .
+        "- Máximo: USD " . wa_money($valorMaxMotorlider) . "\n" .
+        "- Promedio: USD " . wa_money($valorPromMotorlider);
 
     if ($vpretendidoAplicado) {
         $msg .= "\n\n⚠️ Se aplicó el valor pretendido del cliente.";
@@ -698,85 +500,43 @@ if ($bodyLower === 'cotizar') {
 
 // Paso: MARCA
 if (($userState['step'] ?? '') === 'marca') {
-    $marcaIngresada = trim($body);
+    $marca = trim($body);
 
-    if ($marcaIngresada === '') {
+    if ($marca === '') {
         twiml_message("No pude leer la marca. Escribime la MARCA del vehículo.");
-    }
-
-    try {
-        $brand = wa_resolve_brand($marcaIngresada);
-    } catch (\Throwable $e) {
-        wa_log('BRAND_RESOLVE_FAIL', ['error' => $e->getMessage()]);
-        twiml_message("Hubo un problema buscando la marca. Probá de nuevo en unos segundos.");
-    }
-
-    if (!$brand) {
-        twiml_message(
-            "No encontré esa marca en el sistema.\n\n"
-            . "Escribila nuevamente como figura en el cotizador.\n"
-            . "Ejemplo: BYD, Chevrolet, Volkswagen."
-        );
     }
 
     set_user_state($from, [
         'step' => 'modelo',
-        'marca' => $brand['nombre'],
-        'marca_id' => $brand['id']
+        'marca' => $marca
     ]);
 
     twiml_message(
         "Perfecto 👍\n\n"
-        . "Marca: {$brand['nombre']}\n\n"
+        . "Marca: {$marca}\n\n"
         . "Ahora escribime el MODELO."
     );
 }
 
 // Paso: MODELO
 if (($userState['step'] ?? '') === 'modelo') {
-    $modeloIngresado = trim($body);
+    $modelo = trim($body);
     $marca = trim((string)($userState['marca'] ?? ''));
-    $marcaId = trim((string)($userState['marca_id'] ?? ''));
 
-    if ($modeloIngresado === '') {
+    if ($modelo === '') {
         twiml_message("No pude leer el modelo. Escribime el MODELO del vehículo.");
-    }
-
-    try {
-        $model = wa_resolve_model($marcaId, $modeloIngresado);
-    } catch (\Throwable $e) {
-        wa_log('MODEL_RESOLVE_FAIL', ['error' => $e->getMessage(), 'marca_id' => $marcaId]);
-        twiml_message("Hubo un problema buscando el modelo. Probá de nuevo en unos segundos.");
-    }
-
-    if (!$model) {
-        $models = wa_get_models_for_brand($marcaId);
-        $sugerencias = [];
-
-        foreach (array_slice($models, 0, 8) as $m) {
-            $sugerencias[] = $m['nombre'];
-        }
-
-        $msg = "No encontré ese modelo para la marca {$marca}.\n\nEscribilo nuevamente.";
-        if ($sugerencias) {
-            $msg .= "\n\nAlgunos modelos disponibles:\n- " . implode("\n- ", $sugerencias);
-        }
-
-        twiml_message($msg);
     }
 
     set_user_state($from, [
         'step' => 'anio',
         'marca' => $marca,
-        'marca_id' => $marcaId,
-        'modelo' => $model['nombre'],
-        'modelo_id' => $model['id']
+        'modelo' => $modelo
     ]);
 
     twiml_message(
         "Excelente 👍\n\n"
         . "Marca: {$marca}\n"
-        . "Modelo: {$model['nombre']}\n\n"
+        . "Modelo: {$modelo}\n\n"
         . "Ahora escribime el AÑO del vehículo. Ejemplo: 2021"
     );
 }
@@ -785,9 +545,7 @@ if (($userState['step'] ?? '') === 'modelo') {
 if (($userState['step'] ?? '') === 'anio') {
     $anio = preg_replace('/[^0-9]/', '', $body);
     $marca = trim((string)($userState['marca'] ?? ''));
-    $marcaId = trim((string)($userState['marca_id'] ?? ''));
     $modelo = trim((string)($userState['modelo'] ?? ''));
-    $modeloId = trim((string)($userState['modelo_id'] ?? ''));
 
     if ($anio === '' || strlen($anio) !== 4) {
         twiml_message("El año no parece válido. Escribime un año de 4 dígitos. Ejemplo: 2021");
@@ -796,9 +554,7 @@ if (($userState['step'] ?? '') === 'anio') {
     set_user_state($from, [
         'step' => 'km',
         'marca' => $marca,
-        'marca_id' => $marcaId,
         'modelo' => $modelo,
-        'modelo_id' => $modeloId,
         'anio' => $anio
     ]);
 
@@ -815,9 +571,7 @@ if (($userState['step'] ?? '') === 'anio') {
 if (($userState['step'] ?? '') === 'km') {
     $km = preg_replace('/[^0-9]/', '', $body);
     $marca = trim((string)($userState['marca'] ?? ''));
-    $marcaId = trim((string)($userState['marca_id'] ?? ''));
     $modelo = trim((string)($userState['modelo'] ?? ''));
-    $modeloId = trim((string)($userState['modelo_id'] ?? ''));
     $anio = trim((string)($userState['anio'] ?? ''));
 
     if ($km === '') {
@@ -827,9 +581,7 @@ if (($userState['step'] ?? '') === 'km') {
     set_user_state($from, [
         'step' => 'version',
         'marca' => $marca,
-        'marca_id' => $marcaId,
         'modelo' => $modelo,
-        'modelo_id' => $modeloId,
         'anio' => $anio,
         'km' => $km
     ]);
@@ -849,9 +601,7 @@ if (($userState['step'] ?? '') === 'km') {
 if (($userState['step'] ?? '') === 'version') {
     $version = trim($body);
     $marca = trim((string)($userState['marca'] ?? ''));
-    $marcaId = trim((string)($userState['marca_id'] ?? ''));
     $modelo = trim((string)($userState['modelo'] ?? ''));
-    $modeloId = trim((string)($userState['modelo_id'] ?? ''));
     $anio = trim((string)($userState['anio'] ?? ''));
     $km = trim((string)($userState['km'] ?? ''));
 
@@ -862,9 +612,7 @@ if (($userState['step'] ?? '') === 'version') {
     set_user_state($from, [
         'step' => 'ficha_oficial',
         'marca' => $marca,
-        'marca_id' => $marcaId,
         'modelo' => $modelo,
-        'modelo_id' => $modeloId,
         'anio' => $anio,
         'km' => $km,
         'version' => $version
@@ -886,15 +634,19 @@ if (($userState['step'] ?? '') === 'ficha_oficial') {
         twiml_message("No entendí la respuesta. Respondé solamente: SI o NO");
     }
 
+    $marca = trim((string)($userState['marca'] ?? ''));
+    $modelo = trim((string)($userState['modelo'] ?? ''));
+    $anio = trim((string)($userState['anio'] ?? ''));
+    $km = trim((string)($userState['km'] ?? ''));
+    $version = trim((string)($userState['version'] ?? ''));
+
     set_user_state($from, [
         'step' => 'tipo_venta',
-        'marca' => $userState['marca'] ?? '',
-        'marca_id' => $userState['marca_id'] ?? '',
-        'modelo' => $userState['modelo'] ?? '',
-        'modelo_id' => $userState['modelo_id'] ?? '',
-        'anio' => $userState['anio'] ?? '',
-        'km' => $userState['km'] ?? '',
-        'version' => $userState['version'] ?? '',
+        'marca' => $marca,
+        'modelo' => $modelo,
+        'anio' => $anio,
+        'km' => $km,
+        'version' => $version,
         'ficha_oficial' => $ficha
     ]);
 
@@ -920,16 +672,21 @@ if (($userState['step'] ?? '') === 'tipo_venta') {
         );
     }
 
+    $marca = trim((string)($userState['marca'] ?? ''));
+    $modelo = trim((string)($userState['modelo'] ?? ''));
+    $anio = trim((string)($userState['anio'] ?? ''));
+    $km = trim((string)($userState['km'] ?? ''));
+    $version = trim((string)($userState['version'] ?? ''));
+    $ficha = trim((string)($userState['ficha_oficial'] ?? ''));
+
     set_user_state($from, [
         'step' => 'valor_pretendido',
-        'marca' => $userState['marca'] ?? '',
-        'marca_id' => $userState['marca_id'] ?? '',
-        'modelo' => $userState['modelo'] ?? '',
-        'modelo_id' => $userState['modelo_id'] ?? '',
-        'anio' => $userState['anio'] ?? '',
-        'km' => $userState['km'] ?? '',
-        'version' => $userState['version'] ?? '',
-        'ficha_oficial' => $userState['ficha_oficial'] ?? '',
+        'marca' => $marca,
+        'modelo' => $modelo,
+        'anio' => $anio,
+        'km' => $km,
+        'version' => $version,
+        'ficha_oficial' => $ficha,
         'tipo_venta' => $tipoVenta
     ]);
 
@@ -949,17 +706,23 @@ if (($userState['step'] ?? '') === 'valor_pretendido') {
         twiml_message("El valor pretendido no parece válido. Escribime solo números. Ejemplo: 20000");
     }
 
+    $marca = trim((string)($userState['marca'] ?? ''));
+    $modelo = trim((string)($userState['modelo'] ?? ''));
+    $anio = trim((string)($userState['anio'] ?? ''));
+    $km = trim((string)($userState['km'] ?? ''));
+    $version = trim((string)($userState['version'] ?? ''));
+    $ficha = trim((string)($userState['ficha_oficial'] ?? ''));
+    $tipoVenta = trim((string)($userState['tipo_venta'] ?? ''));
+
     set_user_state($from, [
         'step' => 'email',
-        'marca' => $userState['marca'] ?? '',
-        'marca_id' => $userState['marca_id'] ?? '',
-        'modelo' => $userState['modelo'] ?? '',
-        'modelo_id' => $userState['modelo_id'] ?? '',
-        'anio' => $userState['anio'] ?? '',
-        'km' => $userState['km'] ?? '',
-        'version' => $userState['version'] ?? '',
-        'ficha_oficial' => $userState['ficha_oficial'] ?? '',
-        'tipo_venta' => $userState['tipo_venta'] ?? '',
+        'marca' => $marca,
+        'modelo' => $modelo,
+        'anio' => $anio,
+        'km' => $km,
+        'version' => $version,
+        'ficha_oficial' => $ficha,
+        'tipo_venta' => $tipoVenta,
         'valor_pretendido' => $valor
     ]);
 
@@ -970,7 +733,7 @@ if (($userState['step'] ?? '') === 'valor_pretendido') {
     );
 }
 
-// Paso: EMAIL + COTIZACIÓN REAL
+// Paso: EMAIL
 if (($userState['step'] ?? '') === 'email') {
     $email = trim($body);
 
@@ -979,9 +742,7 @@ if (($userState['step'] ?? '') === 'email') {
     }
 
     $marca = trim((string)($userState['marca'] ?? ''));
-    $marcaId = trim((string)($userState['marca_id'] ?? ''));
     $modelo = trim((string)($userState['modelo'] ?? ''));
-    $modeloId = trim((string)($userState['modelo_id'] ?? ''));
     $anio = trim((string)($userState['anio'] ?? ''));
     $km = trim((string)($userState['km'] ?? ''));
     $version = trim((string)($userState['version'] ?? ''));
@@ -992,9 +753,7 @@ if (($userState['step'] ?? '') === 'email') {
     set_user_state($from, [
         'step' => 'completo',
         'marca' => $marca,
-        'marca_id' => $marcaId,
         'modelo' => $modelo,
-        'modelo_id' => $modeloId,
         'anio' => $anio,
         'km' => $km,
         'version' => $version,
@@ -1009,9 +768,11 @@ if (($userState['step'] ?? '') === 'email') {
         'data' => get_user_state($from)
     ]);
 
+    $brandUrl = normalize_brand_for_url($marca);
+
     $apiPayload = [
-        'marca' => $marcaId,
-        'modelo' => $modeloId,
+        'marca' => $marca,
+        'modelo' => $modelo,
         'anio' => $anio,
         'version' => $version,
         'km' => $km,
@@ -1025,14 +786,12 @@ if (($userState['step'] ?? '') === 'email') {
         'telefono' => $from
     ];
 
-    $apiResult = cotizar_api($marcaId, $apiPayload);
+    $apiResult = cotizar_api($brandUrl, $apiPayload);
 
     set_user_state($from, [
         'step' => 'resultado_enviado',
         'marca' => $marca,
-        'marca_id' => $marcaId,
         'modelo' => $modelo,
-        'modelo_id' => $modeloId,
         'anio' => $anio,
         'km' => $km,
         'version' => $version,

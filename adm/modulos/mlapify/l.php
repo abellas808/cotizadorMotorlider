@@ -176,7 +176,7 @@ try {
 		background: #fcfcfc;
 		border-radius: 6px;
 		padding: 14px;
-		max-height: 520px;
+		max-height: 700px;
 		overflow: auto;
 	}
 
@@ -276,6 +276,45 @@ try {
 		padding: 10px;
 		border-radius: 4px;
 		font-size: 12px;
+	}
+
+	.mlapify-post-card {
+		background: #fffef6;
+		border: 1px solid #eadfa8;
+		border-radius: 8px;
+		padding: 14px;
+		margin-top: 16px;
+	}
+
+	.mlapify-post-card h5 {
+		margin: 0 0 10px 0;
+		font-size: 16px;
+	}
+
+	.mlapify-post-grid {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 14px;
+	}
+
+	.mlapify-post-col {
+		flex: 1 1 260px;
+		background: #fff;
+		border: 1px solid #eee;
+		border-radius: 6px;
+		padding: 12px;
+	}
+
+	.mlapify-post-actions {
+		margin-top: 12px;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+
+	.mlapify-mini {
+		font-size: 12px;
+		color: #666;
 	}
 
 	@media (max-width: 980px) {
@@ -578,6 +617,26 @@ try {
 		return (v == null ? '' : String(v)).trim().toLowerCase();
 	}
 
+	function cotizaFormatNumber(val) {
+		let n = parseFloat(val);
+		if (!isFinite(n)) return '-';
+
+		const decimal = n - Math.floor(n);
+
+		if (decimal <= 0.50) {
+			n = Math.floor(n);
+		} else {
+			n = Math.ceil(n);
+		}
+
+		return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+	}
+
+	function cotizaFillTemplate(template, location) {
+		if (!template) return '';
+		return String(template).replace('{location}', encodeURIComponent(location));
+	}
+
 	function apifySortRows(rows) {
 		return (rows || []).slice().sort(function(a, b){
 			const marcaA = apifyNormalizeText(a && a.marca ? a.marca : '');
@@ -861,11 +920,278 @@ try {
 		return '';
 	}
 
-	function cotizaRenderResponse(res, sentPayload, endpointUrl) {
+	function cotizaRenderPostCotizacion(post, idCotizacion) {
+		if (!post || !post.agenda_habilitada) {
+			return '';
+		}
 
+		const cliente = post.cliente || {};
+		const vehiculo = post.vehiculo || {};
+		const endpoints = post.endpoints || {};
+
+		return `
+			<div class="mlapify-post-card">
+				<h5>Post-cotización / Agenda</h5>
+
+				<div class="mlapify-post-grid">
+					<div class="mlapify-post-col">
+						<div><strong>ID Cotización:</strong> ${cotizaEscapeHtml(idCotizacion || post.id_cotizacion || '')}</div>
+						<div><strong>Cliente:</strong> ${cotizaEscapeHtml(cliente.nombre || '')}</div>
+						<div><strong>Email:</strong> ${cotizaEscapeHtml(cliente.email || '')}</div>
+						<div><strong>Teléfono:</strong> ${cotizaEscapeHtml(cliente.telefono || '')}</div>
+					</div>
+
+					<div class="mlapify-post-col">
+						<div><strong>Marca:</strong> ${cotizaEscapeHtml(vehiculo.marca || '')}</div>
+						<div><strong>Modelo:</strong> ${cotizaEscapeHtml(vehiculo.modelo || '')}</div>
+						<div><strong>Año:</strong> ${cotizaEscapeHtml(vehiculo.anio || '')}</div>
+						<div><strong>Versión:</strong> ${cotizaEscapeHtml(vehiculo.version || '')}</div>
+						<div><strong>Familia:</strong> ${cotizaEscapeHtml(vehiculo.familia || '')}</div>
+					</div>
+
+					<div class="mlapify-post-col">
+						<div><strong>Calendario:</strong></div>
+						<div class="mlapify-mini">${cotizaEscapeHtml(endpoints.calendar_template || '')}</div>
+						<div style="margin-top:8px;"><strong>Horarios:</strong></div>
+						<div class="mlapify-mini">${cotizaEscapeHtml(endpoints.schedules_template || '')}</div>
+						<div style="margin-top:8px;"><strong>Agendar:</strong></div>
+						<div class="mlapify-mini">${cotizaEscapeHtml(endpoints.schedule_inspection_template || '')}</div>
+					</div>
+				</div>
+
+				<div class="mlapify-post-actions">
+					<button type="button" class="btn btn-small" onclick="cotizaIniciarAgenda(${idCotizacion})">
+						Continuar con agenda
+					</button>
+				</div>
+			</div>
+		`;
+	}
+
+	function cotizaIniciarAgenda(idCotizacion) {
+		console.log('Iniciando agenda para cotización:', idCotizacion);
+
+		const url = '/ws/index.php?peticion=sucursales';
+		const $box = $('#agenda_container');
+
+		if ($box.length) {
+			$box.html('Cargando sucursales...');
+		} else {
+			$('#cotiza_resultado').append('<div id="agenda_container" style="margin-top:15px;">Cargando sucursales...</div>');
+		}
+
+		$.ajax({
+			url: url,
+			type: 'POST',
+			dataType: 'json',
+			data: {}
+		})
+		.done(function(res){
+			console.log('RESP SUCURSALES', res);
+
+			const rows =
+				(res && Array.isArray(res.data) && res.data) ||
+				(res && Array.isArray(res.locations) && res.locations) ||
+				(res && Array.isArray(res.sucursales) && res.sucursales) ||
+				(res && Array.isArray(res.rows) && res.rows) ||
+				[];
+
+			if (!rows.length) {
+				$('#agenda_container').html(
+					'<div style="color:red;">No hay sucursales disponibles</div>' +
+					'<div style="margin-top:6px; color:#666;"><small>Respuesta: ' + $('<div>').text(JSON.stringify(res)).html() + '</small></div>'
+				);
+				return;
+			}
+
+			let html = '<div style="margin-top:10px;"><strong>Seleccionar sucursal:</strong></div>';
+			html += '<select id="agenda_sucursal" style="margin-top:5px; min-width:260px;">';
+
+			rows.forEach(function(s){
+				const id =
+					s.id ??
+					s.id_sucursal ??
+					s.location ??
+					s.codigo ??
+					'';
+
+				const nombre =
+					s.nombre ??
+					s.name ??
+					s.sucursal ??
+					s.descripcion ??
+					('Sucursal ' + id);
+
+				html += '<option value="' + String(id).replace(/"/g, '&quot;') + '">' +
+					$('<div>').text(nombre).html() +
+					'</option>';
+			});
+
+			html += '</select>';
+			html += '<div style="margin-top:10px;"><button class="btn btn-small" onclick="cotizaCargarCalendario()">Continuar</button></div>';
+			html += '<div id="agenda_calendario" style="margin-top:15px;"></div>';
+			html += '<div id="agenda_horarios" style="margin-top:15px;"></div>';
+
+			$('#agenda_container').html(html);
+		})
+		.fail(function(xhr){
+			let txt = 'Error cargando sucursales';
+			if (xhr && xhr.responseText) {
+				txt += '<br><small>' + $('<div>').text(xhr.responseText).html() + '</small>';
+			}
+			$('#agenda_container').html('<div style="color:red;">' + txt + '</div>');
+		});
+	}
+
+	function cotizaCargarCalendario() {
+		const sucursal = $('#agenda_sucursal').val();
+		if (!sucursal) {
+			alert('Seleccioná una sucursal');
+			return;
+		}
+
+		const today = new Date();
+		const anio = today.getFullYear();
+		const mes = today.getMonth() + 1;
+
+		const url = '/ws/index.php?peticion=calendar';
+
+		$('#agenda_calendario').html('Cargando calendario...');
+		$('#agenda_horarios').html('');
+
+		$.ajax({
+			url: url,
+			type: 'POST',
+			dataType: 'json',
+			data: {
+				location: sucursal,
+				anio: anio,
+				mes: mes
+			}
+		})
+		.done(function(res){
+			console.log('RESP CALENDARIO', res);
+
+			const rows =
+				(res && Array.isArray(res.data) && res.data) ||
+				(res && Array.isArray(res.days) && res.days) ||
+				(res && Array.isArray(res.calendario) && res.calendario) ||
+				(res && Array.isArray(res.rows) && res.rows) ||
+				[];
+
+			if (!rows.length) {
+				$('#agenda_calendario').html('<div style="color:red;">No hay días disponibles</div>');
+				return;
+			}
+
+			let html = '<div><strong>Seleccionar día:</strong></div><div style="margin-top:8px;">';
+
+			rows.forEach(function(d){
+				const fecha =
+					d.fecha ??
+					d.date ??
+					d.dia ??
+					d.valor ??
+					'';
+
+				const label =
+					d.label ??
+					d.fecha ??
+					d.date ??
+					d.texto ??
+					fecha;
+
+				if (!fecha) return;
+
+				html += '<button type="button" class="btn btn-small" style="margin:4px;" onclick="cotizaCargarHorarios(\'' + String(fecha).replace(/'/g, "\\'") + '\')">' +
+					$('<div>').text(label).html() +
+					'</button>';
+			});
+
+			html += '</div>';
+			$('#agenda_calendario').html(html);
+		})
+		.fail(function(xhr){
+			let txt = 'Error cargando calendario';
+			if (xhr && xhr.responseText) {
+				txt += '<br><small>' + $('<div>').text(xhr.responseText).html() + '</small>';
+			}
+			$('#agenda_calendario').html('<div style="color:red;">' + txt + '</div>');
+		});
+	}
+
+	function cotizaCargarHorarios(fecha) {
+		const sucursal = $('#agenda_sucursal').val();
+		if (!sucursal) {
+			alert('Seleccioná una sucursal');
+			return;
+		}
+
+		const url = '/ws/index.php?peticion=schedules';
+
+		$('#agenda_horarios').html('Cargando horarios...');
+
+		$.ajax({
+			url: url,
+			type: 'POST',
+			dataType: 'json',
+			data: {
+				location: sucursal,
+				date: fecha
+			}
+		})
+		.done(function(res){
+			console.log('RESP HORARIOS', res);
+
+			const rows =
+				(res && Array.isArray(res.data) && res.data) ||
+				(res && res.schedules && Array.isArray(res.schedules.horas_disponibles) && res.schedules.horas_disponibles) ||
+				(res && Array.isArray(res.horas_disponibles) && res.horas_disponibles) ||
+				(res && Array.isArray(res.rows) && res.rows) ||
+				[];
+
+			if (!rows.length) {
+				$('#agenda_horarios').html('<div style="color:red;">No hay horarios disponibles para ese día</div>');
+				return;
+			}
+
+			let html = '<div><strong>Horarios para ' + $('<div>').text(fecha).html() + ':</strong></div><div style="margin-top:8px;">';
+
+			rows.forEach(function(h){
+				const hora =
+					(typeof h === 'string') ? h :
+					(h.hora ?? h.hour ?? h.hora_comienzo ?? h.valor ?? '');
+
+				if (!hora) return;
+
+				html += '<button type="button" class="btn btn-small" style="margin:4px;" onclick="cotizaConfirmarAgenda(\'' +
+					String(fecha).replace(/'/g, "\\'") + '\', \'' +
+					String(hora).replace(/'/g, "\\'") + '\')">' +
+					$('<div>').text(hora).html() +
+					'</button>';
+			});
+
+			html += '</div>';
+			$('#agenda_horarios').html(html);
+		})
+		.fail(function(xhr){
+			let txt = 'Error cargando horarios';
+			if (xhr && xhr.responseText) {
+				txt += '<br><small>' + $('<div>').text(xhr.responseText).html() + '</small>';
+			}
+			$('#agenda_horarios').html('<div style="color:red;">' + txt + '</div>');
+		});
+	}
+
+	function cotizaConfirmarAgenda(fecha, hora) {
+		alert('Turno seleccionado: ' + fecha + ' ' + hora);
+	}
+
+	function cotizaRenderResponse(res, sentPayload, endpointUrl) {
 		console.log('RESP COTIZACION', res);
 
 		const r = res?.resultado || res?.data || res?.valores || null;
+		const post = res?.post_cotizacion || null;
 
 		const ok =
 			(res?.ok === true) ||
@@ -881,6 +1207,7 @@ try {
 			res?.id ||
 			res?.resultado?.id_cotizacion ||
 			res?.resultado?.cotizacion_id ||
+			post?.id_cotizacion ||
 			'';
 
 		if (!ok || !r) {
@@ -952,7 +1279,7 @@ try {
 						<div><strong>Vehículo:</strong> ${cotizaEscapeHtml(marca)} ${cotizaEscapeHtml(modelo)}</div>
 						<div><strong>Año:</strong> ${cotizaEscapeHtml(anio)}</div>
 						<div><strong>Kilómetros:</strong> ${cotizaEscapeHtml(km)}</div>
-						<div><strong>Valor pretendido:</strong> USD ${cotizaEscapeHtml(valor)}</div>
+						<div><strong>Valor pretendido:</strong> USD ${cotizaFormatNumber(valor)}</div>
 					</div>
 				</div>
 
@@ -960,21 +1287,21 @@ try {
 					<div style="font-size:16px; font-weight:bold; margin-bottom:10px;">Resultado de mercado</div>
 					<div style="line-height:1.8;">
 						<div><strong>Comparables usados:</strong> ${cotizaEscapeHtml(count)}</div>
-						<div><strong>Valor mínimo:</strong> USD ${cotizaEscapeHtml(min)}</div>
-						<div><strong>Valor máximo:</strong> USD ${cotizaEscapeHtml(max)}</div>
-						<div><strong>Promedio mercado:</strong> USD ${cotizaEscapeHtml(avg)}</div>
+						<div><strong>Valor mínimo:</strong> USD ${cotizaFormatNumber(min)}</div>
+						<div><strong>Valor máximo:</strong> USD ${cotizaFormatNumber(max)}</div>
+						<div><strong>Promedio mercado:</strong> USD ${cotizaFormatNumber(avg)}</div>
 					</div>
 				</div>
 
 				<div style="flex:1 1 320px; background:#f6fff5; border:1px solid #cfe6cc; border-radius:8px; padding:14px;">
 					<div style="font-size:16px; font-weight:bold; margin-bottom:10px;">Resultado Motorlider</div>
 					<div style="line-height:1.8;">
-						<div><strong>Promedio base Motorlider:</strong> USD ${cotizaEscapeHtml(promedioBaseMotorlider)}</div>
-						<div><strong>Valor mínimo Motorlider:</strong> USD ${cotizaEscapeHtml(valorMinMotorlider)}</div>
-						<div><strong>Valor máximo Motorlider:</strong> USD ${cotizaEscapeHtml(valorMaxMotorlider)}</div>
-						<div><strong>Valor promedio Motorlider:</strong> USD ${cotizaEscapeHtml(valorPromMotorlider)}</div>
+						<div><strong>Promedio base Motorlider:</strong> USD ${cotizaFormatNumber(promedioBaseMotorlider)}</div>
+						<div><strong>Valor mínimo Motorlider:</strong> USD ${cotizaFormatNumber(valorMinMotorlider)}</div>
+						<div><strong>Valor máximo Motorlider:</strong> USD ${cotizaFormatNumber(valorMaxMotorlider)}</div>
+						<div><strong>Valor promedio Motorlider:</strong> USD ${cotizaFormatNumber(valorPromMotorlider)}</div>
 						<div><strong>Valor pretendido aplicado:</strong> ${vpretendidoAplicado ? 'Sí' : 'No'}</div>
-						<div><strong>Valor pretendido cliente:</strong> USD ${cotizaEscapeHtml(valorPretendidoCliente)}</div>
+						<div><strong>Valor pretendido cliente:</strong> USD ${cotizaFormatNumber(valorPretendidoCliente)}</div>
 					</div>
 				</div>
 			</div>
@@ -991,6 +1318,8 @@ try {
 			`;
 		}
 
+		html += cotizaRenderPostCotizacion(post, idCotizacion);
+
 		cotizaSetResultadoHtml(html);
 
 		if (idCotizacion) {
@@ -998,7 +1327,6 @@ try {
 
 			setTimeout(function () {
 				$.getJSON(itemsUrl, function (resp) {
-
 					console.log('RESP ITEMS', resp);
 
 					if (!resp || !resp.ok || !resp.rows || !resp.rows.length) {

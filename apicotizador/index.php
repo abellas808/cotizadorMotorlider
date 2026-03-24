@@ -670,9 +670,10 @@ $app->post('/cotizadorPublico/{brand}', function (Request $request, Response $re
             'tag'=>'Cotizador Resultado Servicio'
         ]);
 
-        $resultado    = $svcRes['resultado'] ?? null;
-        $msg          = $svcRes['msg'] ?? 'OK';
-        $idCotizacion = $svcRes['id_cotizacion'] ?? null;
+        $resultado       = $svcRes['resultado'] ?? null;
+        $msg             = $svcRes['msg'] ?? 'OK';
+        $idCotizacion    = $svcRes['id_cotizacion'] ?? null;
+        $postCotizacion  = $svcRes['post_cotizacion'] ?? null;
 
         if ($modoTest) {
             $msg = "[TEST] ".$msg;
@@ -689,12 +690,13 @@ $app->post('/cotizadorPublico/{brand}', function (Request $request, Response $re
                 "msg" => $msg,
                 "id_cotizacion" => $idCotizacion,
                 "valores" => [
-                    "count"=>0,
-                    "min"=>null,
-                    "max"=>null,
-                    "avg"=>null
+                    "count" => 0,
+                    "min" => null,
+                    "max" => null,
+                    "avg" => null
                 ],
-                "resultado" => null
+                "resultado" => null,
+                "post_cotizacion" => $postCotizacion
             ];
 
             $return = $response->withJson($out,200);
@@ -709,17 +711,18 @@ $app->post('/cotizadorPublico/{brand}', function (Request $request, Response $re
         ----------------------------------*/
 
         $out = [
-            "error"=>false,
-            "msg"=>$msg,
-            "id_cotizacion"=>$idCotizacion,
-            "valores"=>[
-                "count"=>$resultado['count'] ?? null,
-                "min"=>$resultado['min'] ?? null,
-                "max"=>$resultado['max'] ?? null,
-                "avg"=>$resultado['avg'] ?? null
+            "error" => false,
+            "msg" => $msg,
+            "id_cotizacion" => $idCotizacion,
+            "valores" => [
+                "count" => $resultado['count'] ?? null,
+                "min" => $resultado['min'] ?? null,
+                "max" => $resultado['max'] ?? null,
+                "avg" => $resultado['avg'] ?? null
             ],
-            "url"=>$resultado['url'] ?? null,
-            "resultado"=>$resultado
+            "url" => $resultado['url'] ?? null,
+            "resultado" => $resultado,
+            "post_cotizacion" => $postCotizacion
         ];
 
         $return = $response->withJson($out,200);
@@ -731,7 +734,11 @@ $app->post('/cotizadorPublico/{brand}', function (Request $request, Response $re
     } catch(\Throwable $e){
 
         registrarApiLog($request,null,[
-            'rawBody'=>$e->getMessage(),
+            'rawBody'=>json_encode([
+                'msg'  => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]),
             'tag'=>'Cotizador Exception'
         ]);
 
@@ -744,9 +751,6 @@ $app->post('/cotizadorPublico/{brand}', function (Request $request, Response $re
     }
 
 });
-
-
-
 
 // SUCURSALES
 $app->get('/sucursales', function (Request $request, Response $response) {
