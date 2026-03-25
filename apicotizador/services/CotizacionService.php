@@ -123,6 +123,263 @@ class CotizacionService
         }
     }
 
+    private function construirMensajeClientePendiente(
+        array $dataIn,
+        string $brandTxt,
+        string $modeloTxt,
+        ?int $anioIn,
+        ?int $kmIn
+    ): string {
+        $nombre = trim((string)($dataIn['nombre'] ?? ''));
+        $auto = trim((string)($dataIn['nombre_auto'] ?? trim($brandTxt . ' ' . $modeloTxt)));
+
+        $msg  = "Hola " . ($nombre !== '' ? $nombre : 'cliente') . ",\n\n";
+        $msg .= "Recibimos tu solicitud de cotización.\n\n";
+        $msg .= "Vehículo: " . $auto . "\n";
+
+        if ($anioIn !== null) {
+            $msg .= "Año: " . $anioIn . "\n";
+        }
+
+        if ($kmIn !== null) {
+            $msg .= "Kilómetros: " . number_format($kmIn, 0, ',', '.') . "\n";
+        }
+
+        $msg .= "\nA la brevedad uno de nuestros representantes se pondrá en contacto contigo.\n\n";
+        $msg .= "Saludos,\n";
+        $msg .= "Motorlider";
+
+        return $msg;
+    }
+
+    private function construirMensajeInternoPendiente(
+        array $dataIn,
+        string $brandTxt,
+        string $modeloTxt,
+        ?int $anioIn,
+        ?int $kmIn,
+        ?float $valorPretendidoCliente,
+        string $detalleTecnico
+    ): string {
+        $auto = trim((string)($dataIn['nombre_auto'] ?? trim($brandTxt . ' ' . $modeloTxt)));
+
+        $msg  = "No tenemos comparables para este auto.\n";
+        $msg .= "Debemos realizar cotización manual y comunicarnos con el cliente.\n\n";
+        $msg .= "Detalle técnico: " . $detalleTecnico . "\n\n";
+        $msg .= "Cliente: " . ($dataIn['nombre'] ?? '') . "\n";
+        $msg .= "Email: " . ($dataIn['email'] ?? '') . "\n";
+        $msg .= "Teléfono: " . ($dataIn['telefono'] ?? '') . "\n";
+        $msg .= "Vehículo: " . $auto . "\n";
+
+        if ($anioIn !== null) {
+            $msg .= "Año: " . $anioIn . "\n";
+        }
+
+        if ($kmIn !== null) {
+            $msg .= "KM: " . number_format($kmIn, 0, ',', '.') . "\n";
+        }
+
+        if ($valorPretendidoCliente !== null) {
+            $msg .= "Valor pretendido: U$S " . number_format($valorPretendidoCliente, 0, ',', '.') . "\n";
+        }
+
+        return $msg;
+    }
+
+    private function registrarCotizacionPendiente(
+        array $dataIn,
+        ?int $brandId,
+        ?int $modelId,
+        string $brandTxt,
+        string $modeloTxt,
+        ?int $anioIn,
+        ?int $kmIn,
+        string $version,
+        ?float $valorPretendidoClienteRedondeado,
+        string $detalleEstado,
+        string $detalleTecnico,
+        array $extraDatos = []
+    ): ?int {
+        $id = null;
+        $cg_data = [];
+
+        $msgCliente = $this->construirMensajeClientePendiente(
+            $dataIn,
+            $brandTxt,
+            $modeloTxt,
+            $anioIn,
+            $kmIn
+        );
+
+        $msgInterno = $this->construirMensajeInternoPendiente(
+            $dataIn,
+            $brandTxt,
+            $modeloTxt,
+            $anioIn,
+            $kmIn,
+            $valorPretendidoClienteRedondeado,
+            $detalleTecnico
+        );
+
+        try {
+            $cg_data['nombre']            = $dataIn['nombre'] ?? null;
+            $cg_data['email']             = $dataIn['email'] ?? null;
+            $cg_data['telefono']          = $dataIn['telefono'] ?? null;
+            $cg_data['ci']                = $dataIn['ci'] ?? null;
+            $cg_data['fecha']             = date('Y-m-d');
+            $cg_data['kilometros']        = $kmIn;
+            $cg_data['ficha_tecnica']     = $dataIn['ficha_tecnica'] ?? null;
+            $cg_data['duenios']           = $dataIn['cantidad_duenios'] ?? null;
+            $cg_data['tipo_venta']        = $this->mapTipoVentaTexto($dataIn['venta_permuta'] ?? null);
+            $cg_data['precio_pretendido'] = $valorPretendidoClienteRedondeado;
+            $cg_data['marca']             = $brandTxt;
+            $cg_data['anio']              = $anioIn;
+            $cg_data['familia']           = $modelId;
+            $cg_data['auto']              = $dataIn['nombre_auto'] ?? trim($brandTxt . ' ' . $modeloTxt);
+
+            $cg_data['valor_minimo']   = 0;
+            $cg_data['valor_maximo']   = 0;
+            $cg_data['valor_promedio'] = 0;
+
+            $cg_data['valor_minimo_autodata']   = 0;
+            $cg_data['valor_maximo_autodata']   = 0;
+            $cg_data['valor_promedio_autodata'] = 0;
+
+            $cg_data['datos'] = json_encode(array_merge([
+                'pendiente'             => true,
+                'motivo_pendiente'      => $detalleEstado,
+                'motivo_tecnico'        => $detalleTecnico,
+                'brand_id'              => $brandId,
+                'model_id'              => $modelId,
+                'brand_final'           => $brandTxt,
+                'modelo_final'          => $modeloTxt,
+                'anio'                  => $anioIn,
+                'version'               => $version,
+                'fuente'                => 'apify_publicaciones',
+                'comparables_usados'    => 0
+            ], $extraDatos), JSON_UNESCAPED_UNICODE);
+
+            $cg_data['respuesta'] = json_encode([
+                'pendiente' => true,
+                'detalle_estado' => $detalleEstado,
+                'detalle_tecnico' => $detalleTecnico,
+                'msg_cliente' => $msgCliente,
+                'msg_interno' => $msgInterno
+            ], JSON_UNESCAPED_UNICODE);
+
+            $cg_data['msg'] = $msgCliente;
+            $cg_data['porcentajes_aplicados'] = json_encode([], JSON_UNESCAPED_UNICODE);
+            $cg_data['cuenta'] = null;
+
+            $cg_data['estado'] = 'PENDIENTE';
+            $cg_data['detalle_estado'] = $detalleEstado;
+            $cg_data['mail_enviado'] = 0;
+            $cg_data['fecha_mail'] = null;
+
+            $cg = new CotizacionGenerada($cg_data);
+            $created = $cg->save();
+            $id = isset($created->id_cotizaciones_generadas) ? (int)$created->id_cotizaciones_generadas : null;
+
+            $this->logInterno('PERSIST_PENDIENTE_OK', [
+                'id_cotizaciones_generadas' => $id,
+                'detalle_estado' => $detalleEstado,
+                'detalle_tecnico' => $detalleTecnico
+            ]);
+        } catch (\Throwable $e) {
+            $this->logInterno('PERSIST_PENDIENTE_FAIL', [
+                'error' => $e->getMessage(),
+                'file'  => $e->getFile(),
+                'line'  => $e->getLine(),
+                'detalle_estado' => $detalleEstado,
+                'detalle_tecnico' => $detalleTecnico
+            ]);
+            return null;
+        }
+
+        if ($id) {
+            try {
+                $mail = new MailService();
+
+                $mail->enviarConfirmacionCotizacion(
+                    [
+                        'nombre' => $cg_data['nombre'],
+                        'email' => $cg_data['email'],
+                        'telefono' => $cg_data['telefono'],
+                        'nombre_auto' => $cg_data['auto'],
+                        'brand' => $brandTxt,
+                        'modelo' => $modeloTxt,
+                        'anio' => $anioIn,
+                        'km' => $kmIn,
+                        'valor_pretendido' => $valorPretendidoClienteRedondeado
+                    ],
+                    [
+                        'ok' => false,
+                        'id_cotizacion' => $id,
+                        'msg' => $msgInterno,
+                        'msg_cliente' => $msgCliente,
+                        'msg_interno' => $msgInterno,
+                        'detalle_estado' => $detalleEstado,
+                        'comparables' => 0,
+                        'count' => 0,
+                        'min' => 0,
+                        'max' => 0,
+                        'avg' => 0,
+                        'valor_minimo_motorlider' => 0,
+                        'valor_maximo_motorlider' => 0,
+                        'valor_promedio_motorlider' => 0,
+                        'vpretendido_aplicado' => false,
+                        'valor_pretendido_cliente' => $valorPretendidoClienteRedondeado
+                    ]
+                );
+
+                $this->actualizarEstadoCotizacion(
+                    (int)$id,
+                    'PENDIENTE',
+                    $detalleEstado,
+                    1,
+                    date('Y-m-d H:i:s')
+                );
+
+                $this->logInterno('MAIL_PENDIENTE_OK', [
+                    'cotizacion_id' => $id,
+                    'email' => $cg_data['email'] ?? null
+                ]);
+            } catch (\Throwable $e) {
+                $this->actualizarEstadoCotizacion(
+                    (int)$id,
+                    'PENDIENTE',
+                    $detalleEstado,
+                    0,
+                    null
+                );
+
+                $this->logInterno('MAIL_PENDIENTE_FAIL', [
+                    'cotizacion_id' => $id,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
+
+        return $id;
+    }
+
+    private function respuestaPendiente(
+        ?int $idCotizacion,
+        string $mensajePublico,
+        string $detalleEstado,
+        array $debug = []
+    ): array {
+        return [
+            'msg' => $mensajePublico,
+            'resultado' => null,
+            'id_cotizacion' => $idCotizacion,
+            'post_cotizacion' => null,
+            'estado' => 'PENDIENTE',
+            'detalle_estado' => $detalleEstado,
+            'debug' => $debug
+        ];
+    }
+
     public function procesarCotizacionPublica(array $dataIn, string $brand): array
     {
         $this->logInterno('INICIO', [
@@ -145,6 +402,11 @@ class CotizacionService
         $versionName  = trim((string)($dataIn['version_name'] ?? ''));
         $nombreAuto   = trim((string)($dataIn['nombre_auto'] ?? ''));
         $ver          = trim((string)($versionOther ?: ($versionName ?: $version)));
+
+        $valorPretendidoCliente = $this->toFloatOrNull($dataIn['valor_pretendido'] ?? null);
+        $valorPretendidoClienteRedondeado = $valorPretendidoCliente !== null
+            ? $this->redondearMotorlider($valorPretendidoCliente)
+            : null;
 
         $brandId      = is_numeric($brandIn) ? (int)$brandIn : null;
         $modelInputId = is_numeric($modeloIn) ? (int)$modeloIn : null;
@@ -272,6 +534,9 @@ class CotizacionService
         }
 
         if (!$ultimaCorrida || empty($ultimaCorrida['corrida_id'])) {
+            $detalleEstado = 'No tenemos comparables para la cotización';
+            $detalleTecnico = 'No existe una corrida válida reciente para esa marca/modelo.';
+
             $this->logInterno('SIN_CORRIDA_VALIDA', [
                 'brand_id'  => $brandId,
                 'model_id'  => $modelId,
@@ -279,12 +544,33 @@ class CotizacionService
                 'modeloTxt' => $modeloTxt
             ]);
 
-            return [
-                'msg' => 'No existe una corrida válida reciente para esa marca/modelo.',
-                'resultado' => null,
-                'id_cotizacion' => null,
-                'post_cotizacion' => null
-            ];
+            $idPendiente = $this->registrarCotizacionPendiente(
+                $dataIn,
+                $brandId,
+                $modelId,
+                $brandTxt,
+                $modeloTxt,
+                $anioIn,
+                $kmIn,
+                $ver,
+                $valorPretendidoClienteRedondeado,
+                $detalleEstado,
+                $detalleTecnico,
+                [
+                    'motivo_origen' => 'sin_corrida_valida'
+                ]
+            );
+
+            return $this->respuestaPendiente(
+                $idPendiente,
+                'Recibimos tu solicitud de cotización. A la brevedad uno de nuestros representantes se pondrá en contacto contigo.',
+                $detalleEstado,
+                [
+                    'motivo_tecnico' => $detalleTecnico,
+                    'brand_id' => $brandId,
+                    'model_id' => $modelId
+                ]
+            );
         }
 
         $corridaId = (string)$ultimaCorrida['corrida_id'];
@@ -329,12 +615,36 @@ class CotizacionService
         ]);
 
         if (count($publicaciones) === 0) {
-            return [
-                'msg' => 'No se encontraron publicaciones para la última corrida válida.',
-                'resultado' => null,
-                'id_cotizacion' => null,
-                'post_cotizacion' => null
-            ];
+            $detalleEstado = 'No tenemos comparables para la cotización';
+            $detalleTecnico = 'No se encontraron publicaciones para la última corrida válida.';
+
+            $idPendiente = $this->registrarCotizacionPendiente(
+                $dataIn,
+                $brandId,
+                $modelId,
+                $brandTxt,
+                $modeloTxt,
+                $anioIn,
+                $kmIn,
+                $ver,
+                $valorPretendidoClienteRedondeado,
+                $detalleEstado,
+                $detalleTecnico,
+                [
+                    'motivo_origen' => 'sin_publicaciones',
+                    'corrida_id' => $corridaId
+                ]
+            );
+
+            return $this->respuestaPendiente(
+                $idPendiente,
+                'Recibimos tu solicitud de cotización. A la brevedad uno de nuestros representantes se pondrá en contacto contigo.',
+                $detalleEstado,
+                [
+                    'corrida_id' => $corridaId,
+                    'motivo_tecnico' => $detalleTecnico
+                ]
+            );
         }
 
         $comparables = [];
@@ -456,19 +766,41 @@ class CotizacionService
         ]);
 
         if (count($comparables) === 0) {
-            return [
-                'msg' => 'No se encontraron publicaciones comparables en la última corrida válida.',
-                'resultado' => null,
-                'id_cotizacion' => null,
-                'post_cotizacion' => null,
-                'debug' => [
+            $detalleEstado = 'No tenemos comparables para la cotización';
+            $detalleTecnico = 'No se encontraron publicaciones comparables en la última corrida válida.';
+
+            $idPendiente = $this->registrarCotizacionPendiente(
+                $dataIn,
+                $brandId,
+                $modelId,
+                $brandTxt,
+                $modeloTxt,
+                $anioIn,
+                $kmIn,
+                $ver,
+                $valorPretendidoClienteRedondeado,
+                $detalleEstado,
+                $detalleTecnico,
+                [
+                    'motivo_origen' => 'sin_comparables',
+                    'corrida_id' => $corridaId,
+                    'publicaciones_total' => count($publicaciones)
+                ]
+            );
+
+            return $this->respuestaPendiente(
+                $idPendiente,
+                'Recibimos tu solicitud de cotización. A la brevedad uno de nuestros representantes se pondrá en contacto contigo.',
+                $detalleEstado,
+                [
                     'corrida_id' => $corridaId,
                     'publicaciones_total' => count($publicaciones),
                     'version' => $ver,
                     'anio' => $anioIn,
-                    'km' => $kmIn
+                    'km' => $kmIn,
+                    'motivo_tecnico' => $detalleTecnico
                 ]
-            ];
+            );
         }
 
         usort($comparables, function (array $a, array $b) {
@@ -510,11 +842,6 @@ class CotizacionService
             $avg,
             $dataIn
         );
-
-        $valorPretendidoCliente = $this->toFloatOrNull($dataIn['valor_pretendido'] ?? null);
-        $valorPretendidoClienteRedondeado = $valorPretendidoCliente !== null
-            ? $this->redondearMotorlider($valorPretendidoCliente)
-            : null;
 
         $vpretendidoAplicado = false;
         if (
@@ -646,34 +973,34 @@ class CotizacionService
                 $mail = new MailService();
 
                 $mail->enviarConfirmacionCotizacion(
-                [
-                    'nombre' => $cg_data['nombre'],
-                    'email' => $cg_data['email'],
-                    'telefono' => $cg_data['telefono'],
-                    'nombre_auto' => $cg_data['auto'],
-                    'brand' => $brandTxt,
-                    'modelo' => $modeloTxt,
-                    'anio' => $anioIn,
-                    'km' => $kmIn,
-                    'valor_pretendido' => $valorPretendidoClienteRedondeado
-                ],
-                [
-                    'ok' => true,
-                    'id_cotizacion' => $id,
-                    'msg' => $resultado['msg_cliente'],
-                    'msg_cliente' => $resultado['msg_cliente'],
-                    'comparables' => $resultado['count'],
-                    'count' => $resultado['count'],
-                    'min' => $resultado['min'],
-                    'max' => $resultado['max'],
-                    'avg' => $resultado['avg'],
-                    'valor_minimo_motorlider' => $resultado['valor_minimo_motorlider'],
-                    'valor_maximo_motorlider' => $resultado['valor_maximo_motorlider'],
-                    'valor_promedio_motorlider' => $resultado['valor_promedio_motorlider'],
-                    'vpretendido_aplicado' => $resultado['vpretendido_aplicado'],
-                    'valor_pretendido_cliente' => $resultado['valor_pretendido_cliente']
-                ]
-            );
+                    [
+                        'nombre' => $cg_data['nombre'],
+                        'email' => $cg_data['email'],
+                        'telefono' => $cg_data['telefono'],
+                        'nombre_auto' => $cg_data['auto'],
+                        'brand' => $brandTxt,
+                        'modelo' => $modeloTxt,
+                        'anio' => $anioIn,
+                        'km' => $kmIn,
+                        'valor_pretendido' => $valorPretendidoClienteRedondeado
+                    ],
+                    [
+                        'ok' => true,
+                        'id_cotizacion' => $id,
+                        'msg' => $resultado['msg_cliente'],
+                        'msg_cliente' => $resultado['msg_cliente'],
+                        'comparables' => $resultado['count'],
+                        'count' => $resultado['count'],
+                        'min' => $resultado['min'],
+                        'max' => $resultado['max'],
+                        'avg' => $resultado['avg'],
+                        'valor_minimo_motorlider' => $resultado['valor_minimo_motorlider'],
+                        'valor_maximo_motorlider' => $resultado['valor_maximo_motorlider'],
+                        'valor_promedio_motorlider' => $resultado['valor_promedio_motorlider'],
+                        'vpretendido_aplicado' => $resultado['vpretendido_aplicado'],
+                        'valor_pretendido_cliente' => $resultado['valor_pretendido_cliente']
+                    ]
+                );
 
                 $this->actualizarEstadoCotizacion(
                     (int)$id,
