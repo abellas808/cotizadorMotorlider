@@ -1653,6 +1653,39 @@ function obtenerContenidoURLConCurl($url) {
 			return array("codigo"=>500, "mensaje"=> "No hay horarios con más de 90 días de anticipación.","error"=>500);
 		}
 
+		// =========================
+		// BLOQUEOS MANUALES
+		// =========================
+		$bloqueo_dia_completo = false;
+		$horas_bloqueadas = array();
+
+		$qBloqueos = $bd->query('
+			SELECT hora, motivo
+			FROM agenda_bloqueos
+			WHERE id_sucursal = "'.$sucursal.'"
+			AND fecha = "'.$fecha.'"
+			AND activo = 1
+			AND cancelado = 0
+		');
+
+		if ($qBloqueos && $qBloqueos->num_rows > 0) {
+			while($bloq = $qBloqueos->fetch_object()) {
+				if ($bloq->hora === null || $bloq->hora === '' || $bloq->hora == '00:00:00') {
+					$bloqueo_dia_completo = true;
+					LogCron("Dia bloqueado manualmente. Motivo: " . ($bloq->motivo ?? ''));
+					break;
+				} else {
+					$horaBloq = substr($bloq->hora, 0, 5);
+					$horas_bloqueadas[] = $horaBloq;
+					LogCron("Hora bloqueada manualmente: " . $horaBloq . " Motivo: " . ($bloq->motivo ?? ''));
+				}
+			}
+		}
+
+		if ($bloqueo_dia_completo) {
+			return array("codigo"=>500, "mensaje"=> "No hay horarios para la fecha indicada.","error"=>500);
+		}
+
 		$horarios = $bd->query('SELECT hora_comienzo FROM agenda_particulares
 		INNER JOIN agenda_horas_particulares
 		ON agenda_particulares.id_particular = agenda_horas_particulares.id_particular
@@ -1696,7 +1729,17 @@ function obtenerContenidoURLConCurl($url) {
 		if($horarios->num_rows > 0) {
 			LogCron("Hay horarios");
 			$array_horas = array();
+
 			while($horario = $horarios->fetch_object()){
+
+				$hora_actual_loop = substr($horario->hora_comienzo, 0, 5);
+
+				// BLOQUEO POR HORA
+				if (in_array($hora_actual_loop, $horas_bloqueadas)) {
+					LogCron("Horario bloqueado manualmente, no se muestra: " . $hora_actual_loop);
+					continue;
+				}
+
 				$query_horario_ocupado = $bd->query('SELECT * FROM agendas WHERE fecha = "'.($fecha).'"  AND hora = "'.$horario->hora_comienzo.'"');
 				$horario_ocupado = $query_horario_ocupado->fetch_all(MYSQLI_ASSOC);
 
@@ -1713,7 +1756,6 @@ function obtenerContenidoURLConCurl($url) {
 							"hora" => $horario->hora_comienzo
 						);
 					}
-
 				}
 			}
 
@@ -1733,116 +1775,182 @@ function obtenerContenidoURLConCurl($url) {
 
 	/* scheduleInspection - Parámetros POST: location,fecha,hora,modelo,marca,anio,familia,auto,nombre,email,telefono,cotizacion */
 	function scheduleInspection($bd){	
-	include('./../adm/includes/funciones.php');
-	include('./../adm/includes/class.phpmailer.php');
+		include('./../adm/includes/funciones.php');
+		include('./../adm/includes/class.phpmailer.php');
 
-	LogCron("\n\n------- START scheduleInspection -------");
+		LogCron("\n\n------- START scheduleInspection -------");
 
-	$sucursal = $_POST['location'];
-	$fecha = $_POST['date'];
-	$hora = $_POST['hora'];
-	$modelo = $_POST['modelo'];
-	$marca = $_POST['marca'];
-	$anio = $_POST['anio'];
-	$familia = $_POST['familia'];
-	$auto = $_POST['auto'];
-	$nombre = $_POST['nombre'];
-	$email = $_POST['email'];
-	$telefono = $_POST['telefono'];
-	$id_cotizacion = $_POST['id_cotizacion'];
+		$sucursal = $_POST['location'];
+		$fecha = $_POST['date'];
+		$hora = $_POST['hora']; 
+		$modelo = $_POST['modelo'];
+		$marca = $_POST['marca'];
+		$anio = $_POST['anio'];
+		$familia = $_POST['familia'];
+		$auto = $_POST['auto'];
+		$nombre = $_POST['nombre'];
+		$email = $_POST['email'];
+		$telefono = $_POST['telefono'];
+		$id_cotizacion = $_POST['id_cotizacion'];
 
-	// VALIDACIÓN BÁSICA
-	if(!$sucursal || !$fecha || !$hora || !$modelo || !$marca || !$anio || !$familia || !$auto || !$nombre || !$email || !$telefono){
-		return ["codigo"=>500, "mensaje"=>"Datos incompletos.","error"=>500];
-	}
+		// =========================
+		// 1. VALIDACIÓN BÁSICA
+		// =========================
+		if(!$sucursal || !$fecha || !$hora || !$modelo || !$marca || !$anio || !$familia || !$auto || !$nombre || !$email || !$telefono){
+			return ["codigo"=>500, "mensaje"=>"Datos incompletos.","error"=>500];
+		}
 
-	// =========================
-	// 1. VALIDAR DUPLICADO
-	// =========================
-	$q = $bd->query("
-		SELECT id_agenda
-		FROM agendas
-		WHERE id_cotizacion = '".$id_cotizacion."'
-		AND fecha = '".$fecha."'
-		AND hora = '".$hora."'
-		LIMIT 1
-	");
+		// =========================
+		// 2. VALIDAR BLOQUEOS
+		// =========================
+		$qBloqueoDia = $bd->query("
+			SELECT id_bloqueo, motivo
+			FROM agenda_bloqueos
+			WHERE id_sucursal = '".$sucursal."'
+			AND fecha = '".$fecha."'
+			AND activo = 1
+			AND hora IS NULL
+			LIMIT 1
+		");
 
-	$existe = $q->fetch_array(MYSQLI_ASSOC);
+		$bloqueoDia = $qBloqueoDia ? $qBloqueoDia->fetch_array(MYSQLI_ASSOC) : null;
 
-	if ($existe) {
-		LogCron("DUPLICADO detectado");
+		if ($bloqueoDia) {
+			LogCron("BLOQUEO DIA COMPLETO detectado");
+			return [
+				"codigo"=>500,
+				"mensaje"=>"La fecha seleccionada no está disponible para reservas.",
+				"error"=>500
+			];
+		}
+
+		$qBloqueoHora = $bd->query("
+			SELECT id_bloqueo, motivo
+			FROM agenda_bloqueos
+			WHERE id_sucursal = '".$sucursal."'
+			AND fecha = '".$fecha."'
+			AND activo = 1
+			AND TIME_FORMAT(hora, '%H:%i') = '".$hora."'
+			LIMIT 1
+		");
+
+		$bloqueoHora = $qBloqueoHora ? $qBloqueoHora->fetch_array(MYSQLI_ASSOC) : null;
+
+		if ($bloqueoHora) {
+			LogCron("BLOQUEO HORA detectado");
+			return [
+				"codigo"=>500,
+				"mensaje"=>"La hora seleccionada no está disponible para reservas.",
+				"error"=>500
+			];
+		}
+
+		// =========================
+		// 3. VALIDAR DUPLICADO EXACTO
+		// =========================
+		$q = $bd->query("
+			SELECT id_agenda
+			FROM agendas
+			WHERE id_cotizacion = '".$id_cotizacion."'
+			AND fecha = '".$fecha."'
+			AND hora = '".$hora."'
+			LIMIT 1
+		");
+
+		$existe = $q ? $q->fetch_array(MYSQLI_ASSOC) : null;
+
+		if ($existe) {
+			LogCron("DUPLICADO detectado");
+			return [
+				"codigo"=>500,
+				"mensaje"=>"Ya existe una agenda para esa cotización en ese horario",
+				"error"=>500
+			];
+		}
+
+		// =========================
+		// 4. CARGAR SUCURSAL
+		// =========================
+		$qSucursal = $bd->query("
+			SELECT nombre, direccion, email, telefono, ubicacion
+			FROM agenda_sucursal
+			WHERE id_sucursal = '".$sucursal."'
+			LIMIT 1
+		");
+
+		$sucursalData = $qSucursal ? $qSucursal->fetch_array(MYSQLI_ASSOC) : null;
+
+		$suc_name = $sucursalData['nombre'] ?? '';
+		$suc_direccion = $sucursalData['direccion'] ?? '';
+		$suc_email = $sucursalData['email'] ?? '';
+		$suc_telefono = $sucursalData['telefono'] ?? '';
+
+		// =========================
+		// 5. INSERTAR
+		// =========================
+		$chars = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+		$rand = '';
+		for ($i = 0; $i < 50; $i++) {
+			$rand .= $chars[rand(0, strlen($chars)-1)];
+		}
+
+		$cero = 0;
+		$na = 'N/A';
+
+		$ins = $bd->prepare("
+			INSERT INTO agendas 
+			(id_sucursal, fecha, hora, modelo, marca, anio, familia, auto, nombre, ci, email, telefono, rand_string, direccion, inspeccion_domiciliaria, id_cotizacion)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		");
+
+		$ins->bind_param("ssssssssssssssss",
+			$sucursal,$fecha,$hora,$modelo,$marca,$anio,$familia,$auto,
+			$nombre,$cero,$email,$telefono,$rand,$na,$cero,$id_cotizacion
+		);
+
+		if (!$ins->execute()) {
+			LogCron("ERROR INSERT: ".$ins->error);
+			return ["codigo"=>500,"mensaje"=>"Error al guardar agenda","error"=>500];
+		}
+
+		LogCron("INSERT OK agenda_id=".$ins->insert_id);
+
+		// =========================
+		// 6. MAIL (NO ROMPE FLUJO)
+		// =========================
+		try {
+			$mail = new PHPMailer(true);
+			$mail->isHTML(true);
+			$mail->From = "noresponder@motorliderweb.com.uy";
+			$mail->FromName = "MOTORLIDER";
+			$mail->AddAddress($email, $nombre);
+			$mail->Subject = "Reserva de Agenda MOTORLIDER";
+			$mail->Body =
+				"Tu agenda fue confirmada.<br><br>" .
+				"<strong>Fecha:</strong> " . date('d/m/Y', strtotime($fecha)) . "<br>" .
+				"<strong>Hora:</strong> " . $hora . "<br>" .
+				"<strong>Sucursal:</strong> " . $suc_name . "<br>" .
+				"<strong>Dirección:</strong> " . $suc_direccion . "<br>" .
+				"<strong>Vehículo:</strong> " . $auto . "<br>" .
+				(!empty($suc_email) ? "<strong>Email sucursal:</strong> " . $suc_email . "<br>" : "") .
+				(!empty($suc_telefono) ? "<strong>Teléfono sucursal:</strong> " . $suc_telefono . "<br>" : "");
+
+			$mail->send();
+			$msg = "Agenda confirmada y email enviado.";
+		} catch (Exception $e) {
+			LogCron("MAIL ERROR: ".$e->getMessage());
+			$msg = "Agenda confirmada (sin email).";
+		}
+
+		// =========================
+		// 7. RESPUESTA FINAL
+		// =========================
 		return [
-			"codigo"=>500,
-			"mensaje"=>"Ya existe una agenda para esa cotización en ese horario",
-			"error"=>500
+			"codigo"=>200,
+			"mensaje"=>$msg,
+			"error"=>0
 		];
 	}
-
-	// =========================
-	// 2. INSERTAR
-	// =========================
-	$chars = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
-	$rand = '';
-	for ($i = 0; $i < 50; $i++) {
-		$rand .= $chars[rand(0, strlen($chars)-1)];
-	}
-
-	$cero = 0;
-	$na = 'N/A';
-
-	$ins = $bd->prepare("
-		INSERT INTO agendas 
-		(id_sucursal, fecha, hora, modelo, marca, anio, familia, auto, nombre, ci, email, telefono, rand_string, direccion, inspeccion_domiciliaria, id_cotizacion)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-	");
-
-	$ins->bind_param("ssssssssssssssss",
-		$sucursal,$fecha,$hora,$modelo,$marca,$anio,$familia,$auto,
-		$nombre,$cero,$email,$telefono,$rand,$na,$cero,$id_cotizacion
-	);
-
-	if (!$ins->execute()) {
-		LogCron("ERROR INSERT: ".$ins->error);
-		return ["codigo"=>500,"mensaje"=>"Error al guardar agenda","error"=>500];
-	}
-
-	LogCron("INSERT OK agenda_id=".$ins->insert_id);
-
-	// =========================
-	// 3. MAIL (NO ROMPE FLUJO)
-	// =========================
-	try {
-		$mail = new PHPMailer(true);
-		$mail->isHTML(true);
-		$mail->From = "noresponder@motorliderweb.com.uy";
-		$mail->FromName = "MOTORLIDER";
-		$mail->AddAddress($email, $nombre);
-		$mail->Subject = "Reserva de Agenda";
-		$mail->Body =
-		"Tu agenda fue confirmada.<br><br>" .
-		"<strong>Fecha:</strong> " . date('d/m/Y', strtotime($fecha)) . "<br>" .
-		"<strong>Hora:</strong> " . $hora . "<br>" .
-		"<strong>Sucursal:</strong> " . $suc_name . "<br>" .
-		"<strong>Dirección:</strong> " . $suc_direccion . "<br>" .
-		"<strong>Vehículo:</strong> " . $auto;
-
-		$mail->send();
-		$msg = "Agenda confirmada y email enviado.";
-	} catch (Exception $e) {
-		LogCron("MAIL ERROR: ".$e->getMessage());
-		$msg = "Agenda confirmada (sin email).";
-	}
-
-	// =========================
-	// 4. RESPUESTA FINAL ÚNICA
-	// =========================
-	return [
-		"codigo"=>200,
-		"mensaje"=>$msg,
-		"error"=>0
-	];
-}
 
 	/* pricesInternal - Parámetros POST: brand,model,anio,version,km */
 	function pricesInternal($bd){	
