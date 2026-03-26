@@ -141,5 +141,10 @@ class MailService
         $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
 
         return trim($text);
-    }                                                                           
+    }            
+    
+    public function enviarSoloMailInternoCotizacion(array $clienteData, array $resultado): void
+    {
+        $this->enviarMailInterno($clienteData, $resultado);
+    }
 }

@@ -123,6 +123,50 @@ class CotizacionService
         }
     }
 
+    private function buildClienteDataMail(array $cg_data, string $brandTxt, string $modeloTxt, ?int $anioIn, ?int $kmIn): array
+{
+    return [
+        'nombre' => $cg_data['nombre'] ?? '',
+        'email' => $cg_data['email'] ?? '',
+        'telefono' => $cg_data['telefono'] ?? '',
+        'nombre_auto' => $cg_data['auto'] ?? '',
+        'brand' => $brandTxt,
+        'marca' => $brandTxt,
+        'modelo' => $modeloTxt,
+        'anio' => $anioIn,
+        'km' => $kmIn,
+        'valor_pretendido' => $cg_data['precio_pretendido'] ?? null,
+    ];
+}
+
+    private function buildResultadoMailDesdePersistencia(
+        array $cg_data,
+        ?int $idCotizacion,
+        int $comparablesCount,
+        bool $ok,
+        string $mensajeMail,
+        bool $vpretendidoAplicado = false
+    ): array {
+        return [
+            'ok' => $ok,
+            'id_cotizacion' => $idCotizacion,
+            'msg' => $mensajeMail,
+            'msg_cliente' => $cg_data['msg'] ?? '',
+            'comparables' => $comparablesCount,
+            'count' => $comparablesCount,
+            'min' => $cg_data['valor_minimo'] ?? 0,
+            'max' => $cg_data['valor_maximo'] ?? 0,
+            'avg' => $cg_data['valor_promedio'] ?? 0,
+            'median' => null,
+            'valor_final' => $cg_data['valor_promedio_autodata'] ?? null,
+            'valor_minimo_motorlider' => $cg_data['valor_minimo_autodata'] ?? 0,
+            'valor_maximo_motorlider' => $cg_data['valor_maximo_autodata'] ?? 0,
+            'valor_promedio_motorlider' => $cg_data['valor_promedio_autodata'] ?? 0,
+            'vpretendido_aplicado' => $vpretendidoAplicado,
+            'valor_pretendido_cliente' => $cg_data['precio_pretendido'] ?? null,
+        ];
+    }
+
     private function construirMensajeClientePendiente(
         array $dataIn,
         string $brandTxt,
@@ -300,37 +344,37 @@ class CotizacionService
             try {
                 $mail = new MailService();
 
-                $mail->enviarConfirmacionCotizacion(
-                    [
-                        'nombre' => $cg_data['nombre'],
-                        'email' => $cg_data['email'],
-                        'telefono' => $cg_data['telefono'],
-                        'nombre_auto' => $cg_data['auto'],
-                        'brand' => $brandTxt,
-                        'modelo' => $modeloTxt,
-                        'anio' => $anioIn,
-                        'km' => $kmIn,
-                        'valor_pretendido' => $valorPretendidoClienteRedondeado
-                    ],
-                    [
-                        'ok' => false,
-                        'id_cotizacion' => $id,
-                        'msg' => $msgInterno,
-                        'msg_cliente' => $msgCliente,
-                        'msg_interno' => $msgInterno,
-                        'detalle_estado' => $detalleEstado,
-                        'comparables' => 0,
-                        'count' => 0,
-                        'min' => 0,
-                        'max' => 0,
-                        'avg' => 0,
-                        'valor_minimo_motorlider' => 0,
-                        'valor_maximo_motorlider' => 0,
-                        'valor_promedio_motorlider' => 0,
-                        'vpretendido_aplicado' => false,
-                        'valor_pretendido_cliente' => $valorPretendidoClienteRedondeado
-                    ]
-                );
+                // $mail->enviarConfirmacionCotizacion(
+                //     [
+                //         'nombre' => $cg_data['nombre'],
+                //         'email' => $cg_data['email'],
+                //         'telefono' => $cg_data['telefono'],
+                //         'nombre_auto' => $cg_data['auto'],
+                //         'brand' => $brandTxt,
+                //         'modelo' => $modeloTxt,
+                //         'anio' => $anioIn,
+                //         'km' => $kmIn,
+                //         'valor_pretendido' => $valorPretendidoClienteRedondeado
+                //     ],
+                //     [
+                //         'ok' => false,
+                //         'id_cotizacion' => $id,
+                //         'msg' => $msgInterno,
+                //         'msg_cliente' => $msgCliente,
+                //         'msg_interno' => $msgInterno,
+                //         'detalle_estado' => $detalleEstado,
+                //         'comparables' => 0,
+                //         'count' => 0,
+                //         'min' => 0,
+                //         'max' => 0,
+                //         'avg' => 0,
+                //         'valor_minimo_motorlider' => 0,
+                //         'valor_maximo_motorlider' => 0,
+                //         'valor_promedio_motorlider' => 0,
+                //         'vpretendido_aplicado' => false,
+                //         'valor_pretendido_cliente' => $valorPretendidoClienteRedondeado
+                //     ]
+                // );
 
                 $this->actualizarEstadoCotizacion(
                     (int)$id,
@@ -972,40 +1016,22 @@ class CotizacionService
             try {
                 $mail = new MailService();
 
-                $mail->enviarConfirmacionCotizacion(
-                    [
-                        'nombre' => $cg_data['nombre'],
-                        'email' => $cg_data['email'],
-                        'telefono' => $cg_data['telefono'],
-                        'nombre_auto' => $cg_data['auto'],
-                        'brand' => $brandTxt,
-                        'modelo' => $modeloTxt,
-                        'anio' => $anioIn,
-                        'km' => $kmIn,
-                        'valor_pretendido' => $valorPretendidoClienteRedondeado
-                    ],
-                    [
-                        'ok' => true,
-                        'id_cotizacion' => $id,
-                        'msg' => $resultado['msg_cliente'],
-                        'msg_cliente' => $resultado['msg_cliente'],
-                        'comparables' => $resultado['count'],
-                        'count' => $resultado['count'],
-                        'min' => $resultado['min'],
-                        'max' => $resultado['max'],
-                        'avg' => $resultado['avg'],
-                        'valor_minimo_motorlider' => $resultado['valor_minimo_motorlider'],
-                        'valor_maximo_motorlider' => $resultado['valor_maximo_motorlider'],
-                        'valor_promedio_motorlider' => $resultado['valor_promedio_motorlider'],
-                        'vpretendido_aplicado' => $resultado['vpretendido_aplicado'],
-                        'valor_pretendido_cliente' => $resultado['valor_pretendido_cliente']
-                    ]
+                $mail->enviarSoloMailInternoCotizacion(
+                    $this->buildClienteDataMail($cg_data, $brandTxt, $modeloTxt, $anioIn, $kmIn),
+                    $this->buildResultadoMailDesdePersistencia(
+                        $cg_data,
+                        $id,
+                        (int)($resultado['count'] ?? 0),
+                        true,
+                        (string)($cg_data['msg'] ?? ''),
+                        (bool)($resultado['vpretendido_aplicado'] ?? false)
+                    )
                 );
 
                 $this->actualizarEstadoCotizacion(
                     (int)$id,
                     'FINALIZADA',
-                    'Cotización generada y mail enviado',
+                    'Cotización generada y mail interno enviado',
                     1,
                     date('Y-m-d H:i:s')
                 );
@@ -1018,7 +1044,7 @@ class CotizacionService
                 $this->actualizarEstadoCotizacion(
                     (int)$id,
                     'PENDIENTE',
-                    'Cotización generada pero falló envío de mail: ' . $e->getMessage(),
+                    'Cotización generada pero falló envío de mail interno: ' . $e->getMessage(),
                     0,
                     null
                 );
@@ -1028,11 +1054,6 @@ class CotizacionService
                     'error' => $e->getMessage()
                 ]);
             }
-        } else {
-            $this->logInterno('ITEMS_PERSIST_SKIP_NO_ID', [
-                'items_count' => count($itemsParaPersistir),
-                'corrida_id'  => $corridaId
-            ]);
         }
 
         $postCotizacion = $this->buildPostCotizacionPayload(
