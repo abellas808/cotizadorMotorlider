@@ -101,19 +101,16 @@ $app->get('/', function (Request $request, Response $response) {
     return $return;
 });
 
-// MARCAS
 $app->get('/marcas', function (Request $request, Response $response) {
 	global $modoTesting;
 	global $urlBase;
 
     try{
-        $headers = $request->getHeaders();
-        $token = $headers['HTTP_AUTHORIZATION'][0];
-		
+        $token = obtenerTokenRequest($request);
+
 		if($modoTesting){
 			$token = "[Modo Testing] ".$token;
-        	//mail('gfigueroa.ac@gmail.com','[API Recargas] Nueva solicitud de /recargachip/'.$mid,"Saldo: \"".$saldo."\" para el MID: ".($mid).".\nPDV: ".$pdv."\nVendedor: ".$vendedor."\nReferencia/datos extra: ".$referencia."\n\n\nRecibido el: ".date('d-m-Y H:i'));
- 
+
         	$urlRecarga = $urlBase."ws/brands";
 	        
 	        $curl = curl_init($urlRecarga);
@@ -123,49 +120,55 @@ $app->get('/marcas', function (Request $request, Response $response) {
 	        curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, false); 
 	        curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
 
-	        $respCotizador = json_decode(curl_exec($curl));
+	        $respCotizadorRaw = curl_exec($curl);
+	        $curlError = curl_error($curl);
 
 	        curl_close($curl);
 
+	        if ($curlError) {
+				$return = $response->withJson([
+					'msg' => 'Error CURL: '.$curlError,
+					'error' => 500
+				], 500);
+				return $return;
+	        }
+
+	        $respCotizador = json_decode($respCotizadorRaw);
+
+	        if (!$respCotizador) {
+				$return = $response->withJson([
+					'msg' => 'Respuesta inválida del WS /brands',
+					'error' => 500,
+					'raw' => $respCotizadorRaw
+				], 500);
+				return $return;
+	        }
+
 			if($respCotizador->codigo === 500){
-				$return = $response->withJson(['msg'=>$respCotizador->mensaje,"error"=>$respCotizador->error],500);
+				$return = $response->withJson([
+					'msg'=>$respCotizador->mensaje,
+					'error'=>$respCotizador->error
+				],500);
 			} else {
-				$return = $response->withJson(['msg'=>$respCotizador->mensaje,"error"=>0,"brands"=>$respCotizador->brands],200);
+				$return = $response->withJson([
+					'msg'=>$respCotizador->mensaje,
+					'error'=>0,
+					'brands'=>$respCotizador->brands
+				],200);
 			}
 
 		} else {
-			$notificacion_data = array();
-			$notificacion_data['tipo'] = 'recarga-exitosa';
-			//$notificacion_data['titulo'] = 'Se pidieron todas las marcas';
-			//$notificacion_data['contenido'] = 'Se ha solicitado obtener todas las marcas';
-			//$notificacion_data['referencia'] = $referencia;
-			$notificacion_data['url'] = '';
-			
-			$notificacion_data['estado'] = 0; // 0 = pendiente, 1 = visto, -1 = eliminada
-			$notificacion = new Notificacion($notificacion_data);
-			$notificacion->save();
+			$return = $response->withJson([
+				'msg'=>'Modo productivo sin implementar',
+				'error'=>1
+			],500);
 		}
     } catch (Exception $e) {
         $return = $response->withJson(['error'=>$e->getMessage()],500);
 	}
-    
-	// log this call!
-	/*$log_data = array();
-    $log_data['token'] = $token;
-	$log_data['ip'] = $_SERVER['REMOTE_ADDR'];
-	$log_data['user_agent'] = $_SERVER['HTTP_USER_AGENT'];
-	$log_data['request_method'] = $request->getMethod();
-	$log_data['request_uri'] = $request->getUri();
-	$log_data['request_header'] = print_r($request->getHeaders(),1);
-	//$log_data['request_vars'] = str_replace("(    ","(",str_replace("\n","",print_r($data,1)));
-	$log_data['request_body'] = $request->getBody();
-	$log_data['response_statuscode'] = $response->getStatusCode();
-	$log_data['response_header'] = print_r($response->getHeaders(),1);
-	$log_data['response_body'] = $return;
-	$log = new Log($log_data);
-	$log->save();*/
+
     return $return;
-})->add($authorization);
+});
 
 // MODELOS
 $app->post('/modelos/{brand}', function (Request $request, Response $response) {
@@ -188,8 +191,7 @@ $app->post('/modelos/{brand}', function (Request $request, Response $response) {
 
     try{
 		$brand = $request->getAttribute('brand');
-        $headers = $request->getHeaders();
-        $token = $headers['HTTP_AUTHORIZATION'][0];
+        $token = obtenerTokenRequest($request);
 		
 		if($modoTesting){
 			$token = "[Modo Testing] ".$token;
@@ -241,23 +243,8 @@ $app->post('/modelos/{brand}', function (Request $request, Response $response) {
         'tag' => 'MODELOS - SALIDA'
     ]);
 
-	// log this call!
-	/*$log_data = array();
-    $log_data['token'] = $token;
-	$log_data['ip'] = $_SERVER['REMOTE_ADDR'];
-	$log_data['user_agent'] = $_SERVER['HTTP_USER_AGENT'];
-	$log_data['request_method'] = $request->getMethod();
-	$log_data['request_uri'] = $request->getUri();
-	$log_data['request_header'] = print_r($request->getHeaders(),1);
-	//$log_data['request_vars'] = str_replace("(    ","(",str_replace("\n","",print_r($data,1)));
-	$log_data['request_body'] = $request->getBody();
-	$log_data['response_statuscode'] = $response->getStatusCode();
-	$log_data['response_header'] = print_r($response->getHeaders(),1);
-	$log_data['response_body'] = $return;
-	$log = new Log($log_data);
-	$log->save();*/
     return $return;
-})->add($authorization);
+});
 
 // AÑO
 $app->post('/anios/{brand}', function (Request $request, Response $response) {
@@ -266,8 +253,7 @@ $app->post('/anios/{brand}', function (Request $request, Response $response) {
 
     try{
 		$brand = $request->getAttribute('brand');
-        $headers = $request->getHeaders();
-        $token = $headers['HTTP_AUTHORIZATION'][0];
+        $token = obtenerTokenRequest($request);
 
 		$data = get_object_vars(json_decode($request->getBody()));
 
@@ -323,24 +309,8 @@ $app->post('/anios/{brand}', function (Request $request, Response $response) {
     } catch (Exception $e) {
         $return = $response->withJson(['error'=>$e->getMessage()],500);
 	}
-    
-	// log this call!
-	/*$log_data = array();
-    $log_data['token'] = $token;
-	$log_data['ip'] = $_SERVER['REMOTE_ADDR'];
-	$log_data['user_agent'] = $_SERVER['HTTP_USER_AGENT'];
-	$log_data['request_method'] = $request->getMethod();
-	$log_data['request_uri'] = $request->getUri();
-	$log_data['request_header'] = print_r($request->getHeaders(),1);
-	//$log_data['request_vars'] = str_replace("(    ","(",str_replace("\n","",print_r($data,1)));
-	$log_data['request_body'] = $request->getBody();
-	$log_data['response_statuscode'] = $response->getStatusCode();
-	$log_data['response_header'] = print_r($response->getHeaders(),1);
-	$log_data['response_body'] = $return;
-	$log = new Log($log_data);
-	$log->save();*/
     return $return;
-})->add($authorization);
+});
 
 // VERSION
 $app->post('/versiones/{brand}', function (Request $request, Response $response) {
@@ -349,8 +319,7 @@ $app->post('/versiones/{brand}', function (Request $request, Response $response)
 
     try{
 		$brand = $request->getAttribute('brand');
-        $headers = $request->getHeaders();
-        $token = $headers['HTTP_AUTHORIZATION'][0];
+        $token = obtenerTokenRequest($request);
 
 		$data = get_object_vars(json_decode($request->getBody()));
 
@@ -408,24 +377,9 @@ $app->post('/versiones/{brand}', function (Request $request, Response $response)
     } catch (Exception $e) {
         $return = $response->withJson(['error'=>$e->getMessage()],500);
 	}
-    
-	// log this call!
-	/*$log_data = array();
-    $log_data['token'] = $token;
-	$log_data['ip'] = $_SERVER['REMOTE_ADDR'];
-	$log_data['user_agent'] = $_SERVER['HTTP_USER_AGENT'];
-	$log_data['request_method'] = $request->getMethod();
-	$log_data['request_uri'] = $request->getUri();
-	$log_data['request_header'] = print_r($request->getHeaders(),1);
-	//$log_data['request_vars'] = str_replace("(    ","(",str_replace("\n","",print_r($data,1)));
-	$log_data['request_body'] = $request->getBody();
-	$log_data['response_statuscode'] = $response->getStatusCode();
-	$log_data['response_header'] = print_r($response->getHeaders(),1);
-	$log_data['response_body'] = $return;
-	$log = new Log($log_data);
-	$log->save();*/
+ 
     return $return;
-})->add($authorization);
+});
 
 // // COTIZADOR PUBLICO MIN/MAX/PROMEDIO
 // $app->post('/cotizadorPublico/{brand}', function (Request $request, Response $response, array $args = []) {
@@ -758,8 +712,7 @@ $app->get('/sucursales', function (Request $request, Response $response) {
 	global $urlBase;
 
     try{
-        $headers = $request->getHeaders();
-        $token = $headers['HTTP_AUTHORIZATION'][0];
+        $token = obtenerTokenRequest($request);
 		
 		if($modoTesting){
 			$token = "[Modo Testing] ".$token;
@@ -799,137 +752,162 @@ $app->get('/sucursales', function (Request $request, Response $response) {
     } catch (Exception $e) {
         $return = $response->withJson(['error'=>$e->getMessage()],500);
 	}
-    
-	// log this call!
-	/*$log_data = array();
-    $log_data['token'] = $token;
-	$log_data['ip'] = $_SERVER['REMOTE_ADDR'];
-	$log_data['user_agent'] = $_SERVER['HTTP_USER_AGENT'];
-	$log_data['request_method'] = $request->getMethod();
-	$log_data['request_uri'] = $request->getUri();
-	$log_data['request_header'] = print_r($request->getHeaders(),1);
-	//$log_data['request_vars'] = str_replace("(    ","(",str_replace("\n","",print_r($data,1)));
-	$log_data['request_body'] = $request->getBody();
-	$log_data['response_statuscode'] = $response->getStatusCode();
-	$log_data['response_header'] = print_r($response->getHeaders(),1);
-	$log_data['response_body'] = $return;
-	$log = new Log($log_data);
-	$log->save();*/
+   
     return $return;
-})->add($authorization);
+});
 
-// CALENDARIO
-$app->post('/calendario/{location}', function (Request $request, Response $response) {
+$app->post('/calendario[/{location}]', function (Request $request, Response $response) {
 	global $modoTesting;
 	global $urlBase;
 
     try{
 		$location = $request->getAttribute('location');
-        $headers = $request->getHeaders();
-        $token = $headers['HTTP_AUTHORIZATION'][0];
+        $token = obtenerTokenRequest($request);
 
-		$data = get_object_vars(json_decode($request->getBody()));
+		$rawBody = (string)$request->getBody();
+		$parsed = json_decode($rawBody, true);
+		$data = is_array($parsed) ? $parsed : [];
 
-		$check_data = true;
-
-		$anio = isset($data['anio']) ? $data['anio'] : $check_data=false;
-		$mes = isset($data['mes']) ? $data['mes'] : $check_data=false;
-
-		if(!$check_data){
-        	return $response->withJson(['error'=>'Falta enviar campos, revise la documentacion.'],500);
-        }
-		
-		if($modoTesting){
-			$token = "[Modo Testing] ".$token;
-        	//mail('gfigueroa.ac@gmail.com','[API Recargas] Nueva solicitud de /recargachip/'.$mid,"Saldo: \"".$saldo."\" para el MID: ".($mid).".\nPDV: ".$pdv."\nVendedor: ".$vendedor."\nReferencia/datos extra: ".$referencia."\n\n\nRecibido el: ".date('d-m-Y H:i'));
-
-			$data = array(
-        		'location'=>$location,
-        		'anio'=>$anio,
-        		'mes'=>$mes
-            );   
-        	
-			$urlRecarga = $urlBase."ws/calendar";
-	        
-	        $curl = curl_init($urlRecarga);
-	        curl_setopt($curl, CURLOPT_URL, $urlRecarga);
-	        curl_setopt($curl, CURLOPT_POST, true);
-			curl_setopt($curl, CURLOPT_POSTFIELDS, http_build_query($data, '', '&'));
-	        curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-	        curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, false); 
-	        curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
-
-	        $respCotizador = json_decode(curl_exec($curl));
-
-	        curl_close($curl);
-
-			if($respCotizador->codigo === 500){
-				$return = $response->withJson(['msg'=>$respCotizador->mensaje,"error"=>$respCotizador->error],500);
-			} else {
-				$return = $response->withJson(['msg'=>$respCotizador->mensaje,"error"=>0,"calendar"=>$respCotizador->calendar],200);
-			}
-
-		} else {
-			$notificacion_data = array();
-			$notificacion_data['tipo'] = 'recarga-exitosa';
-			//$notificacion_data['titulo'] = 'Recarga solicitada para : '.($mid);
-			//$notificacion_data['contenido'] = 'Se ha solicitado una recarga para '.($mid).' por parte de '.($pdv);
-			//$notificacion_data['referencia'] = $referencia;
-			$notificacion_data['url'] = '';
-			
-			$notificacion_data['estado'] = 0; // 0 = pendiente, 1 = visto, -1 = eliminada
-			$notificacion = new Notificacion($notificacion_data);
-			$notificacion->save();
+		if (!$location && !empty($data['sucursal'])) {
+			$location = trim((string)$data['sucursal']);
 		}
+		if (!$location && !empty($data['location'])) {
+			$location = trim((string)$data['location']);
+		}
+
+		$anio = $data['anio'] ?? $data['anio_agenda'] ?? null;
+		$mes  = $data['mes']  ?? $data['mes_agenda']  ?? null;
+
+		if (!$location) {
+        	return $response->withJson([
+				"error" => true,
+				"codigo" => 0,
+				"mensaje" => "Falta parametro sucursal",
+				"data" => null
+			], 400);
+        }
+
+		if (!$anio || !$mes) {
+        	return $response->withJson([
+				"error" => true,
+				"codigo" => 0,
+				"mensaje" => "Falta enviar campos, revise la documentacion.",
+				"data" => null
+			], 400);
+        }
+
+		$postData = array(
+			'location' => $location,
+			'anio' => $anio,
+			'mes' => $mes
+		);
+
+		$urlRecarga = $urlBase."ws/calendar";
+
+		$curl = curl_init($urlRecarga);
+		curl_setopt($curl, CURLOPT_URL, $urlRecarga);
+		curl_setopt($curl, CURLOPT_POST, true);
+		curl_setopt($curl, CURLOPT_POSTFIELDS, http_build_query($postData, '', '&'));
+		curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
+		curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, false);
+		curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
+
+		$respRaw = curl_exec($curl);
+		$curlError = curl_error($curl);
+		curl_close($curl);
+
+		if ($curlError) {
+			return $response->withJson([
+				"error" => true,
+				"codigo" => 0,
+				"mensaje" => "Error CURL: ".$curlError,
+				"data" => null
+			], 500);
+		}
+
+		$respCotizador = json_decode($respRaw);
+
+		if (!$respCotizador) {
+			return $response->withJson([
+				"error" => true,
+				"codigo" => 0,
+				"mensaje" => "Respuesta inválida del WS calendar",
+				"data" => null
+			], 500);
+		}
+
+		if (isset($respCotizador->codigo) && (int)$respCotizador->codigo === 500) {
+			return $response->withJson([
+				"error" => true,
+				"codigo" => 0,
+				"mensaje" => $respCotizador->mensaje,
+				"data" => null
+			], 500);
+		}
+
+		return $response->withJson([
+			"error" => false,
+			"codigo" => 0,
+			"mensaje" => $respCotizador->mensaje ?? '',
+			"data" => $respCotizador->calendar ?? null
+		], 200);
+
     } catch (Exception $e) {
-        $return = $response->withJson(['error'=>$e->getMessage()],500);
+        return $response->withJson([
+			"error" => true,
+			"codigo" => 0,
+			"mensaje" => $e->getMessage(),
+			"data" => null
+		], 500);
 	}
-    
-	// log this call!
-	/*$log_data = array();
-    $log_data['token'] = $token;
-	$log_data['ip'] = $_SERVER['REMOTE_ADDR'];
-	$log_data['user_agent'] = $_SERVER['HTTP_USER_AGENT'];
-	$log_data['request_method'] = $request->getMethod();
-	$log_data['request_uri'] = $request->getUri();
-	$log_data['request_header'] = print_r($request->getHeaders(),1);
-	//$log_data['request_vars'] = str_replace("(    ","(",str_replace("\n","",print_r($data,1)));
-	$log_data['request_body'] = $request->getBody();
-	$log_data['response_statuscode'] = $response->getStatusCode();
-	$log_data['response_header'] = print_r($response->getHeaders(),1);
-	$log_data['response_body'] = $return;
-	$log = new Log($log_data);
-	$log->save();*/
-    return $return;
-})->add($authorization);
+});
 
 // HORARIOS
-$app->post('/horarios/{location}', function (Request $request, Response $response) {
+$app->post('/horarios[/{location}]', function (Request $request, Response $response) {
 	global $modoTesting;
 	global $urlBase;
 
     try{
 		$location = $request->getAttribute('location');
-        $headers = $request->getHeaders();
-        $token = $headers['HTTP_AUTHORIZATION'][0];
+        $token = obtenerTokenRequest($request);
 
-		$data = get_object_vars(json_decode($request->getBody()));
+		$rawBody = (string)$request->getBody();
+		$parsed = json_decode($rawBody, true);
+		$data = is_array($parsed) ? $parsed : [];
+
+		// compatibilidad: si no vino en URL, tomarlo del body
+		if (!$location && !empty($data['sucursal'])) {
+			$location = trim((string)$data['sucursal']);
+		}
+		if (!$location && !empty($data['location'])) {
+			$location = trim((string)$data['location']);
+		}
 
 		$check_data = true;
+		$fecha = isset($data['fecha']) ? $data['fecha'] : $check_data = false;
 
-		$fecha = isset($data['fecha']) ? $data['fecha'] : $check_data=false;
+		if (!$location) {
+        	return $response->withJson([
+				"error" => true,
+				"codigo" => 0,
+				"mensaje" => "Falta parametro sucursal"
+			], 400);
+        }
 
 		if(!$check_data){
-        	return $response->withJson(['error'=>'Falta enviar campos, revise la documentacion.'],500);
+        	return $response->withJson([
+				"error" => true,
+				"codigo" => 0,
+				"mensaje" => "Falta enviar campos, revise la documentacion."
+			], 400);
         }
 		
 		if($modoTesting){
-			$token = "[Modo Testing] ".$token;
-        	//mail('gfigueroa.ac@gmail.com','[API Recargas] Nueva solicitud de /recargachip/'.$mid,"Saldo: \"".$saldo."\" para el MID: ".($mid).".\nPDV: ".$pdv."\nVendedor: ".$vendedor."\nReferencia/datos extra: ".$referencia."\n\n\nRecibido el: ".date('d-m-Y H:i'));
+			$token = $token !== '' ? "[Modo Testing] ".$token : "[Modo Testing] SIN TOKEN";
 
-			$data = array(
-        		'location'=>$location,
-        		'date'=>$fecha
+			$postData = array(
+        		'location' => $location,
+        		'date' => $fecha
             );   
         	
 			$urlRecarga = $urlBase."ws/schedules";
@@ -937,90 +915,116 @@ $app->post('/horarios/{location}', function (Request $request, Response $respons
 	        $curl = curl_init($urlRecarga);
 	        curl_setopt($curl, CURLOPT_URL, $urlRecarga);
 	        curl_setopt($curl, CURLOPT_POST, true);
-			curl_setopt($curl, CURLOPT_POSTFIELDS, http_build_query($data, '', '&'));
+			curl_setopt($curl, CURLOPT_POSTFIELDS, http_build_query($postData, '', '&'));
 	        curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
 	        curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, false); 
 	        curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
 
-	        $respCotizador = json_decode(curl_exec($curl));
+	        $respRaw = curl_exec($curl);
+	        $curlError = curl_error($curl);
 
 	        curl_close($curl);
 
-			if($respCotizador->codigo === 500){
-				$return = $response->withJson(['msg'=>$respCotizador->mensaje,"error"=>$respCotizador->error],500);
-			} else {
-				$return = $response->withJson(['msg'=>$respCotizador->mensaje,"error"=>0,"schedules"=>$respCotizador->schedules],200);
+	        if ($curlError) {
+				return $response->withJson([
+					"error" => true,
+					"codigo" => 0,
+					"mensaje" => "Error CURL: ".$curlError
+				], 500);
+	        }
+
+	        $respCotizador = json_decode($respRaw);
+
+	        if (!$respCotizador) {
+				return $response->withJson([
+					"error" => true,
+					"codigo" => 0,
+					"mensaje" => "Respuesta inválida del WS schedules",
+					"raw" => $respRaw
+				], 500);
+	        }
+
+			if (isset($respCotizador->codigo) && (int)$respCotizador->codigo === 500) {
+				return $response->withJson([
+					"error" => true,
+					"codigo" => 0,
+					"mensaje" => $respCotizador->mensaje
+				], 500);
 			}
 
+			return $response->withJson([
+				"error" => false,
+				"codigo" => 0,
+				"mensaje" => $respCotizador->mensaje ?? '',
+				"schedules" => $respCotizador->schedules ?? null
+			], 200);
+
 		} else {
-			$notificacion_data = array();
-			$notificacion_data['tipo'] = 'recarga-exitosa';
-			//$notificacion_data['titulo'] = 'Recarga solicitada para : '.($mid);
-			//$notificacion_data['contenido'] = 'Se ha solicitado una recarga para '.($mid).' por parte de '.($pdv);
-			//$notificacion_data['referencia'] = $referencia;
-			$notificacion_data['url'] = '';
-			
-			$notificacion_data['estado'] = 0; // 0 = pendiente, 1 = visto, -1 = eliminada
-			$notificacion = new Notificacion($notificacion_data);
-			$notificacion->save();
+			return $response->withJson([
+				"error" => true,
+				"codigo" => 0,
+				"mensaje" => "Modo productivo sin implementar"
+			], 500);
 		}
     } catch (Exception $e) {
-        $return = $response->withJson(['error'=>$e->getMessage()],500);
+        return $response->withJson([
+			"error" => true,
+			"codigo" => 0,
+			"mensaje" => $e->getMessage()
+		], 500);
 	}
-    
-	// log this call!
-	/*$log_data = array();
-    $log_data['token'] = $token;
-	$log_data['ip'] = $_SERVER['REMOTE_ADDR'];
-	$log_data['user_agent'] = $_SERVER['HTTP_USER_AGENT'];
-	$log_data['request_method'] = $request->getMethod();
-	$log_data['request_uri'] = $request->getUri();
-	$log_data['request_header'] = print_r($request->getHeaders(),1);
-	//$log_data['request_vars'] = str_replace("(    ","(",str_replace("\n","",print_r($data,1)));
-	$log_data['request_body'] = $request->getBody();
-	$log_data['response_statuscode'] = $response->getStatusCode();
-	$log_data['response_header'] = print_r($response->getHeaders(),1);
-	$log_data['response_body'] = $return;
-	$log = new Log($log_data);
-	$log->save();*/
-    return $return;
-})->add($authorization);
+});
 
-// AGENDAR INSPECCION
-$app->post('/agendarInspeccion/{location}', function (Request $request, Response $response) {
+$app->post('/agendarInspeccion[/{location}]', function (Request $request, Response $response) {
 	global $modoTesting;
 	global $urlBase;
 
     try{
 		$location = $request->getAttribute('location');
-        $headers = $request->getHeaders();
-        $token = $headers['HTTP_AUTHORIZATION'][0];
+        $token = obtenerTokenRequest($request);
 
-		$data = get_object_vars(json_decode($request->getBody()));
+		$rawBody = (string)$request->getBody();
+		$parsed = json_decode($rawBody, true);
+		$data = is_array($parsed) ? $parsed : [];
+
+		// compatibilidad
+		if (!$location && !empty($data['sucursal'])) {
+			$location = $data['sucursal'];
+		}
+		if (!$location && !empty($data['location'])) {
+			$location = $data['location'];
+		}
 
 		$check_data = true;
 
-		$fecha = isset($data['fecha']) ? $data['fecha'] : $check_data=false;
-		$hora = isset($data['hora']) ? $data['hora'] : $check_data=false;
-		$modelo = isset($data['modelo']) ? $data['modelo'] : $check_data=false;
-		$marca = isset($data['marca']) ? $data['marca'] : $check_data=false;
-		$anio = isset($data['anio']) ? $data['anio'] : $check_data=false;
-		$familia = isset($data['version']) ? $data['version'] : $check_data=false;
-		$auto = isset($data['nombre_auto']) ? $data['nombre_auto'] : $check_data=false;
-		$nombre = isset($data['nombre']) ? $data['nombre'] : $check_data=false;
-		$email = isset($data['email']) ? $data['email'] : $check_data=false;
-		$telefono = isset($data['telefono']) ? $data['telefono'] : $check_data=false;
-		$id_cotizacion = isset($data['id_cotizacion']) ? $data['id_cotizacion'] : $check_data=false;
+		$fecha = $data['fecha'] ?? $check_data = false;
+		$hora = $data['hora'] ?? $check_data = false;
+		$modelo = $data['modelo'] ?? $check_data = false;
+		$marca = $data['marca'] ?? $check_data = false;
+		$anio = $data['anio'] ?? $check_data = false;
+		$familia = $data['version'] ?? $check_data = false;
+		$auto = $data['nombre_auto'] ?? $check_data = false;
+		$nombre = $data['nombre'] ?? $check_data = false;
+		$email = $data['email'] ?? $check_data = false;
+		$telefono = $data['telefono'] ?? $check_data = false;
+		$id_cotizacion = $data['id_cotizacion'] ?? $check_data = false;
+
+		if (!$location) {
+			return $response->withJson([
+				"error" => true,
+				"mensaje" => "Falta parametro sucursal"
+			], 400);
+		}
 
 		if(!$check_data){
-        	return $response->withJson(['error'=>'Falta enviar campos, revise la documentacion.'],500);
+        	return $response->withJson([
+				"error" => true,
+				"mensaje" => "Falta enviar campos, revise la documentacion."
+			], 400);
         }
 		
 		if($modoTesting){
-			$token = "[Modo Testing] ".$token;
-        	//mail('gfigueroa.ac@gmail.com','[API Recargas] Nueva solicitud de /recargachip/'.$mid,"Saldo: \"".$saldo."\" para el MID: ".($mid).".\nPDV: ".$pdv."\nVendedor: ".$vendedor."\nReferencia/datos extra: ".$referencia."\n\n\nRecibido el: ".date('d-m-Y H:i'));
-
-			$data = array(
+			$postData = array(
         		'location'=>$location,
         		'date'=>$fecha,
         		'hora'=>$hora,
@@ -1038,112 +1042,92 @@ $app->post('/agendarInspeccion/{location}', function (Request $request, Response
 			$urlRecarga = $urlBase."ws/scheduleInspection";
 	        
 	        $curl = curl_init($urlRecarga);
-	        curl_setopt($curl, CURLOPT_URL, $urlRecarga);
 	        curl_setopt($curl, CURLOPT_POST, true);
-			curl_setopt($curl, CURLOPT_POSTFIELDS, http_build_query($data, '', '&'));
+			curl_setopt($curl, CURLOPT_POSTFIELDS, http_build_query($postData));
 	        curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
 	        curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, false); 
 	        curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
 
-	        $respCotizador = json_decode(curl_exec($curl));
-
+	        $respRaw = curl_exec($curl);
 	        curl_close($curl);
 
-			if($respCotizador->codigo === 500){
-				$return = $response->withJson(['msg'=>$respCotizador->mensaje,"error"=>$respCotizador->error],500);
-			} else {
-				$return = $response->withJson(['msg'=>$respCotizador->mensaje,"error"=>0],200);
-			}
+	        $respCotizador = json_decode($respRaw);
 
-		} else {
-			$notificacion_data = array();
-			$notificacion_data['tipo'] = 'recarga-exitosa';
-			//$notificacion_data['titulo'] = 'Recarga solicitada para : '.($mid);
-			//$notificacion_data['contenido'] = 'Se ha solicitado una recarga para '.($mid).' por parte de '.($pdv);
-			//$notificacion_data['referencia'] = $referencia;
-			$notificacion_data['url'] = '';
-			
-			$notificacion_data['estado'] = 0; // 0 = pendiente, 1 = visto, -1 = eliminada
-			$notificacion = new Notificacion($notificacion_data);
-			$notificacion->save();
+			return $response->withJson([
+				"error" => 0,
+				"msg" => $respCotizador->mensaje ?? "OK"
+			], 200);
 		}
-    } catch (Exception $e) {
-        $return = $response->withJson(['error'=>$e->getMessage()],500);
-	}
-    
-	// log this call!
-	/*$log_data = array();
-    $log_data['token'] = $token;
-	$log_data['ip'] = $_SERVER['REMOTE_ADDR'];
-	$log_data['user_agent'] = $_SERVER['HTTP_USER_AGENT'];
-	$log_data['request_method'] = $request->getMethod();
-	$log_data['request_uri'] = $request->getUri();
-	$log_data['request_header'] = print_r($request->getHeaders(),1);
-	//$log_data['request_vars'] = str_replace("(    ","(",str_replace("\n","",print_r($data,1)));
-	$log_data['request_body'] = $request->getBody();
-	$log_data['response_statuscode'] = $response->getStatusCode();
-	$log_data['response_header'] = print_r($response->getHeaders(),1);
-	$log_data['response_body'] = $return;
-	$log = new Log($log_data);
-	$log->save();*/
-    return $return;
-})->add($authorization);
 
-$app->post('/availability/{location}', function (Request $request, Response $response) {
+		return $response->withJson([
+			"error" => 1,
+			"msg" => "Modo productivo no implementado"
+		], 500);
+
+    } catch (Exception $e) {
+        return $response->withJson(['error'=>$e->getMessage()],500);
+	}
+});
+
+$app->post('/availability[/{location}]', function (Request $request, Response $response) {
 	global $modoTesting;
 	global $urlBase;
 
     try{
 		$location = $request->getAttribute('location');
-        $headers = $request->getHeaders();
-        $token = $headers['HTTP_AUTHORIZATION'][0];
+        $token = obtenerTokenRequest($request);
+
+		$rawBody = (string)$request->getBody();
+		$parsed = json_decode($rawBody, true);
+		$data = is_array($parsed) ? $parsed : [];
+
+		if (!$location && !empty($data['sucursal'])) {
+			$location = $data['sucursal'];
+		}
+		if (!$location && !empty($data['location'])) {
+			$location = $data['location'];
+		}
+
+		if (!$location) {
+			return $response->withJson([
+				"error" => true,
+				"mensaje" => "Falta parametro sucursal"
+			], 400);
+		}
 
 		if($modoTesting){
-			$token = "[Modo Testing] ".$token;
+			$postData = ['location'=>$location];
 
-			$data = array(
-        		'location'=>$location
-            );   
-        	
 			$urlRecarga = $urlBase."ws/availability";
 	        
 	        $curl = curl_init($urlRecarga);
-	        curl_setopt($curl, CURLOPT_URL, $urlRecarga);
 	        curl_setopt($curl, CURLOPT_POST, true);
-			curl_setopt($curl, CURLOPT_POSTFIELDS, http_build_query($data, '', '&'));
+			curl_setopt($curl, CURLOPT_POSTFIELDS, http_build_query($postData));
 	        curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
 	        curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, false); 
 	        curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
 
-	        $respCotizador = json_decode(curl_exec($curl));
-
+	        $respRaw = curl_exec($curl);
 	        curl_close($curl);
 
-			if($respCotizador->codigo === 500){
-				$return = $response->withJson([
-					'msg'=>$respCotizador->mensaje,
-					"error"=>$respCotizador->error
-				],500);
-			} else {
-				$return = $response->withJson([
-					'msg'=>$respCotizador->mensaje,
-					"error"=>0,
-					"availability"=>$respCotizador->availability
-				],200);
-			}
+	        $respCotizador = json_decode($respRaw);
 
-		} else {
-			$return = $response->withJson([
-				'msg'=>'Modo productivo sin implementar',
-				'error'=>1
-			],500);
+			return $response->withJson([
+				"error"=>0,
+				"msg"=>$respCotizador->mensaje ?? '',
+				"availability"=>$respCotizador->availability ?? null
+			],200);
 		}
-    } catch (Exception $e) {
-        $return = $response->withJson(['error'=>$e->getMessage()],500);
-	}
 
-    return $return;
-})->add($authorization);
+		return $response->withJson([
+			"error"=>1,
+			"msg"=>"Modo productivo no implementado"
+		],500);
+
+    } catch (Exception $e) {
+        return $response->withJson(['error'=>$e->getMessage()],500);
+	}
+});
 
 $g = function($req, $res, $next)
 {
@@ -1228,18 +1212,31 @@ function loadEnv($path)
     }
 }
 
+function obtenerTokenRequest(Request $request): string
+{
+    try {
+        $headers = $request->getHeaders();
+
+        if (isset($headers['HTTP_AUTHORIZATION'][0]) && trim((string)$headers['HTTP_AUTHORIZATION'][0]) !== '') {
+            return (string)$headers['HTTP_AUTHORIZATION'][0];
+        }
+
+        if (isset($headers['Authorization'][0]) && trim((string)$headers['Authorization'][0]) !== '') {
+            return (string)$headers['Authorization'][0];
+        }
+
+        return '';
+    } catch (\Throwable $e) {
+        return '';
+    }
+}
+
 function registrarApiLog(Request $request, $return = null, array $extra = []): void
 {
     try {
         // Token (soporta ambos headers)
-        $headers = $request->getHeaders();
-        $token = '';
-        if (isset($headers['HTTP_AUTHORIZATION'][0])) {
-            $token = $headers['HTTP_AUTHORIZATION'][0];
-        } elseif (isset($headers['Authorization'][0])) {
-            $token = $headers['Authorization'][0];
-        }
-
+        $token = obtenerTokenRequest($request);
+        
         // Body request: leer como string (y si ya fue consumido, podés pasarlo por $extra['rawBody'])
         $rawBody = $extra['rawBody'] ?? (string)$request->getBody();
 
@@ -1274,7 +1271,7 @@ function registrarApiLog(Request $request, $return = null, array $extra = []): v
         $log_data['user_agent'] = $_SERVER['HTTP_USER_AGENT'] ?? '';
         $log_data['request_method'] = $request->getMethod();
         $log_data['request_uri'] = (string)$request->getUri();
-        $log_data['request_header'] = print_r($headers, 1);
+        $log_data['request_header'] = print_r($request->getHeaders(), 1);
         $log_data['request_body'] = $rawBody;
 
         $log_data['response_statuscode'] = $extra['response_statuscode'] ?? $status;
