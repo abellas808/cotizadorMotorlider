@@ -559,23 +559,39 @@ $app->post('/cotizadorPublico/{brand}', function (Request $request, Response $re
         $modoTest = ($modoSistema === 'TEST');
 
         /*----------------------------------
-        MARCA
-        ----------------------------------*/
+		MARCA
+		----------------------------------*/
 
-        $brandId = isset($data['marca']) && trim($data['marca']) !== ''
-            ? trim($data['marca'])
-            : trim($brandRoute);
+		$brandId = null;
 
-        if (!$brandId) {
+		// 1) priorizar id_marca del body
+		if (isset($data['id_marca']) && trim((string)$data['id_marca']) !== '' && ctype_digit((string)$data['id_marca'])) {
+			$brandId = (string)((int)$data['id_marca']);
+		}
+		// 2) si la route vino numérica, usarla
+		elseif (trim((string)$brandRoute) !== '' && ctype_digit((string)$brandRoute)) {
+			$brandId = (string)((int)$brandRoute);
+		}
+		// 3) si marca en body vino numérica, usarla
+		elseif (isset($data['marca']) && trim((string)$data['marca']) !== '' && ctype_digit((string)$data['marca'])) {
+			$brandId = (string)((int)$data['marca']);
+		}
+		// 4) fallback legacy: texto
+		else {
+			$brandId = isset($data['marca']) && trim((string)$data['marca']) !== ''
+				? trim((string)$data['marca'])
+				: trim((string)$brandRoute);
+		}
 
-            $return = $response->withJson([
-                "error" => true,
-                "msg"   => "Falta parametro marca"
-            ],400);
+		if (!$brandId) {
+			$return = $response->withJson([
+				"error" => true,
+				"msg"   => "Falta parametro marca"
+			],400);
 
-            registrarApiLog($request,$return,['tag'=>'Cotizador falta marca']);
-            return $return;
-        }
+			registrarApiLog($request,$return,['tag'=>'Cotizador falta marca']);
+			return $return;
+		}
 
         /*----------------------------------
         CAMPOS REQUERIDOS

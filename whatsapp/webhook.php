@@ -1691,9 +1691,9 @@ if (($userState['step'] ?? '') === 'email') {
 
     // IMPORTANTE:
     // CotizacionService espera:
-    // - brand en la URL => id_marca
+    // - brand en la URL => id_marca NUMERICO
     // - modelo en el body => id_model (numérico)
-    $brandUrl = $marca; // 👈 CLAVE: el endpoint espera nombre, no ID
+    $brandUrl = (string)$idMarca;
 
     $apiPayload = [
         'id_marca' => $idMarca,
@@ -1701,7 +1701,7 @@ if (($userState['step'] ?? '') === 'email') {
         'id_modelo' => $idModel,
         'id_version' => $idVersion > 0 ? $idVersion : null,
 
-        // CLAVE: el servicio lee $dataIn['modelo']
+        // el servicio toma modelo desde $dataIn['modelo']
         'modelo' => $idModel,
 
         // textos auxiliares
