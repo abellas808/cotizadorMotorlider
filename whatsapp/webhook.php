@@ -374,26 +374,35 @@ function wa_buscar_marcas_similares(string $texto, int $limite = 5): array
             continue;
         }
 
-        $nombreNorm = wa_normalizar_texto($marca['nombre']);
+        $nombre = $marca['nombre'];
+        $nombreNorm = wa_normalizar_texto($nombre);
+
         if ($nombreNorm === '') {
             continue;
         }
 
         $score = 9999;
-        $porcentaje = 0.0;
-        $distancia = 9999;
 
-        if ($textoNorm !== '' && (strpos($nombreNorm, $textoNorm) !== false || strpos($textoNorm, $nombreNorm) !== false)) {
+        // 🔥 PRIORIDAD 1: empieza con
+        if (strpos($nombreNorm, $textoNorm) === 0) {
+            $score = 0; // mejor posible
+        }
+        // 🔥 PRIORIDAD 2: contiene
+        elseif (strpos($nombreNorm, $textoNorm) !== false) {
             $score = 1;
-        } else {
+        }
+        else {
+            // fuzzy
             similar_text($textoNorm, $nombreNorm, $porcentaje);
 
             if (function_exists('levenshtein')) {
                 $distancia = levenshtein($textoNorm, $nombreNorm);
+            } else {
+                $distancia = 999;
             }
 
-            if ($porcentaje >= 55 || $distancia <= 4) {
-                $score = $distancia;
+            if ($porcentaje >= 50 || $distancia <= 4) {
+                $score = 10 + $distancia; // peor que contains
             } else {
                 continue;
             }
@@ -402,14 +411,16 @@ function wa_buscar_marcas_similares(string $texto, int $limite = 5): array
         $resultados[] = [
             'id' => $marca['id'],
             'id_marca' => $marca['id_marca'],
-            'nombre' => $marca['nombre'],
+            'nombre' => $nombre,
             'prioridad' => $marca['prioridad'],
             'score' => $score
         ];
     }
 
-    usort($resultados, function (array $a, array $b): int {
+    // 🔥 ORDEN INTELIGENTE
+    usort($resultados, function ($a, $b) {
         if ($a['score'] === $b['score']) {
+            // primero prioridad alta
             if ($a['prioridad'] === $b['prioridad']) {
                 return strcmp($a['nombre'], $b['nombre']);
             }
@@ -983,6 +994,7 @@ if (($userState['step'] ?? '') === 'marca_sugerida') {
     $respuestaNorm = wa_normalizar_texto($respuesta);
     $opciones = $userState['marca_opciones'] ?? [];
 
+    // 1) Si responde con número de la lista actual
     if (isset($opciones[$respuesta])) {
         $marcaFinal = $opciones[$respuesta]['nombre'];
         $idMarca = (int)$opciones[$respuesta]['id_marca'];
@@ -1000,6 +1012,7 @@ if (($userState['step'] ?? '') === 'marca_sugerida') {
         );
     }
 
+    // 2) Si responde con el nombre exacto de una opción actual
     foreach ($opciones as $op) {
         if (wa_normalizar_texto((string)$op['nombre']) === $respuestaNorm) {
             $marcaFinal = (string)$op['nombre'];
@@ -1019,15 +1032,78 @@ if (($userState['step'] ?? '') === 'marca_sugerida') {
         }
     }
 
-    $opcionesTexto = [];
-    foreach ($opciones as $nro => $op) {
-        $opcionesTexto[] = $nro . '. ' . $op['nombre'];
+    // 3) Si escribió otro texto, lo tratamos como una NUEVA búsqueda
+    try {
+        $marcaExacta = wa_buscar_marca_exacta($respuesta);
+    } catch (Throwable $e) {
+        wa_log('MARCA_REBUSQUEDA_DB_EXCEPTION', [
+            'error' => $e->getMessage(),
+            'respuesta' => $respuesta
+        ]);
+        twiml_message("Ocurrió un problema consultando el catálogo de marcas. Probá nuevamente en unos instantes.");
     }
 
+    if ($marcaExacta !== null) {
+        $marcaFinal = $marcaExacta['nombre'];
+
+        set_user_state($from, [
+            'step' => 'modelo',
+            'marca' => $marcaFinal,
+            'id_marca' => $marcaExacta['id_marca']
+        ]);
+
+        twiml_message(
+            "Perfecto 👍\n\n"
+            . "Marca: {$marcaFinal}\n\n"
+            . "Ahora escribime el MODELO."
+        );
+    }
+
+    try {
+        $nuevasSugerencias = wa_buscar_marcas_similares($respuesta, 5);
+    } catch (Throwable $e) {
+        wa_log('MARCA_REBUSQUEDA_SUGERENCIAS_DB_EXCEPTION', [
+            'error' => $e->getMessage(),
+            'respuesta' => $respuesta
+        ]);
+        twiml_message("Ocurrió un problema consultando el catálogo de marcas. Probá nuevamente en unos instantes.");
+    }
+
+    if (!empty($nuevasSugerencias)) {
+        $opcionesTexto = [];
+        $opcionesEstado = [];
+
+        foreach ($nuevasSugerencias as $i => $op) {
+            $nro = $i + 1;
+            $opcionesTexto[] = $nro . '. ' . $op['nombre'];
+            $opcionesEstado[(string)$nro] = [
+                'id' => $op['id'],
+                'id_marca' => $op['id_marca'],
+                'nombre' => $op['nombre']
+            ];
+        }
+
+        set_user_state($from, [
+            'step' => 'marca_sugerida',
+            'marca_input' => $respuesta,
+            'marca_opciones' => $opcionesEstado
+        ]);
+
+        twiml_message(
+            "No encontré esa marca exacta.\n\n"
+            . "Quizás quisiste decir:\n"
+            . implode("\n", $opcionesTexto)
+            . "\n\nRespondé con el número o con el nombre correcto."
+        );
+    }
+
+    set_user_state($from, [
+        'step' => 'marca'
+    ]);
+
     twiml_message(
-        "No entendí la opción elegida.\n\n"
-        . "Respondé con el número o con uno de estos nombres:\n"
-        . implode("\n", $opcionesTexto)
+        "No encontré esa marca.\n\n"
+        . "Probá escribiendo nuevamente la marca del vehículo."
     );
 }
 
@@ -1264,7 +1340,29 @@ if (($userState['step'] ?? '') === 'version') {
     $idModel = (int)($userState['id_model'] ?? 0);
 
     if ($versionIngresada === '') {
-        twiml_message("No pude leer la versión. Escribime la VERSIÓN del vehículo.");
+        twiml_message("No pude leer la versión. Escribime la VERSIÓN del vehículo o respondé NINGUNA.");
+    }
+
+    // Opción explícita: no sabe la versión
+    if (wa_version_es_ninguna($versionIngresada)) {
+        set_user_state($from, [
+            'step' => 'ficha_oficial',
+            'marca' => $marca,
+            'id_marca' => $userState['id_marca'] ?? null,
+            'modelo' => $modelo,
+            'id_model' => $userState['id_model'] ?? null,
+            'id_version' => null,
+            'anio' => $anio,
+            'km' => $km,
+            'version' => ''
+        ]);
+
+        twiml_message(
+            "Perfecto 👍\n\n"
+            . "Versión: sin especificar\n\n"
+            . "¿Posee ficha oficial?\n"
+            . "Respondé: SI o NO"
+        );
     }
 
     if ($idMarca <= 0 || $idModel <= 0) {
@@ -1291,7 +1389,11 @@ if (($userState['step'] ?? '') === 'version') {
     try {
         $versionExacta = wa_buscar_version_exacta($idMarca, $idModel, $versionIngresada);
     } catch (Throwable $e) {
-        wa_log('VERSION_DB_EXCEPTION', ['error' => $e->getMessage(), 'id_marca' => $idMarca, 'id_model' => $idModel]);
+        wa_log('VERSION_DB_EXCEPTION', [
+            'error' => $e->getMessage(),
+            'id_marca' => $idMarca,
+            'id_model' => $idModel
+        ]);
 
         set_user_state($from, [
             'step' => 'ficha_oficial',
@@ -1339,7 +1441,11 @@ if (($userState['step'] ?? '') === 'version') {
     try {
         $sugerencias = wa_buscar_versiones_similares($idMarca, $idModel, $versionIngresada, 5);
     } catch (Throwable $e) {
-        wa_log('VERSION_SUGERENCIAS_DB_EXCEPTION', ['error' => $e->getMessage(), 'id_marca' => $idMarca, 'id_model' => $idModel]);
+        wa_log('VERSION_SUGERENCIAS_DB_EXCEPTION', [
+            'error' => $e->getMessage(),
+            'id_marca' => $idMarca,
+            'id_model' => $idModel
+        ]);
 
         set_user_state($from, [
             'step' => 'ficha_oficial',
@@ -1393,6 +1499,7 @@ if (($userState['step'] ?? '') === 'version') {
             . implode("\n", $opcionesTexto)
             . "\n\nRespondé con el número o con el nombre correcto."
             . "\nSi preferís continuar con la versión que escribiste, respondé SEGUIR."
+            . "\nSi no sabés la versión, respondé NINGUNA."
         );
     }
 
@@ -1427,8 +1534,32 @@ if (($userState['step'] ?? '') === 'version_sugerida') {
     $modelo = trim((string)($userState['modelo'] ?? ''));
     $anio = trim((string)($userState['anio'] ?? ''));
     $km = trim((string)($userState['km'] ?? ''));
+    $idMarca = (int)($userState['id_marca'] ?? 0);
+    $idModel = (int)($userState['id_model'] ?? 0);
     $versionInput = trim((string)($userState['version_input'] ?? ''));
     $opciones = $userState['version_opciones'] ?? [];
+
+    // Opción explícita: no sabe la versión
+    if (wa_version_es_ninguna($respuesta)) {
+        set_user_state($from, [
+            'step' => 'ficha_oficial',
+            'marca' => $marca,
+            'id_marca' => $userState['id_marca'] ?? null,
+            'modelo' => $modelo,
+            'id_model' => $userState['id_model'] ?? null,
+            'id_version' => null,
+            'anio' => $anio,
+            'km' => $km,
+            'version' => ''
+        ]);
+
+        twiml_message(
+            "Perfecto 👍\n\n"
+            . "Versión: sin especificar\n\n"
+            . "¿Posee ficha oficial?\n"
+            . "Respondé: SI o NO"
+        );
+    }
 
     if (in_array($respuestaNorm, ['seguir', 'continuar', 'omitir'], true)) {
         set_user_state($from, [
@@ -1501,17 +1632,125 @@ if (($userState['step'] ?? '') === 'version_sugerida') {
         }
     }
 
-    $opcionesTexto = [];
-    foreach ($opciones as $nro => $op) {
-        $opcionesTexto[] = $nro . '. ' . $op['nombre'];
+    // Si escribió otra cosa distinta, volver a buscar nuevas sugerencias
+    try {
+        $versionExacta = wa_buscar_version_exacta($idMarca, $idModel, $respuesta);
+    } catch (Throwable $e) {
+        wa_log('VERSION_REBUSQUEDA_DB_EXCEPTION', [
+            'error' => $e->getMessage(),
+            'id_marca' => $idMarca,
+            'id_model' => $idModel,
+            'respuesta' => $respuesta
+        ]);
+        $versionExacta = null;
     }
 
+    if ($versionExacta !== null) {
+        $versionFinal = $versionExacta['nombre'];
+
+        set_user_state($from, [
+            'step' => 'ficha_oficial',
+            'marca' => $marca,
+            'id_marca' => $userState['id_marca'] ?? null,
+            'modelo' => $modelo,
+            'id_model' => $userState['id_model'] ?? null,
+            'id_version' => $versionExacta['id_version'],
+            'anio' => $anio,
+            'km' => $km,
+            'version' => $versionFinal
+        ]);
+
+        twiml_message(
+            "Perfecto 👍\n\n"
+            . "Versión: {$versionFinal}\n\n"
+            . "¿Posee ficha oficial?\n"
+            . "Respondé: SI o NO"
+        );
+    }
+
+    try {
+        $nuevasSugerencias = wa_buscar_versiones_similares($idMarca, $idModel, $respuesta, 5);
+    } catch (Throwable $e) {
+        wa_log('VERSION_REBUSQUEDA_SUGERENCIAS_DB_EXCEPTION', [
+            'error' => $e->getMessage(),
+            'id_marca' => $idMarca,
+            'id_model' => $idModel,
+            'respuesta' => $respuesta
+        ]);
+        $nuevasSugerencias = [];
+    }
+
+    if (!empty($nuevasSugerencias)) {
+        $opcionesTexto = [];
+        $opcionesEstado = [];
+
+        foreach ($nuevasSugerencias as $i => $op) {
+            $nro = $i + 1;
+            $opcionesTexto[] = $nro . '. ' . $op['nombre'];
+            $opcionesEstado[(string)$nro] = [
+                'id_version' => $op['id_version'],
+                'nombre' => $op['nombre']
+            ];
+        }
+
+        set_user_state($from, [
+            'step' => 'version_sugerida',
+            'marca' => $marca,
+            'id_marca' => $userState['id_marca'] ?? null,
+            'modelo' => $modelo,
+            'id_model' => $userState['id_model'] ?? null,
+            'id_version' => $userState['id_version'] ?? null,
+            'anio' => $anio,
+            'km' => $km,
+            'version_input' => $respuesta,
+            'version_opciones' => $opcionesEstado
+        ]);
+
+        twiml_message(
+            "No encontré esa versión exacta.\n\n"
+            . "Quizás quisiste decir:\n"
+            . implode("\n", $opcionesTexto)
+            . "\n\nRespondé con el número o con el nombre correcto."
+            . "\nSi preferís continuar con la versión que escribiste, respondé SEGUIR."
+            . "\nSi no sabés la versión, respondé NINGUNA."
+        );
+    }
+
+    set_user_state($from, [
+        'step' => 'ficha_oficial',
+        'marca' => $marca,
+        'id_marca' => $userState['id_marca'] ?? null,
+        'modelo' => $modelo,
+        'id_model' => $userState['id_model'] ?? null,
+        'id_version' => $userState['id_version'] ?? null,
+        'anio' => $anio,
+        'km' => $km,
+        'version' => $respuesta
+    ]);
+
     twiml_message(
-        "No entendí la opción elegida.\n\n"
-        . implode("\n", $opcionesTexto)
-        . "\n\nRespondé con el número o con el nombre correcto."
-        . "\nSi preferís continuar con la versión que escribiste, respondé SEGUIR."
+        "Perfecto 👍\n\n"
+        . "Versión: {$respuesta}\n\n"
+        . "¿Posee ficha oficial?\n"
+        . "Respondé: SI o NO"
     );
+}
+
+function wa_version_es_ninguna(string $texto): bool
+{
+    $v = wa_normalizar_texto($texto);
+
+    return in_array($v, [
+        'ninguna',
+        'ninguno',
+        'no se',
+        'nose',
+        'ns',
+        'sin version',
+        'sin versión',
+        'no la se',
+        'no la sé'
+    ], true);
 }
 
 // =========================
