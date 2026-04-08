@@ -1,6 +1,32 @@
 <?php
 if (!isset($sistema_iniciado)) exit();
 
+// =====================================================
+// ZONA HORARIA CORRECTA PARA URUGUAY
+// =====================================================
+date_default_timezone_set('America/Montevideo');
+
+// =====================================================
+// AUTO FINALIZAR AGENDAS PASADAS
+// =====================================================
+// IMPORTANTE:
+// - No toca canceladas
+// - No toca agendas ya finalizadas
+// - Compara fecha+hora en zona horaria de Uruguay
+$db->query("
+	UPDATE agendas
+	SET
+		finalizada = 1,
+		detalle_estado = CASE
+			WHEN detalle_estado IS NULL OR TRIM(detalle_estado) = ''
+				THEN 'Finalizada automáticamente por fecha/hora'
+			ELSE detalle_estado
+		END
+	WHERE IFNULL(cancelado, 0) = 0
+	  AND IFNULL(finalizada, 0) = 0
+	  AND STR_TO_DATE(CONCAT(fecha, ' ', LEFT(hora, 5)), '%Y-%m-%d %H:%i') < NOW()
+");
+
 $pagina = intval($_GET['p'] ?? 0);
 if ($pagina <= 0) $pagina = 1;
 
@@ -40,16 +66,34 @@ switch ($orden_dir) {
 		$orden_dir = 0;
 }
 
+// =====================================================
+// ORDEN CORRECTO POR FECHA + HORA
+// =====================================================
+// Se ordena por un único datetime, para evitar problemas
+// si fecha/hora son varchar o si el orden se mezcla.
 switch ($orden_campo) {
-	case 1: $sql_o = 'id_agenda'; break;
-	case 2: $sql_o = 'hora'; break;
-	case 3: $sql_o = 'auto'; break;
-	case 4: $sql_o = 'nombre'; break;
-	case 5: $sql_o = 'ci'; break;
-	case 6: $sql_o = 'email'; break;
+	case 1:
+		$sql_o = 'id_agenda';
+		break;
+	case 2:
+		$sql_o = "STR_TO_DATE(LEFT(hora, 5), '%H:%i')";
+		break;
+	case 3:
+		$sql_o = 'auto';
+		break;
+	case 4:
+		$sql_o = 'nombre';
+		break;
+	case 5:
+		$sql_o = 'ci';
+		break;
+	case 6:
+		$sql_o = 'email';
+		break;
 	default:
-		$sql_o = 'fecha';
+		$sql_o = '';
 		$orden_campo = 0;
+		break;
 }
 
 $sql_b = trim($sql_b);
@@ -64,11 +108,21 @@ $return_url = '?m=' . $modulo['prefijo'] . '_l'
 	. '&od=' . $orden_dir
 	. ($inactivo != 0 ? '&e=' . $inactivo : '');
 
+if ($orden_campo == 0) {
+	$sql_order_by = "
+		STR_TO_DATE(fecha, '%Y-%m-%d') DESC,
+		STR_TO_DATE(LEFT(hora, 5), '%H:%i') ASC,
+		id_agenda DESC
+	";
+} else {
+	$sql_order_by = $sql_o . ' ' . $sql_od . ', id_agenda ' . $sql_od;
+}
+
 $listado = $db->query(
 	'SELECT SQL_CALC_FOUND_ROWS * 
 	 FROM agendas 
 	 WHERE 1=1 ' . $sql_b . '
-	 ORDER BY ' . $sql_o . ' ' . $sql_od . '
+	 ORDER BY ' . $sql_order_by . '
 	 LIMIT ' . (($pagina - 1) * $config['pagina_cant']) . ', ' . $config['pagina_cant'] . ';'
 );
 
@@ -208,6 +262,12 @@ if ($total_paginas <= 0) $total_paginas = 1;
 		border-color: #dca7a7;
 	}
 
+	.age-slot-pasada {
+		background: #eef3f7;
+		border-color: #cfdbe5;
+		color: #5c6b77;
+	}
+
 	.age-btn-bloquear {
 		background: #f0ad4e;
 		color: #fff;
@@ -232,8 +292,8 @@ if ($total_paginas <= 0) $total_paginas = 1;
 	}
 
 	.age-row-finalizada {
-	background: #eef3f7 !important;
-	color: #5c6b77;
+		background: #eef3f7 !important;
+		color: #5c6b77;
 	}
 
 	.age-estado-finalizada {
@@ -434,10 +494,10 @@ if ($total_paginas <= 0) $total_paginas = 1;
 				<th>
 					<?php if ($orden_campo == 0) { ?>
 						<a href="?m=<?php echo $modulo['prefijo']; ?>_l<?php if ($busqueda != '') echo '&b=' . urlencode($busqueda); ?><?php if ($inactivo != 0) echo '&e=' . $inactivo; ?>&o=0&od=<?php echo $orden_dir == 0 ? 1 : 0; ?>">
-							<strong>Fecha <?php echo $od_chr; ?></strong>
+							<strong>Fecha/Hora <?php echo $od_chr; ?></strong>
 						</a>
 					<?php } else { ?>
-						<a href="?m=<?php echo $modulo['prefijo']; ?>_l<?php if ($busqueda != '') echo '&b=' . urlencode($busqueda); ?><?php if ($inactivo != 0) echo '&e=' . $inactivo; ?>&o=0&od=0">Fecha</a>
+						<a href="?m=<?php echo $modulo['prefijo']; ?>_l<?php if ($busqueda != '') echo '&b=' . urlencode($busqueda); ?><?php if ($inactivo != 0) echo '&e=' . $inactivo; ?>&o=0&od=0">Fecha/Hora</a>
 					<?php } ?>
 				</th>
 
@@ -526,10 +586,14 @@ if ($total_paginas <= 0) $total_paginas = 1;
 
 		<tbody>
 			<?php while ($entrada = $db->fetch_array($listado)) { ?>
+				<?php
+					$tsAgenda = strtotime($entrada['fecha'] . ' ' . substr($entrada['hora'], 0, 5));
+					$yaPaso = ($tsAgenda !== false && $tsAgenda < time());
+				?>
 				<tr class="<?php
 					if (!empty($entrada['cancelado'])) {
 						echo 'age-row-cancelada';
-					} elseif (!empty($entrada['finalizada'])) {
+					} elseif (!empty($entrada['finalizada']) || $yaPaso) {
 						echo 'age-row-finalizada';
 					}
 				?>">
@@ -539,14 +603,14 @@ if ($total_paginas <= 0) $total_paginas = 1;
 						</a>
 					</td>
 					<td><?php echo_s(strftime('%d/%m/%Y', strtotime($entrada['fecha']))); ?></td>
-					<td><?php echo_s($entrada['hora']); ?></td>
+					<td><?php echo_s(substr($entrada['hora'], 0, 5)); ?></td>
 					<td><?php echo_s($entrada['auto']); ?></td>
 					<td><?php echo_s($entrada['nombre']); ?></td>
 					<td><?php echo_s($entrada['email']); ?></td>
 					<td>
 						<?php if (!empty($entrada['cancelado'])) { ?>
 							<span class="age-estado-cancelada">CANCELADA</span>
-						<?php } elseif (!empty($entrada['finalizada'])) { ?>
+						<?php } elseif (!empty($entrada['finalizada']) || $yaPaso) { ?>
 							<span class="age-estado-finalizada">FINALIZADA</span>
 						<?php } else { ?>
 							<span class="age-estado-activa">ACTIVA</span>
@@ -556,8 +620,9 @@ if ($total_paginas <= 0) $total_paginas = 1;
 						<?php
 						if (!empty($entrada['cancelado'])) {
 							echo_s($entrada['motivo_cancelacion'] ?? '');
-						} elseif (!empty($entrada['finalizada'])) {
-							echo_s($entrada['detalle_estado'] ?? '');
+						} elseif (!empty($entrada['finalizada']) || $yaPaso) {
+							$detalle = trim((string)($entrada['detalle_estado'] ?? ''));
+							echo_s($detalle !== '' ? $detalle : 'Finalizada automáticamente por fecha/hora');
 						} else {
 							echo '';
 						}
@@ -720,6 +785,8 @@ if ($total_paginas <= 0) $total_paginas = 1;
 				cardClass += ' age-slot-bloqueada';
 			} else if (h.estado === 'ocupada') {
 				cardClass += ' age-slot-ocupada';
+			} else if (h.estado === 'pasada') {
+				cardClass += ' age-slot-pasada';
 			} else {
 				cardClass += ' age-slot-disponible';
 			}
@@ -728,7 +795,9 @@ if ($total_paginas <= 0) $total_paginas = 1;
 			html += '<div class="age-slot-card-hora">' + h.hora + '</div>';
 			html += '<div class="age-slot-card-actions">';
 
-			if (h.estado === 'bloqueada') {
+			if (h.estado === 'pasada') {
+				html += '<div style="margin-top:6px;color:#5c6b77;font-weight:bold;">Finalizada</div>';
+			} else if (h.estado === 'bloqueada') {
 				html += '<button class="btn btn-small age-btn-desbloquear" onclick="desbloquearHora(\'' + h.hora + '\')">Desbloquear</button>';
 			} else if (h.estado === 'ocupada') {
 				html += '<a class="btn btn-small" href="?m=age_v&i=' + h.id_agenda + '">Ver</a>';

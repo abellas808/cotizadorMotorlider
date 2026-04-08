@@ -15,6 +15,8 @@ require_once(__DIR__ . '/../../includes/chk_login.php');
 
 header('Content-Type: application/json; charset=utf-8');
 
+date_default_timezone_set('America/Montevideo');
+
 global $db;
 
 // por ahora fijo
@@ -66,8 +68,14 @@ if ($accion === 'detalle') {
         exit;
     }
 
-    setlocale(LC_ALL,"es_ES@euro","es_ES","esp");
+    setlocale(LC_ALL, "es_ES@euro", "es_ES", "esp");
     $date = DateTime::createFromFormat("Y-m-d", $fecha);
+
+    if (!$date) {
+        echo json_encode(['ok' => false, 'mensaje' => 'Fecha inválida']);
+        exit;
+    }
+
     $dia = strftime("%A", $date->getTimestamp());
 
     $dia_bloqueado = false;
@@ -123,11 +131,20 @@ if ($accion === 'detalle') {
     }
 
     $horas = [];
+    $now = new DateTime('now', new DateTimeZone('America/Montevideo'));
 
     foreach ($horas_base as $hora) {
 
+        $fechaHoraObj = DateTime::createFromFormat(
+            'Y-m-d H:i',
+            $fecha . ' ' . $hora,
+            new DateTimeZone('America/Montevideo')
+        );
+
+        $esPasada = ($fechaHoraObj && $fechaHoraObj < $now);
+
         $qOcupada = $db->query("
-            SELECT id_agenda
+            SELECT id_agenda, finalizada
             FROM agendas
             WHERE id_sucursal = '{$id_sucursal}'
               AND fecha = '".$db->escape($fecha)."'
@@ -139,7 +156,9 @@ if ($accion === 'detalle') {
 
         $estado = 'disponible';
 
-        if (in_array($hora, $horas_bloqueadas)) {
+        if ($esPasada) {
+            $estado = 'pasada';
+        } elseif (in_array($hora, $horas_bloqueadas)) {
             $estado = 'bloqueada';
         } elseif ($ocupada) {
             $estado = 'ocupada';
@@ -155,7 +174,9 @@ if ($accion === 'detalle') {
     echo json_encode([
         'ok' => true,
         'dia_bloqueado' => $dia_bloqueado,
-        'horas' => $horas
+        'horas' => $horas,
+        'server_now' => $now->format('Y-m-d H:i:s'),
+        'timezone' => 'America/Montevideo'
     ]);
     exit;
 }
