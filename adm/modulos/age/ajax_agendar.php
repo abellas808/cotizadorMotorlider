@@ -15,29 +15,105 @@ session_start();
 require_once(__DIR__ . '/../../includes/chk_login.php');
 
 header('Content-Type: application/json; charset=utf-8');
+date_default_timezone_set('America/Montevideo');
 
 global $db;
 
-// por ahora fijo
 $id_sucursal = 1;
 
-$fecha    = trim((string)($_POST['fecha'] ?? ''));
-$hora     = trim((string)($_POST['hora'] ?? ''));
-$nombre   = trim((string)($_POST['nombre'] ?? ''));
-$email    = trim((string)($_POST['email'] ?? ''));
-$telefono = trim((string)($_POST['telefono'] ?? ''));
-$auto     = trim((string)($_POST['auto'] ?? ''));
-$marca    = trim((string)($_POST['marca'] ?? ''));
-$modelo   = trim((string)($_POST['modelo'] ?? ''));
-$anio     = trim((string)($_POST['anio'] ?? ''));
-$familia  = trim((string)($_POST['familia'] ?? ''));
+function age_json($arr) {
+	echo json_encode($arr);
+	exit;
+}
+
+function age_normalizar_hora($hora) {
+	$hora = trim((string)$hora);
+
+	if (preg_match('/^\d{2}:\d{2}:\d{2}$/', $hora)) {
+		return substr($hora, 0, 5);
+	}
+
+	if (preg_match('/^\d{2}:\d{2}$/', $hora)) {
+		return $hora;
+	}
+
+	return '';
+}
+
+function age_fecha_hora_pasada($fecha, $hora) {
+	$tz = new DateTimeZone('America/Montevideo');
+	$dt = DateTime::createFromFormat('Y-m-d H:i', $fecha . ' ' . $hora, $tz);
+
+	if (!$dt) {
+		return true;
+	}
+
+	$now = new DateTime('now', $tz);
+	return $dt < $now;
+}
+
+function age_table_columns($db, $table) {
+	$tableEsc = $db->escape($table);
+	$cols = [];
+
+	$q = $db->query("SHOW COLUMNS FROM `{$tableEsc}`");
+	if ($q) {
+		while ($r = $db->fetch_array($q)) {
+			if (!empty($r['Field'])) {
+				$cols[$r['Field']] = true;
+			}
+		}
+	}
+
+	return $cols;
+}
+
+$fecha         = trim((string)($_POST['fecha'] ?? ''));
+$hora          = age_normalizar_hora($_POST['hora'] ?? '');
+$nombre        = trim((string)($_POST['nombre'] ?? ''));
+$email         = trim((string)($_POST['email'] ?? ''));
+$telefono      = trim((string)($_POST['telefono'] ?? ''));
+$auto          = trim((string)($_POST['auto'] ?? ''));
+$marca         = trim((string)($_POST['marca'] ?? ''));
+$modelo        = trim((string)($_POST['modelo'] ?? ''));
+$anio          = trim((string)($_POST['anio'] ?? ''));
+$familia       = trim((string)($_POST['familia'] ?? ''));
+$id_cotizacion = intval($_POST['id_cotizacion'] ?? 0);
 
 if ($fecha === '' || $hora === '' || $nombre === '' || $email === '') {
-	echo json_encode([
+	age_json([
 		'ok' => false,
 		'mensaje' => 'Faltan datos obligatorios.'
 	]);
-	exit;
+}
+
+$date = DateTime::createFromFormat('Y-m-d', $fecha);
+if (!$date || $date->format('Y-m-d') !== $fecha) {
+	age_json([
+		'ok' => false,
+		'mensaje' => 'Fecha inválida.'
+	]);
+}
+
+if (!preg_match('/^\d{2}:\d{2}$/', $hora)) {
+	age_json([
+		'ok' => false,
+		'mensaje' => 'Hora inválida.'
+	]);
+}
+
+if (age_fecha_hora_pasada($fecha, $hora)) {
+	age_json([
+		'ok' => false,
+		'mensaje' => 'No se puede agendar en una fecha/hora pasada.'
+	]);
+}
+
+if ($id_cotizacion <= 0) {
+	age_json([
+		'ok' => false,
+		'mensaje' => 'No llegó un id_cotizacion válido.'
+	]);
 }
 
 $fechaEsc    = $db->escape($fecha);
@@ -63,11 +139,10 @@ $existente = $db->query_first("
 ");
 
 if ($existente) {
-	echo json_encode([
+	age_json([
 		'ok' => false,
 		'mensaje' => 'Ya existe una agenda activa en ese horario.'
 	]);
-	exit;
 }
 
 // validar bloqueo manual
@@ -85,11 +160,10 @@ $bloqueo = $db->query_first("
 ");
 
 if ($bloqueo) {
-	echo json_encode([
+	age_json([
 		'ok' => false,
 		'mensaje' => 'Ese horario está bloqueado.'
 	]);
-	exit;
 }
 
 $chars = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -99,66 +173,45 @@ for ($i = 0; $i < 50; $i++) {
 }
 $randEsc = $db->escape($rand);
 
+// defaults originales
 $ci = 0;
 $direccion = 'N/A';
 $inspeccion_domiciliaria = 0;
-$id_cotizacion = 0;
 $cancelado = 0;
-
 $direccionEsc = $db->escape($direccion);
 
-$ok = $db->query("
-	INSERT INTO agendas
-	(
-		id_sucursal,
-		fecha,
-		hora,
-		modelo,
-		marca,
-		anio,
-		familia,
-		auto,
-		nombre,
-		ci,
-		email,
-		telefono,
-		rand_string,
-		direccion,
-		inspeccion_domiciliaria,
-		id_cotizacion,
-		cancelado
-	)
-	VALUES
-	(
-		'{$id_sucursal}',
-		'{$fechaEsc}',
-		'{$horaEsc}',
-		'{$modeloEsc}',
-		'{$marcaEsc}',
-		'{$anioEsc}',
-		'{$familiaEsc}',
-		'{$autoEsc}',
-		'{$nombreEsc}',
-		'{$ci}',
-		'{$emailEsc}',
-		'{$telefonoEsc}',
-		'{$randEsc}',
-		'{$direccionEsc}',
-		'{$inspeccion_domiciliaria}',
-		'{$id_cotizacion}',
-		'{$cancelado}'
-	)
-");
+// INSERT SOLO EN AGENDAS
+$fields = [
+	'id_sucursal' => "'{$id_sucursal}'",
+	'fecha' => "'{$fechaEsc}'",
+	'hora' => "'{$horaEsc}'",
+	'modelo' => "'{$modeloEsc}'",
+	'marca' => "'{$marcaEsc}'",
+	'anio' => "'{$anioEsc}'",
+	'familia' => "'{$familiaEsc}'",
+	'auto' => "'{$autoEsc}'",
+	'nombre' => "'{$nombreEsc}'",
+	'ci' => "'{$ci}'",
+	'email' => "'{$emailEsc}'",
+	'telefono' => "'{$telefonoEsc}'",
+	'rand_string' => "'{$randEsc}'",
+	'direccion' => "'{$direccionEsc}'",
+	'inspeccion_domiciliaria' => "'{$inspeccion_domiciliaria}'",
+	'id_cotizacion' => "'{$id_cotizacion}'",
+	'cancelado' => "'{$cancelado}'",
+];
+
+$sql = "INSERT INTO agendas (" . implode(",\n\t", array_keys($fields)) . ") VALUES (\n\t" . implode(",\n\t", array_values($fields)) . "\n)";
+$ok = $db->query($sql);
 
 if (!$ok) {
-	echo json_encode([
+	age_json([
 		'ok' => false,
 		'mensaje' => 'Error al guardar la agenda.'
 	]);
-	exit;
 }
 
-// obtener ID insertado
+// obtener agenda creada
 $nuevaAgenda = $db->query_first("
 	SELECT id_agenda
 	FROM agendas
@@ -170,9 +223,28 @@ $nuevaAgenda = $db->query_first("
 	LIMIT 1
 ");
 
-$id_agenda = $nuevaAgenda['id_agenda'] ?? 0;
+$id_agenda = intval($nuevaAgenda['id_agenda'] ?? 0);
 
-// datos sucursal para mail
+// GUARDAR USUARIO EN cotizaciones_generadas
+$idUsuarioCotizo = intval($_SESSION[$config['codigo_unico']]['login_usuario_id'] ?? 0);
+
+$colsCot = age_table_columns($db, 'cotizaciones_generadas');
+$setsCot = [];
+
+if (isset($colsCot['id_usuario_cotizo']) && $idUsuarioCotizo > 0) {
+	$setsCot[] = "id_usuario_cotizo = " . intval($idUsuarioCotizo);
+}
+
+if (!empty($setsCot)) {
+	$db->query("
+		UPDATE cotizaciones_generadas
+		SET " . implode(', ', $setsCot) . "
+		WHERE id_cotizaciones_generadas = " . intval($id_cotizacion) . "
+		LIMIT 1
+	");
+}
+
+// mail
 $sucursal = $db->query_first("
 	SELECT nombre, direccion, email, telefono
 	FROM agenda_sucursal
@@ -185,7 +257,6 @@ $suc_direccion = $sucursal['direccion'] ?? '';
 $suc_email     = $sucursal['email'] ?? '';
 $suc_telefono  = $sucursal['telefono'] ?? '';
 
-// mail de confirmación, no rompe flujo
 try {
 	$mail = new PHPMailer(true);
 	$mail->isHTML(true);
@@ -208,8 +279,10 @@ try {
 	// no romper flujo si falla el mail
 }
 
-echo json_encode([
+age_json([
 	'ok' => true,
 	'id_agenda' => $id_agenda,
+	'id_cotizacion' => $id_cotizacion,
+	'id_usuario_cotizo' => $idUsuarioCotizo,
 	'mensaje' => 'Agenda creada correctamente.'
 ]);

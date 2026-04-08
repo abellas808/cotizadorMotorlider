@@ -1,5 +1,10 @@
 <?php
 require_once(__DIR__ . '/../../config/config.inc.php');
+
+if (!isset($config['db_tablePrefix'])) {
+	$config['db_tablePrefix'] = '';
+}
+
 require_once(__DIR__ . '/../../includes/database.php');
 require_once(__DIR__ . '/../../includes/funciones.php');
 
@@ -7,23 +12,75 @@ header('Content-Type: application/json; charset=utf-8');
 
 session_start();
 
+date_default_timezone_set('America/Montevideo');
+
 global $db;
+
+function age_json($arr) {
+	echo json_encode($arr);
+	exit;
+}
+
+function age_normalizar_hora($hora) {
+	$hora = trim((string)$hora);
+
+	if ($hora === '') {
+		return '';
+	}
+
+	if (preg_match('/^\d{2}:\d{2}:\d{2}$/', $hora)) {
+		return substr($hora, 0, 5);
+	}
+
+	if (preg_match('/^\d{2}:\d{2}$/', $hora)) {
+		return $hora;
+	}
+
+	return '';
+}
+
+function age_fecha_hora_pasada($fecha, $hora = '') {
+	$tz = new DateTimeZone('America/Montevideo');
+	$now = new DateTime('now', $tz);
+
+	if ($hora === '') {
+		$dt = DateTime::createFromFormat('Y-m-d H:i:s', $fecha . ' 00:00:00', $tz);
+		if (!$dt) return true;
+
+		$today = new DateTime('today', $tz);
+		return $dt < $today;
+	}
+
+	$dt = DateTime::createFromFormat('Y-m-d H:i', $fecha . ' ' . $hora, $tz);
+	if (!$dt) return true;
+
+	return $dt < $now;
+}
 
 $accion = trim((string)($_POST['accion'] ?? 'bloquear')); // bloquear | desbloquear
 $fecha  = trim((string)($_POST['fecha'] ?? ''));
-$hora   = trim((string)($_POST['hora'] ?? ''));
+$horaIn = trim((string)($_POST['hora'] ?? ''));
+$hora   = age_normalizar_hora($horaIn);
 $motivo = trim((string)($_POST['motivo'] ?? 'Bloqueo manual'));
 
 // por ahora fijo sucursal 1
 $id_sucursal = 1;
 
 if ($fecha === '') {
-	echo json_encode(['ok' => false, 'mensaje' => 'Falta fecha']);
-	exit;
+	age_json(['ok' => false, 'mensaje' => 'Falta fecha']);
 }
 
-$fechaEsc = $db->escape($fecha);
-$horaEsc  = $hora !== '' ? $db->escape($hora . ':00') : null;
+$date = DateTime::createFromFormat('Y-m-d', $fecha);
+if (!$date || $date->format('Y-m-d') !== $fecha) {
+	age_json(['ok' => false, 'mensaje' => 'Fecha inválida']);
+}
+
+if ($horaIn !== '' && $hora === '') {
+	age_json(['ok' => false, 'mensaje' => 'Hora inválida']);
+}
+
+$fechaEsc  = $db->escape($fecha);
+$horaEsc   = $hora !== '' ? $db->escape($hora . ':00') : null;
 $motivoEsc = $db->escape($motivo);
 
 if ($accion === 'desbloquear') {
@@ -48,17 +105,24 @@ if ($accion === 'desbloquear') {
 		");
 	}
 
-	echo json_encode([
+	age_json([
 		'ok' => (bool)$ok,
 		'accion' => 'desbloquear',
 		'mensaje' => $ok ? 'Bloqueo removido correctamente.' : 'No se pudo desbloquear.'
 	]);
-	exit;
 }
 
 // =========================
 // BLOQUEAR
 // =========================
+
+// no dejar bloquear pasado
+if (age_fecha_hora_pasada($fecha, $hora)) {
+	age_json([
+		'ok' => false,
+		'mensaje' => 'No se puede bloquear una fecha/hora pasada.'
+	]);
+}
 
 // evitar duplicado de bloqueo activo
 if ($horaEsc === null) {
@@ -84,13 +148,12 @@ if ($horaEsc === null) {
 }
 
 if ($existe) {
-	echo json_encode([
+	age_json([
 		'ok' => true,
 		'accion' => 'bloquear',
 		'ya_existia' => true,
 		'mensaje' => 'Ese bloqueo ya existía.'
 	]);
-	exit;
 }
 
 // insertar bloqueo
@@ -107,18 +170,15 @@ if ($horaEsc === null) {
 }
 
 if (!$ok) {
-	echo json_encode([
+	age_json([
 		'ok' => false,
 		'mensaje' => 'No se pudo guardar el bloqueo.'
 	]);
-	exit;
 }
 
 // =========================
-// CANCELAR AGENDAS AFECTADAS
+// CANCELAR SOLO AGENDAS FUTURAS AFECTADAS
 // =========================
-
-// asumo que agendas tiene columna cancelado
 $cantidad_afectadas = 0;
 
 if ($horaEsc === null) {
@@ -128,16 +188,18 @@ if ($horaEsc === null) {
 		WHERE id_sucursal = '{$id_sucursal}'
 		  AND fecha = '{$fechaEsc}'
 		  AND (cancelado = 0 OR cancelado IS NULL)
+		  AND STR_TO_DATE(CONCAT(fecha, ' ', LEFT(hora, 5)), '%Y-%m-%d %H:%i') >= NOW()
 	");
 
 	$db->query("
 		UPDATE agendas
 		SET cancelado = 1,
-        motivo_cancelacion = 'Bloqueo manual',
-        fecha_cancelacion = NOW()
+			motivo_cancelacion = 'Bloqueo manual',
+			fecha_cancelacion = NOW()
 		WHERE id_sucursal = '{$id_sucursal}'
 		  AND fecha = '{$fechaEsc}'
 		  AND (cancelado = 0 OR cancelado IS NULL)
+		  AND STR_TO_DATE(CONCAT(fecha, ' ', LEFT(hora, 5)), '%Y-%m-%d %H:%i') >= NOW()
 	");
 } else {
 	$qAgendas = $db->query("
@@ -147,17 +209,19 @@ if ($horaEsc === null) {
 		  AND fecha = '{$fechaEsc}'
 		  AND hora = '" . substr($horaEsc, 0, 5) . "'
 		  AND (cancelado = 0 OR cancelado IS NULL)
+		  AND STR_TO_DATE(CONCAT(fecha, ' ', LEFT(hora, 5)), '%Y-%m-%d %H:%i') >= NOW()
 	");
 
 	$db->query("
 		UPDATE agendas
 		SET cancelado = 1,
-        motivo_cancelacion = 'Bloqueo manual',
-        fecha_cancelacion = NOW()
+			motivo_cancelacion = 'Bloqueo manual',
+			fecha_cancelacion = NOW()
 		WHERE id_sucursal = '{$id_sucursal}'
 		  AND fecha = '{$fechaEsc}'
 		  AND hora = '" . substr($horaEsc, 0, 5) . "'
 		  AND (cancelado = 0 OR cancelado IS NULL)
+		  AND STR_TO_DATE(CONCAT(fecha, ' ', LEFT(hora, 5)), '%Y-%m-%d %H:%i') >= NOW()
 	");
 }
 
@@ -165,10 +229,7 @@ if ($qAgendas && isset($qAgendas->num_rows)) {
 	$cantidad_afectadas = (int)$qAgendas->num_rows;
 }
 
-// por ahora solo devolvemos cuántas agendas afectó
-// el próximo paso es mandar mails a cada agenda afectada
-
-echo json_encode([
+age_json([
 	'ok' => true,
 	'accion' => 'bloquear',
 	'afectadas' => $cantidad_afectadas,
