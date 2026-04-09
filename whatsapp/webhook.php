@@ -4,16 +4,15 @@ declare(strict_types=1);
 date_default_timezone_set('America/Montevideo');
 
 /**
- * Webhook WhatsApp Twilio
- * - recibe mensaje entrante
- * - valida firma Twilio
- * - guarda estado simple por usuario en storage.json
- * - flujo guiado completo
- * - valida MARCA contra act_marcas
- * - valida MODELO contra act_modelo
- * - sugiere VERSION pero permite continuar con texto libre
- * - arrastra correctamente id_marca, id_model, id_version
- * - al finalizar llama al cotizador real
+ * Webhook WhatsApp Twilio - Motorlider
+ *
+ * Flujo:
+ * 1. BOT pide datos
+ * 2. BOT cotiza
+ * 3. BOT envía mensaje final y pasa a HUMANO
+ * 4. HUMANO responde tasación desde/hasta
+ * 5. Si cliente escribe AGENDAR
+ * 6. vuelve BOT y sigue agenda
  */
 
 // =========================
@@ -33,11 +32,6 @@ const DB_PASS = '_eT4AjJ79~tX]*h)J5';
 function wa_log_file(): string
 {
     return __DIR__ . '/logs/whatsapp_webhook_' . date('Y-m-d') . '.log';
-}
-
-function wa_storage_file(): string
-{
-    return __DIR__ . '/storage.json';
 }
 
 // =========================
@@ -66,8 +60,8 @@ function get_request_headers_lower(): array
 function build_current_url(): string
 {
     $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-    $uri = $_SERVER['REQUEST_URI'] ?? '/';
+    $host   = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    $uri    = $_SERVER['REQUEST_URI'] ?? '/';
 
     return $scheme . '://' . $host . $uri;
 }
@@ -101,8 +95,8 @@ function validate_twilio_signature(string $authToken): bool
     $ok = hash_equals($hash, $twilioSignature);
 
     wa_log('SIGNATURE_CHECK', [
-        'ok' => $ok,
-        'url' => $url,
+        'ok'       => $ok,
+        'url'      => $url,
         'expected' => $hash,
         'received' => $twilioSignature
     ]);
@@ -123,59 +117,12 @@ function twiml_message(string $message): void
     exit;
 }
 
-function load_state(): array
+function twiml_empty(): void
 {
-    $file = wa_storage_file();
-
-    if (!file_exists($file)) {
-        return [];
-    }
-
-    $json = @file_get_contents($file);
-    if ($json === false || trim($json) === '') {
-        return [];
-    }
-
-    $data = json_decode($json, true);
-    return is_array($data) ? $data : [];
-}
-
-function save_state(array $data): void
-{
-    @file_put_contents(
-        wa_storage_file(),
-        json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)
-    );
-}
-
-function get_user_state(string $from): array
-{
-    $all = load_state();
-    return (isset($all[$from]) && is_array($all[$from])) ? $all[$from] : [];
-}
-
-function set_user_state(string $from, array $state): void
-{
-    $all = load_state();
-    $all[$from] = $state;
-    save_state($all);
-
-    wa_log('STATE_SET', [
-        'from' => $from,
-        'state' => $state
-    ]);
-}
-
-function clear_user_state(string $from): void
-{
-    $all = load_state();
-
-    if (isset($all[$from])) {
-        unset($all[$from]);
-        save_state($all);
-    }
-
-    wa_log('STATE_CLEAR', ['from' => $from]);
+    header('Content-Type: text/xml; charset=UTF-8');
+    echo '<?xml version="1.0" encoding="UTF-8"?>';
+    echo '<Response></Response>';
+    exit;
 }
 
 function body_to_lower(string $text): string
@@ -183,6 +130,27 @@ function body_to_lower(string $text): string
     return function_exists('mb_strtolower')
         ? mb_strtolower($text, 'UTF-8')
         : strtolower($text);
+}
+
+function wa_normalizar_texto(string $txt): string
+{
+    $txt = trim($txt);
+    $txt = function_exists('mb_strtolower') ? mb_strtolower($txt, 'UTF-8') : strtolower($txt);
+
+    $reemplazos = [
+        'á' => 'a', 'à' => 'a', 'ä' => 'a', 'â' => 'a',
+        'é' => 'e', 'è' => 'e', 'ë' => 'e', 'ê' => 'e',
+        'í' => 'i', 'ì' => 'i', 'ï' => 'i', 'î' => 'i',
+        'ó' => 'o', 'ò' => 'o', 'ö' => 'o', 'ô' => 'o',
+        'ú' => 'u', 'ù' => 'u', 'ü' => 'u', 'û' => 'u',
+        'ñ' => 'n'
+    ];
+
+    $txt = strtr($txt, $reemplazos);
+    $txt = preg_replace('/[^a-z0-9\s]/u', ' ', $txt);
+    $txt = preg_replace('/\s+/', ' ', (string)$txt);
+
+    return trim((string)$txt);
 }
 
 function normalize_yes_no(string $text): ?string
@@ -233,9 +201,34 @@ function is_valid_email_simple(string $email): bool
     return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
 }
 
-function normalize_brand_for_url(int $brandId): string
+function wa_version_es_ninguna(string $texto): bool
 {
-    return (string)$brandId;
+    $v = wa_normalizar_texto($texto);
+
+    return in_array($v, [
+        'ninguna',
+        'ninguno',
+        'no se',
+        'nose',
+        'ns',
+        'sin version',
+        'sin versión',
+        'no la se',
+        'no la sé'
+    ], true);
+}
+
+function wa_es_agendar(string $texto): bool
+{
+    $v = wa_normalizar_texto($texto);
+
+    return in_array($v, [
+        'agendar',
+        'quiero agendar',
+        'deseo agendar',
+        'coordinar inspeccion',
+        'coordinar inspección'
+    ], true);
 }
 
 function wa_redondear_motorlider($valor): int
@@ -265,7 +258,7 @@ function wa_money($value): string
 }
 
 // =========================
-// HELPERS DB / CATÁLOGOS
+// DB
 // =========================
 function wa_db(): mysqli
 {
@@ -284,25 +277,236 @@ function wa_db(): mysqli
     return $cn;
 }
 
-function wa_normalizar_texto(string $txt): string
+// =========================
+// CONVERSACIONES DB
+// =========================
+function wa_get_conversation(string $telefono): ?array
 {
-    $txt = trim($txt);
-    $txt = function_exists('mb_strtolower') ? mb_strtolower($txt, 'UTF-8') : strtolower($txt);
+    $cn = wa_db();
 
-    $reemplazos = [
-        'á' => 'a', 'à' => 'a', 'ä' => 'a', 'â' => 'a',
-        'é' => 'e', 'è' => 'e', 'ë' => 'e', 'ê' => 'e',
-        'í' => 'i', 'ì' => 'i', 'ï' => 'i', 'î' => 'i',
-        'ó' => 'o', 'ò' => 'o', 'ö' => 'o', 'ô' => 'o',
-        'ú' => 'u', 'ù' => 'u', 'ü' => 'u', 'û' => 'u',
-        'ñ' => 'n'
+    $sql = "SELECT * FROM whatsapp_conversaciones WHERE telefono = ? ORDER BY id DESC LIMIT 1";
+    $st = $cn->prepare($sql);
+
+    if (!$st) {
+        throw new RuntimeException('Error prepare wa_get_conversation: ' . $cn->error);
+    }
+
+    $st->bind_param('s', $telefono);
+    $st->execute();
+    $rs = $st->get_result();
+
+    $row = $rs ? $rs->fetch_assoc() : null;
+
+    if ($rs) {
+        $rs->free();
+    }
+    $st->close();
+    $cn->close();
+
+    return $row ?: null;
+}
+
+function wa_create_conversation_if_not_exists(string $telefono, string $nombre = ''): array
+{
+    $conv = wa_get_conversation($telefono);
+    if ($conv !== null) {
+        return $conv;
+    }
+
+    $cn = wa_db();
+
+    $estado = 'INICIO';
+    $modo = 'BOT';
+    $fecha = date('Y-m-d H:i:s');
+    $datosJson = json_encode(['step' => null], JSON_UNESCAPED_UNICODE);
+
+    $sql = "INSERT INTO whatsapp_conversaciones
+            (telefono, nombre, estado, modo_atencion, datos_json, fecha_ultima_interaccion, fecha_alta, fecha_mod)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+    $st = $cn->prepare($sql);
+
+    if (!$st) {
+        throw new RuntimeException('Error prepare wa_create_conversation_if_not_exists: ' . $cn->error);
+    }
+
+    $st->bind_param('ssssssss', $telefono, $nombre, $estado, $modo, $datosJson, $fecha, $fecha, $fecha);
+    $st->execute();
+    $st->close();
+    $cn->close();
+
+    return wa_get_conversation($telefono) ?? [];
+}
+
+function wa_update_conversation_fields(string $telefono, array $fields): void
+{
+    if (empty($fields)) {
+        return;
+    }
+
+    $cn = wa_db();
+
+    $sets = [];
+    $values = [];
+    $types = '';
+
+    foreach ($fields as $campo => $valor) {
+        $sets[] = $campo . ' = ?';
+        $values[] = $valor;
+        $types .= 's';
+    }
+
+    $sql = "UPDATE whatsapp_conversaciones SET " . implode(', ', $sets) . " WHERE telefono = ?";
+    $st = $cn->prepare($sql);
+
+    if (!$st) {
+        throw new RuntimeException('Error prepare wa_update_conversation_fields: ' . $cn->error);
+    }
+
+    $types .= 's';
+    $values[] = $telefono;
+
+    $bind = [];
+    $bind[] = &$types;
+    foreach ($values as $k => $v) {
+        $bind[] = &$values[$k];
+    }
+
+    call_user_func_array([$st, 'bind_param'], $bind);
+    $st->execute();
+    $st->close();
+    $cn->close();
+}
+
+function wa_get_user_data(string $telefono): array
+{
+    $conv = wa_get_conversation($telefono);
+    if (!$conv) {
+        return [];
+    }
+
+    $json = (string)($conv['datos_json'] ?? '');
+    if ($json === '') {
+        return [];
+    }
+
+    $data = json_decode($json, true);
+    return is_array($data) ? $data : [];
+}
+
+function wa_step_to_estado(string $step): string
+{
+    $map = [
+        'marca'                       => 'ESPERANDO_MARCA',
+        'marca_sugerida'             => 'ESPERANDO_MARCA',
+        'modelo'                     => 'ESPERANDO_MODELO',
+        'modelo_sugerido'            => 'ESPERANDO_MODELO',
+        'anio'                       => 'ESPERANDO_ANIO',
+        'km'                         => 'ESPERANDO_KM',
+        'version'                    => 'ESPERANDO_VERSION',
+        'version_sugerida'           => 'ESPERANDO_VERSION',
+        'ficha_oficial'              => 'ESPERANDO_FICHA_OFICIAL',
+        'tipo_venta'                 => 'ESPERANDO_TIPO_VENTA',
+        'valor_pretendido'           => 'ESPERANDO_VALOR_PRETENDIDO',
+        'email'                      => 'ESPERANDO_EMAIL',
+        'agenda_sucursal'            => 'ESPERANDO_SUCURSAL',
+        'agenda_fecha'               => 'ESPERANDO_FECHA',
+        'agenda_hora'                => 'ESPERANDO_HORA',
+        'agenda_confirmacion_humana' => 'PENDIENTE_RESPUESTA_HUMANA',
+        'pendiente_humano'           => 'PENDIENTE_RESPUESTA_HUMANA',
+        'resultado_enviado'          => 'PENDIENTE_RESPUESTA_HUMANA',
+        'agendado'                   => 'AGENDADO',
     ];
 
-    $txt = strtr($txt, $reemplazos);
-    $txt = preg_replace('/[^a-z0-9\s]/u', ' ', $txt);
-    $txt = preg_replace('/\s+/', ' ', (string)$txt);
+    return $map[$step] ?? 'INICIO';
+}
 
-    return trim((string)$txt);
+function wa_set_user_state(
+    string $telefono,
+    array $data,
+    ?string $estado = null,
+    ?string $modoAtencion = null,
+    ?string $nombre = null,
+    ?string $email = null,
+    $idCotizacion = null
+): void {
+    $step = (string)($data['step'] ?? '');
+    $estadoFinal = $estado ?? wa_step_to_estado($step);
+    $modoFinal = $modoAtencion ?? (($estadoFinal === 'PENDIENTE_RESPUESTA_HUMANA') ? 'HUMANO' : 'BOT');
+    $fecha = date('Y-m-d H:i:s');
+
+    $campos = [
+        'estado' => $estadoFinal,
+        'modo_atencion' => $modoFinal,
+        'datos_json' => json_encode($data, JSON_UNESCAPED_UNICODE),
+        'fecha_ultima_interaccion' => $fecha,
+        'fecha_mod' => $fecha
+    ];
+
+    if ($nombre !== null) {
+        $campos['nombre'] = $nombre;
+    }
+
+    if ($email !== null) {
+        $campos['email'] = $email;
+    }
+
+    if ($idCotizacion !== null) {
+        $campos['id_cotizacion'] = (string)$idCotizacion;
+    }
+
+    wa_update_conversation_fields($telefono, $campos);
+
+    wa_log('STATE_SET_DB', [
+        'telefono' => $telefono,
+        'estado'   => $estadoFinal,
+        'modo'     => $modoFinal,
+        'step'     => $step,
+        'data'     => $data
+    ]);
+}
+
+function wa_clear_user_state(string $telefono): void
+{
+    $fecha = date('Y-m-d H:i:s');
+
+    wa_update_conversation_fields($telefono, [
+        'estado' => 'INICIO',
+        'modo_atencion' => 'BOT',
+        'email' => null,
+        'id_cotizacion' => null,
+        'datos_json' => json_encode([], JSON_UNESCAPED_UNICODE),
+        'fecha_ultima_interaccion' => $fecha,
+        'fecha_mod' => $fecha
+    ]);
+
+    wa_log('STATE_CLEAR_DB', ['telefono' => $telefono]);
+}
+
+function wa_touch_incoming_message(string $telefono, string $mensaje): void
+{
+    $fecha = date('Y-m-d H:i:s');
+
+    wa_update_conversation_fields($telefono, [
+        'ultimo_mensaje_cliente' => $mensaje,
+        'fecha_ultima_interaccion' => $fecha,
+        'fecha_mod' => $fecha
+    ]);
+}
+
+function wa_save_last_bot_message(string $telefono, string $mensaje): void
+{
+    $fecha = date('Y-m-d H:i:s');
+
+    wa_update_conversation_fields($telefono, [
+        'ultima_respuesta_bot' => $mensaje,
+        'fecha_mod' => $fecha
+    ]);
+}
+
+function twiml_message_and_save(string $telefono, string $mensaje): void
+{
+    wa_save_last_bot_message($telefono, $mensaje);
+    twiml_message($mensaje);
 }
 
 // =========================
@@ -330,10 +534,10 @@ function wa_obtener_marcas_catalogo(): array
 
     while ($row = $rs->fetch_assoc()) {
         $rows[] = [
-            'id' => (int)$row['id'],
-            'id_marca' => (int)$row['id_marca'],
-            'nombre' => trim((string)$row['nombre']),
-            'cotisa' => (int)$row['cotisa'],
+            'id'        => (int)$row['id'],
+            'id_marca'  => (int)$row['id_marca'],
+            'nombre'    => trim((string)$row['nombre']),
+            'cotisa'    => (int)$row['cotisa'],
             'prioridad' => (int)$row['prioridad']
         ];
     }
@@ -383,44 +587,35 @@ function wa_buscar_marcas_similares(string $texto, int $limite = 5): array
 
         $score = 9999;
 
-        // 🔥 PRIORIDAD 1: empieza con
         if (strpos($nombreNorm, $textoNorm) === 0) {
-            $score = 0; // mejor posible
-        }
-        // 🔥 PRIORIDAD 2: contiene
-        elseif (strpos($nombreNorm, $textoNorm) !== false) {
+            $score = 0;
+        } elseif (strpos($nombreNorm, $textoNorm) !== false) {
             $score = 1;
-        }
-        else {
-            // fuzzy
+        } else {
             similar_text($textoNorm, $nombreNorm, $porcentaje);
 
-            if (function_exists('levenshtein')) {
-                $distancia = levenshtein($textoNorm, $nombreNorm);
-            } else {
-                $distancia = 999;
-            }
+            $distancia = function_exists('levenshtein')
+                ? levenshtein($textoNorm, $nombreNorm)
+                : 999;
 
             if ($porcentaje >= 50 || $distancia <= 4) {
-                $score = 10 + $distancia; // peor que contains
+                $score = 10 + $distancia;
             } else {
                 continue;
             }
         }
 
         $resultados[] = [
-            'id' => $marca['id'],
-            'id_marca' => $marca['id_marca'],
-            'nombre' => $nombre,
+            'id'        => $marca['id'],
+            'id_marca'  => $marca['id_marca'],
+            'nombre'    => $nombre,
             'prioridad' => $marca['prioridad'],
-            'score' => $score
+            'score'     => $score
         ];
     }
 
-    // 🔥 ORDEN INTELIGENTE
     usort($resultados, function ($a, $b) {
         if ($a['score'] === $b['score']) {
-            // primero prioridad alta
             if ($a['prioridad'] === $b['prioridad']) {
                 return strcmp($a['nombre'], $b['nombre']);
             }
@@ -459,10 +654,10 @@ function wa_obtener_modelos_catalogo_por_marca(int $idMarca): array
 
     while ($row = $rs->fetch_assoc()) {
         $rows[] = [
-            'id' => (int)$row['id'],
-            'id_marca' => (int)$row['id_marca'],
-            'id_model' => (int)$row['id_model'],
-            'nombre' => trim((string)$row['nombre']),
+            'id'        => (int)$row['id'],
+            'id_marca'  => (int)$row['id_marca'],
+            'id_model'  => (int)$row['id_model'],
+            'nombre'    => trim((string)$row['nombre']),
             'prioridad' => (int)$row['prioridad']
         ];
     }
@@ -480,7 +675,6 @@ function wa_buscar_modelo_exacto(int $idMarca, string $texto): ?array
 
     foreach ($modelos as $modelo) {
         $nombreNorm = wa_normalizar_texto($modelo['nombre']);
-
         if ($nombreNorm === $textoNorm) {
             return $modelo;
         }
@@ -523,12 +717,12 @@ function wa_buscar_modelos_similares(int $idMarca, string $texto, int $limite = 
         }
 
         $resultados[] = [
-            'id' => $modelo['id'],
-            'id_marca' => $modelo['id_marca'],
-            'id_model' => $modelo['id_model'],
-            'nombre' => $modelo['nombre'],
+            'id'        => $modelo['id'],
+            'id_marca'  => $modelo['id_marca'],
+            'id_model'  => $modelo['id_model'],
+            'nombre'    => $modelo['nombre'],
             'prioridad' => $modelo['prioridad'],
-            'score' => $score
+            'score'     => $score
         ];
     }
 
@@ -575,10 +769,10 @@ function wa_obtener_versiones_catalogo(int $idMarca, int $idModelo): array
     while ($row = $rs->fetch_assoc()) {
         $rows[] = [
             'id_version' => (int)$row['id_version'],
-            'id_marca' => (int)$row['id_marca'],
-            'id_modelo' => (int)$row['id_modelo'],
-            'nombre' => trim((string)$row['nombre']),
-            'activo' => (int)$row['activo']
+            'id_marca'   => (int)$row['id_marca'],
+            'id_modelo'  => (int)$row['id_modelo'],
+            'nombre'     => trim((string)$row['nombre']),
+            'activo'     => (int)$row['activo']
         ];
     }
 
@@ -595,7 +789,6 @@ function wa_buscar_version_exacta(int $idMarca, int $idModelo, string $texto): ?
 
     foreach ($versiones as $version) {
         $nombreNorm = wa_normalizar_texto($version['nombre']);
-
         if ($nombreNorm === $textoNorm) {
             return $version;
         }
@@ -639,10 +832,10 @@ function wa_buscar_versiones_similares(int $idMarca, int $idModelo, string $text
 
         $resultados[] = [
             'id_version' => $version['id_version'],
-            'id_marca' => $version['id_marca'],
-            'id_modelo' => $version['id_modelo'],
-            'nombre' => $version['nombre'],
-            'score' => $score
+            'id_marca'   => $version['id_marca'],
+            'id_modelo'  => $version['id_modelo'],
+            'nombre'     => $version['nombre'],
+            'score'      => $score
         ];
     }
 
@@ -725,117 +918,18 @@ function cotizar_api(string $brand, array $payload): array
     return $decoded;
 }
 
-function build_whatsapp_result_message(
-    string $marca,
-    string $modelo,
-    string $anio,
-    string $km,
-    string $version,
-    string $ficha,
-    string $tipoVenta,
-    string $valor,
-    string $email,
-    array $apiResult,
-    array $apiPayload = []
-): string {
-    $resultado = [];
-    if (isset($apiResult['resultado']) && is_array($apiResult['resultado'])) {
-        $resultado = $apiResult['resultado'];
-    } elseif (isset($apiResult['valores']) && is_array($apiResult['valores'])) {
-        $resultado = $apiResult['valores'];
+// =========================
+// MENSAJES
+// =========================
+function wa_build_mensaje_post_email($idCotizacion = null): string
+{
+    $msg = "Gracias. Recibimos correctamente sus datos.\n\n";
+
+    if (!empty($idCotizacion)) {
+        $msg .= "Su número de cotización es: " . $idCotizacion . "\n\n";
     }
 
-    $idCotizacion = $apiResult['id_cotizacion']
-        ?? $apiResult['cotizacion']
-        ?? $apiResult['cotizacion_id']
-        ?? $resultado['id_cotizacion']
-        ?? '';
-
-    $count = (int)($resultado['count'] ?? $resultado['total'] ?? 0);
-
-    $valorMinMotorlider = $resultado['valor_minimo_motorlider'] ?? null;
-    $valorMaxMotorlider = $resultado['valor_maximo_motorlider'] ?? null;
-    $valorPromMotorlider = $resultado['valor_promedio_motorlider'] ?? null;
-    $promedioBaseMotorlider = $resultado['promedio_base_motorlider'] ?? null;
-
-    $hayValoresMotorlider =
-        $valorMinMotorlider !== null ||
-        $valorMaxMotorlider !== null ||
-        $valorPromMotorlider !== null ||
-        $promedioBaseMotorlider !== null;
-
-    $okApi = (
-        (isset($apiResult['ok']) && $apiResult['ok'] === true) ||
-        (isset($apiResult['error']) && ($apiResult['error'] === 0 || $apiResult['error'] === false || $apiResult['error'] === '0'))
-    );
-
-    $cotizacionValida = ($okApi && ($count > 0 || $hayValoresMotorlider));
-
-    $debugPayload = "";
-    if (!empty($apiPayload)) {
-        $debugPayload =
-            "\n\n--- DEBUG PAYLOAD ---\n" .
-            "id_marca: " . (($apiPayload['id_marca'] ?? null) === null ? 'NULL' : (string)$apiPayload['id_marca']) . "\n" .
-            "id_model: " . (($apiPayload['id_model'] ?? null) === null ? 'NULL' : (string)$apiPayload['id_model']) . "\n" .
-            "id_modelo: " . (($apiPayload['id_modelo'] ?? null) === null ? 'NULL' : (string)$apiPayload['id_modelo']) . "\n" .
-            "id_version: " . (($apiPayload['id_version'] ?? null) === null ? 'NULL' : (string)$apiPayload['id_version']) . "\n" .
-            "marca: " . (string)($apiPayload['marca'] ?? '') . "\n" .
-            "modelo: " . (string)($apiPayload['modelo'] ?? '') . "\n" .
-            "version: " . (string)($apiPayload['version'] ?? '');
-    }
-
-    if (!$cotizacionValida) {
-        $mensaje = $apiResult['mensaje'] ?? $apiResult['msg'] ?? 'No se encontraron valores cotizables para este vehículo.';
-
-        return
-            "⚠️ No se pudo generar una cotización con valores\n\n" .
-            ($idCotizacion !== '' ? "ID Cotización: {$idCotizacion}\n" : '') .
-            "Marca: {$marca}\n" .
-            "Modelo: {$modelo}\n" .
-            "Año: {$anio}\n" .
-            "Kilómetros: {$km}\n" .
-            "Versión: {$version}\n" .
-            "Ficha oficial: " . strtoupper($ficha) . "\n" .
-            "Tipo de venta: " . format_tipo_venta_label($tipoVenta) . "\n" .
-            "Valor pretendido: USD {$valor}\n" .
-            "Email: {$email}\n\n" .
-            "Detalle: {$mensaje}" .
-            $debugPayload .
-            "\n\nUn asesor revisará el caso manualmente.";
-    }
-
-    $min = $resultado['min'] ?? $resultado['valor_minimo'] ?? null;
-    $max = $resultado['max'] ?? $resultado['valor_maximo'] ?? null;
-    $avg = $resultado['avg'] ?? $resultado['valor_promedio'] ?? null;
-    $vpretendidoAplicado = !empty($resultado['vpretendido_aplicado']);
-
-    $msg =
-        "✅ Cotización generada correctamente\n\n" .
-        ($idCotizacion !== '' ? "ID Cotización: {$idCotizacion}\n" : '') .
-        "Vehículo: {$marca} {$modelo}\n" .
-        "Año: {$anio}\n" .
-        "Kilómetros: {$km}\n" .
-        "Versión: {$version}\n" .
-        "Ficha oficial: " . strtoupper($ficha) . "\n" .
-        "Tipo de venta: " . format_tipo_venta_label($tipoVenta) . "\n" .
-        "Valor pretendido: USD {$valor}\n\n" .
-        "📊 Mercado\n" .
-        "- Comparables usados: " . wa_money($count) . "\n" .
-        "- Mínimo: USD " . wa_money($min) . "\n" .
-        "- Máximo: USD " . wa_money($max) . "\n" .
-        "- Promedio: USD " . wa_money($avg) . "\n\n" .
-        "🏷️ Motorlider\n" .
-        "- Base: USD " . wa_money($promedioBaseMotorlider) . "\n" .
-        "- Mínimo: USD " . wa_money($valorMinMotorlider) . "\n" .
-        "- Máximo: USD " . wa_money($valorMaxMotorlider) . "\n" .
-        "- Promedio: USD " . wa_money($valorPromMotorlider);
-
-    if ($vpretendidoAplicado) {
-        $msg .= "\n\n⚠️ Se aplicó el valor pretendido del cliente.";
-    }
-
-    $msg .= $debugPayload;
-    $msg .= "\n\nSi querés hacer otra cotización, escribí COTIZAR.";
+    $msg .= "A la brevedad le estaremos enviando una cotización personalizada.";
 
     return $msg;
 }
@@ -847,8 +941,8 @@ wa_log('INCOMING_RAW', [
     'post' => $_POST,
     'server' => [
         'REQUEST_METHOD' => $_SERVER['REQUEST_METHOD'] ?? null,
-        'REQUEST_URI' => $_SERVER['REQUEST_URI'] ?? null,
-        'HTTP_HOST' => $_SERVER['HTTP_HOST'] ?? null,
+        'REQUEST_URI'    => $_SERVER['REQUEST_URI'] ?? null,
+        'HTTP_HOST'      => $_SERVER['HTTP_HOST'] ?? null,
     ]
 ]);
 
@@ -862,55 +956,127 @@ if (!validate_twilio_signature(TWILIO_AUTH_TOKEN)) {
     twiml_message('Firma no válida.');
 }
 
-$from = trim((string)($_POST['From'] ?? ''));
-$to = trim((string)($_POST['To'] ?? ''));
-$body = trim((string)($_POST['Body'] ?? ''));
-$messageSid = trim((string)($_POST['MessageSid'] ?? ''));
+$from        = trim((string)($_POST['From'] ?? ''));
+$to          = trim((string)($_POST['To'] ?? ''));
+$body        = trim((string)($_POST['Body'] ?? ''));
+$messageSid  = trim((string)($_POST['MessageSid'] ?? ''));
 $profileName = trim((string)($_POST['ProfileName'] ?? ''));
 
 wa_log('INCOMING_PARSED', [
-    'from' => $from,
-    'to' => $to,
-    'body' => $body,
-    'message_sid' => $messageSid,
+    'from'         => $from,
+    'to'           => $to,
+    'body'         => $body,
+    'message_sid'  => $messageSid,
     'profile_name' => $profileName
 ]);
 
+if ($from === '') {
+    twiml_empty();
+}
+
+try {
+    wa_create_conversation_if_not_exists($from, $profileName);
+    wa_touch_incoming_message($from, $body);
+} catch (Throwable $e) {
+    wa_log('CONV_INIT_ERROR', ['error' => $e->getMessage()]);
+    twiml_message('Ocurrió un problema inicializando la conversación.');
+}
+
 $bodyLower = body_to_lower($body);
-$userState = get_user_state($from);
+$bodyNorm = wa_normalizar_texto($body);
+$userState = wa_get_user_data($from);
+$currentConv = wa_get_conversation($from);
+$currentEstado = (string)($currentConv['estado'] ?? 'INICIO');
 
 // =========================
-// COMANDOS GENERALES
+// COMANDOS GLOBALES
 // =========================
-if ($bodyLower === 'hola' || $bodyLower === 'hi' || $bodyLower === 'menu') {
-    clear_user_state($from);
+if (in_array($bodyNorm, ['hola', 'hi', 'menu', 'inicio'], true)) {
+    wa_set_user_state(
+        $from,
+        ['step' => null],
+        'INICIO',
+        'BOT',
+        $profileName !== '' ? $profileName : null
+    );
 
-    twiml_message(
+    twiml_message_and_save(
+        $from,
         "¡Hola" . ($profileName !== '' ? " {$profileName}" : "") . "! "
         . "Bienvenido al cotizador de vehículos de Motorlider.\n\n"
         . "Escribí COTIZAR para comenzar."
     );
 }
 
-if ($bodyLower === 'cancelar' || $bodyLower === 'salir') {
-    clear_user_state($from);
+if (in_array($bodyNorm, ['cancelar', 'salir'], true)) {
+    wa_set_user_state(
+        $from,
+        ['step' => null],
+        'INICIO',
+        'BOT',
+        $profileName !== '' ? $profileName : null
+    );
 
-    twiml_message(
+    twiml_message_and_save(
+        $from,
         "Perfecto. Cancelé el flujo actual.\n\n"
         . "Cuando quieras volver a empezar, escribí COTIZAR."
     );
 }
 
-if ($bodyLower === 'cotizar') {
-    set_user_state($from, [
-        'step' => 'marca'
-    ]);
+if ($bodyNorm === 'cotizar') {
+    wa_set_user_state(
+        $from,
+        ['step' => 'marca'],
+        'ESPERANDO_MARCA',
+        'BOT',
+        $profileName !== '' ? $profileName : null
+    );
 
-    twiml_message(
+    twiml_message_and_save(
+        $from,
         "Perfecto. Vamos a comenzar la cotización.\n\n"
         . "Primer dato: escribime la MARCA del vehículo."
     );
 }
+
+// =========================
+// MODO HUMANO / HÍBRIDO
+// =========================
+if (in_array($currentEstado, ['PENDIENTE_RESPUESTA_HUMANA', 'HUMANO_EN_CONVERSACION'], true)) {
+    if (wa_es_agendar($body)) {
+        $nuevoEstado = $userState;
+        $nuevoEstado['step'] = 'agenda_sucursal';
+
+        wa_set_user_state(
+            $from,
+            $nuevoEstado,
+            'ESPERANDO_SUCURSAL',
+            'BOT',
+            $profileName !== '' ? $profileName : null
+        );
+
+        twiml_message_and_save(
+            $from,
+            "Perfecto 👍\n\n"
+            . "Vamos a coordinar la inspección.\n\n"
+            . "Indicá la sucursal deseada:\n"
+            . "1 = Casa Central\n"
+            . "2 = Carrasco"
+        );
+    }
+
+    wa_log('HUMAN_MODE_NO_AUTO_REPLY', [
+        'from' => $from,
+        'estado' => $currentEstado,
+        'body' => $body
+    ]);
+
+    twiml_empty();
+}
+
+// refrescar por si algún comando global cambió estado
+$userState = wa_get_user_data($from);
 
 // =========================
 // PASO: MARCA
@@ -919,26 +1085,27 @@ if (($userState['step'] ?? '') === 'marca') {
     $marcaIngresada = trim($body);
 
     if ($marcaIngresada === '') {
-        twiml_message("No pude leer la marca. Escribime la MARCA del vehículo.");
+        twiml_message_and_save($from, "No pude leer la marca. Escribime la MARCA del vehículo.");
     }
 
     try {
         $marcaExacta = wa_buscar_marca_exacta($marcaIngresada);
     } catch (Throwable $e) {
         wa_log('MARCA_DB_EXCEPTION', ['error' => $e->getMessage()]);
-        twiml_message("Ocurrió un problema consultando el catálogo de marcas. Probá nuevamente en unos instantes.");
+        twiml_message_and_save($from, "Ocurrió un problema consultando el catálogo de marcas. Probá nuevamente en unos instantes.");
     }
 
     if ($marcaExacta !== null) {
         $marcaFinal = $marcaExacta['nombre'];
 
-        set_user_state($from, [
+        wa_set_user_state($from, [
             'step' => 'modelo',
             'marca' => $marcaFinal,
             'id_marca' => $marcaExacta['id_marca']
-        ]);
+        ], 'ESPERANDO_MODELO', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message(
+        twiml_message_and_save(
+            $from,
             "Perfecto 👍\n\n"
             . "Marca: {$marcaFinal}\n\n"
             . "Ahora escribime el MODELO."
@@ -949,7 +1116,7 @@ if (($userState['step'] ?? '') === 'marca') {
         $sugerencias = wa_buscar_marcas_similares($marcaIngresada, 5);
     } catch (Throwable $e) {
         wa_log('MARCA_SUGERENCIAS_DB_EXCEPTION', ['error' => $e->getMessage()]);
-        twiml_message("Ocurrió un problema consultando el catálogo de marcas. Probá nuevamente en unos instantes.");
+        twiml_message_and_save($from, "Ocurrió un problema consultando el catálogo de marcas. Probá nuevamente en unos instantes.");
     }
 
     if (!empty($sugerencias)) {
@@ -966,13 +1133,14 @@ if (($userState['step'] ?? '') === 'marca') {
             ];
         }
 
-        set_user_state($from, [
+        wa_set_user_state($from, [
             'step' => 'marca_sugerida',
             'marca_input' => $marcaIngresada,
             'marca_opciones' => $opcionesEstado
-        ]);
+        ], 'ESPERANDO_MARCA', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message(
+        twiml_message_and_save(
+            $from,
             "No encontré esa marca exacta.\n\n"
             . "Quizás quisiste decir:\n"
             . implode("\n", $opcionesTexto)
@@ -980,10 +1148,7 @@ if (($userState['step'] ?? '') === 'marca') {
         );
     }
 
-    twiml_message(
-        "No encontré esa marca.\n\n"
-        . "Probá escribiendo nuevamente el nombre de la marca."
-    );
+    twiml_message_and_save($from, "No encontré esa marca.\n\nProbá escribiendo nuevamente el nombre de la marca.");
 }
 
 // =========================
@@ -994,45 +1159,34 @@ if (($userState['step'] ?? '') === 'marca_sugerida') {
     $respuestaNorm = wa_normalizar_texto($respuesta);
     $opciones = $userState['marca_opciones'] ?? [];
 
-    // 1) Si responde con número de la lista actual
     if (isset($opciones[$respuesta])) {
         $marcaFinal = $opciones[$respuesta]['nombre'];
         $idMarca = (int)$opciones[$respuesta]['id_marca'];
 
-        set_user_state($from, [
+        wa_set_user_state($from, [
             'step' => 'modelo',
             'marca' => $marcaFinal,
             'id_marca' => $idMarca
-        ]);
+        ], 'ESPERANDO_MODELO', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message(
-            "Perfecto 👍\n\n"
-            . "Marca: {$marcaFinal}\n\n"
-            . "Ahora escribime el MODELO."
-        );
+        twiml_message_and_save($from, "Perfecto 👍\n\nMarca: {$marcaFinal}\n\nAhora escribime el MODELO.");
     }
 
-    // 2) Si responde con el nombre exacto de una opción actual
     foreach ($opciones as $op) {
         if (wa_normalizar_texto((string)$op['nombre']) === $respuestaNorm) {
             $marcaFinal = (string)$op['nombre'];
             $idMarca = (int)$op['id_marca'];
 
-            set_user_state($from, [
+            wa_set_user_state($from, [
                 'step' => 'modelo',
                 'marca' => $marcaFinal,
                 'id_marca' => $idMarca
-            ]);
+            ], 'ESPERANDO_MODELO', 'BOT', $profileName !== '' ? $profileName : null);
 
-            twiml_message(
-                "Perfecto 👍\n\n"
-                . "Marca: {$marcaFinal}\n\n"
-                . "Ahora escribime el MODELO."
-            );
+            twiml_message_and_save($from, "Perfecto 👍\n\nMarca: {$marcaFinal}\n\nAhora escribime el MODELO.");
         }
     }
 
-    // 3) Si escribió otro texto, lo tratamos como una NUEVA búsqueda
     try {
         $marcaExacta = wa_buscar_marca_exacta($respuesta);
     } catch (Throwable $e) {
@@ -1040,23 +1194,19 @@ if (($userState['step'] ?? '') === 'marca_sugerida') {
             'error' => $e->getMessage(),
             'respuesta' => $respuesta
         ]);
-        twiml_message("Ocurrió un problema consultando el catálogo de marcas. Probá nuevamente en unos instantes.");
+        twiml_message_and_save($from, "Ocurrió un problema consultando el catálogo de marcas. Probá nuevamente en unos instantes.");
     }
 
     if ($marcaExacta !== null) {
         $marcaFinal = $marcaExacta['nombre'];
 
-        set_user_state($from, [
+        wa_set_user_state($from, [
             'step' => 'modelo',
             'marca' => $marcaFinal,
             'id_marca' => $marcaExacta['id_marca']
-        ]);
+        ], 'ESPERANDO_MODELO', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message(
-            "Perfecto 👍\n\n"
-            . "Marca: {$marcaFinal}\n\n"
-            . "Ahora escribime el MODELO."
-        );
+        twiml_message_and_save($from, "Perfecto 👍\n\nMarca: {$marcaFinal}\n\nAhora escribime el MODELO.");
     }
 
     try {
@@ -1066,7 +1216,7 @@ if (($userState['step'] ?? '') === 'marca_sugerida') {
             'error' => $e->getMessage(),
             'respuesta' => $respuesta
         ]);
-        twiml_message("Ocurrió un problema consultando el catálogo de marcas. Probá nuevamente en unos instantes.");
+        twiml_message_and_save($from, "Ocurrió un problema consultando el catálogo de marcas. Probá nuevamente en unos instantes.");
     }
 
     if (!empty($nuevasSugerencias)) {
@@ -1083,13 +1233,14 @@ if (($userState['step'] ?? '') === 'marca_sugerida') {
             ];
         }
 
-        set_user_state($from, [
+        wa_set_user_state($from, [
             'step' => 'marca_sugerida',
             'marca_input' => $respuesta,
             'marca_opciones' => $opcionesEstado
-        ]);
+        ], 'ESPERANDO_MARCA', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message(
+        twiml_message_and_save(
+            $from,
             "No encontré esa marca exacta.\n\n"
             . "Quizás quisiste decir:\n"
             . implode("\n", $opcionesTexto)
@@ -1097,14 +1248,8 @@ if (($userState['step'] ?? '') === 'marca_sugerida') {
         );
     }
 
-    set_user_state($from, [
-        'step' => 'marca'
-    ]);
-
-    twiml_message(
-        "No encontré esa marca.\n\n"
-        . "Probá escribiendo nuevamente la marca del vehículo."
-    );
+    wa_set_user_state($from, ['step' => 'marca'], 'ESPERANDO_MARCA', 'BOT', $profileName !== '' ? $profileName : null);
+    twiml_message_and_save($from, "No encontré esa marca.\n\nProbá escribiendo nuevamente la marca del vehículo.");
 }
 
 // =========================
@@ -1116,36 +1261,34 @@ if (($userState['step'] ?? '') === 'modelo') {
     $idMarca = (int)($userState['id_marca'] ?? 0);
 
     if ($modeloIngresado === '') {
-        twiml_message("No pude leer el modelo. Escribime el MODELO del vehículo.");
+        twiml_message_and_save($from, "No pude leer el modelo. Escribime el MODELO del vehículo.");
     }
 
     if ($idMarca <= 0) {
-        clear_user_state($from);
-        twiml_message(
-            "Se perdió la referencia de la marca seleccionada.\n\n"
-            . "Escribí COTIZAR para comenzar nuevamente."
-        );
+        wa_set_user_state($from, ['step' => null], 'INICIO', 'BOT', $profileName !== '' ? $profileName : null);
+        twiml_message_and_save($from, "Se perdió la referencia de la marca seleccionada.\n\nEscribí COTIZAR para comenzar nuevamente.");
     }
 
     try {
         $modeloExacto = wa_buscar_modelo_exacto($idMarca, $modeloIngresado);
     } catch (Throwable $e) {
         wa_log('MODELO_DB_EXCEPTION', ['error' => $e->getMessage(), 'id_marca' => $idMarca]);
-        twiml_message("Ocurrió un problema consultando el catálogo de modelos. Probá nuevamente en unos instantes.");
+        twiml_message_and_save($from, "Ocurrió un problema consultando el catálogo de modelos. Probá nuevamente en unos instantes.");
     }
 
     if ($modeloExacto !== null) {
         $modeloFinal = $modeloExacto['nombre'];
 
-        set_user_state($from, [
+        wa_set_user_state($from, [
             'step' => 'anio',
             'marca' => $marca,
             'id_marca' => $idMarca,
             'modelo' => $modeloFinal,
             'id_model' => $modeloExacto['id_model']
-        ]);
+        ], 'ESPERANDO_ANIO', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message(
+        twiml_message_and_save(
+            $from,
             "Excelente 👍\n\n"
             . "Marca: {$marca}\n"
             . "Modelo: {$modeloFinal}\n\n"
@@ -1157,7 +1300,7 @@ if (($userState['step'] ?? '') === 'modelo') {
         $sugerencias = wa_buscar_modelos_similares($idMarca, $modeloIngresado, 5);
     } catch (Throwable $e) {
         wa_log('MODELO_SUGERENCIAS_DB_EXCEPTION', ['error' => $e->getMessage(), 'id_marca' => $idMarca]);
-        twiml_message("Ocurrió un problema consultando el catálogo de modelos. Probá nuevamente en unos instantes.");
+        twiml_message_and_save($from, "Ocurrió un problema consultando el catálogo de modelos. Probá nuevamente en unos instantes.");
     }
 
     if (!empty($sugerencias)) {
@@ -1175,15 +1318,16 @@ if (($userState['step'] ?? '') === 'modelo') {
             ];
         }
 
-        set_user_state($from, [
+        wa_set_user_state($from, [
             'step' => 'modelo_sugerido',
             'marca' => $marca,
             'id_marca' => $idMarca,
             'modelo_input' => $modeloIngresado,
             'modelo_opciones' => $opcionesEstado
-        ]);
+        ], 'ESPERANDO_MODELO', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message(
+        twiml_message_and_save(
+            $from,
             "No encontré ese modelo exacto para {$marca}.\n\n"
             . "Quizás quisiste decir:\n"
             . implode("\n", $opcionesTexto)
@@ -1191,10 +1335,7 @@ if (($userState['step'] ?? '') === 'modelo') {
         );
     }
 
-    twiml_message(
-        "No encontré ese modelo para {$marca}.\n\n"
-        . "Probá escribiendo nuevamente el nombre del modelo."
-    );
+    twiml_message_and_save($from, "No encontré ese modelo para {$marca}.\n\nProbá escribiendo nuevamente el nombre del modelo.");
 }
 
 // =========================
@@ -1211,20 +1352,15 @@ if (($userState['step'] ?? '') === 'modelo_sugerido') {
         $modeloFinal = $opciones[$respuesta]['nombre'];
         $idModel = (int)$opciones[$respuesta]['id_model'];
 
-        set_user_state($from, [
+        wa_set_user_state($from, [
             'step' => 'anio',
             'marca' => $marca,
             'id_marca' => $idMarca,
             'modelo' => $modeloFinal,
             'id_model' => $idModel
-        ]);
+        ], 'ESPERANDO_ANIO', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message(
-            "Excelente 👍\n\n"
-            . "Marca: {$marca}\n"
-            . "Modelo: {$modeloFinal}\n\n"
-            . "Ahora escribime el AÑO del vehículo. Ejemplo: 2021"
-        );
+        twiml_message_and_save($from, "Excelente 👍\n\nMarca: {$marca}\nModelo: {$modeloFinal}\n\nAhora escribime el AÑO del vehículo. Ejemplo: 2021");
     }
 
     foreach ($opciones as $op) {
@@ -1232,20 +1368,15 @@ if (($userState['step'] ?? '') === 'modelo_sugerido') {
             $modeloFinal = (string)$op['nombre'];
             $idModel = (int)$op['id_model'];
 
-            set_user_state($from, [
+            wa_set_user_state($from, [
                 'step' => 'anio',
                 'marca' => $marca,
                 'id_marca' => $idMarca,
                 'modelo' => $modeloFinal,
                 'id_model' => $idModel
-            ]);
+            ], 'ESPERANDO_ANIO', 'BOT', $profileName !== '' ? $profileName : null);
 
-            twiml_message(
-                "Excelente 👍\n\n"
-                . "Marca: {$marca}\n"
-                . "Modelo: {$modeloFinal}\n\n"
-                . "Ahora escribime el AÑO del vehículo. Ejemplo: 2021"
-            );
+            twiml_message_and_save($from, "Excelente 👍\n\nMarca: {$marca}\nModelo: {$modeloFinal}\n\nAhora escribime el AÑO del vehículo. Ejemplo: 2021");
         }
     }
 
@@ -1254,7 +1385,8 @@ if (($userState['step'] ?? '') === 'modelo_sugerido') {
         $opcionesTexto[] = $nro . '. ' . $op['nombre'];
     }
 
-    twiml_message(
+    twiml_message_and_save(
+        $from,
         "No entendí la opción elegida.\n\n"
         . "Respondé con el número o con uno de estos nombres:\n"
         . implode("\n", $opcionesTexto)
@@ -1270,10 +1402,10 @@ if (($userState['step'] ?? '') === 'anio') {
     $modelo = trim((string)($userState['modelo'] ?? ''));
 
     if ($anio === '' || strlen($anio) !== 4) {
-        twiml_message("El año no parece válido. Escribime un año de 4 dígitos. Ejemplo: 2021");
+        twiml_message_and_save($from, "El año no parece válido. Escribime un año de 4 dígitos. Ejemplo: 2021");
     }
 
-    set_user_state($from, [
+    wa_set_user_state($from, [
         'step' => 'km',
         'marca' => $marca,
         'id_marca' => $userState['id_marca'] ?? null,
@@ -1281,9 +1413,10 @@ if (($userState['step'] ?? '') === 'anio') {
         'id_model' => $userState['id_model'] ?? null,
         'id_version' => $userState['id_version'] ?? null,
         'anio' => $anio
-    ]);
+    ], 'ESPERANDO_KM', 'BOT', $profileName !== '' ? $profileName : null);
 
-    twiml_message(
+    twiml_message_and_save(
+        $from,
         "Perfecto 👍\n\n"
         . "Marca: {$marca}\n"
         . "Modelo: {$modelo}\n"
@@ -1302,10 +1435,10 @@ if (($userState['step'] ?? '') === 'km') {
     $anio = trim((string)($userState['anio'] ?? ''));
 
     if ($km === '') {
-        twiml_message("Los kilómetros no parecen válidos. Escribime solo números. Ejemplo: 85000");
+        twiml_message_and_save($from, "Los kilómetros no parecen válidos. Escribime solo números. Ejemplo: 85000");
     }
 
-    set_user_state($from, [
+    wa_set_user_state($from, [
         'step' => 'version',
         'marca' => $marca,
         'id_marca' => $userState['id_marca'] ?? null,
@@ -1314,9 +1447,10 @@ if (($userState['step'] ?? '') === 'km') {
         'id_version' => $userState['id_version'] ?? null,
         'anio' => $anio,
         'km' => $km
-    ]);
+    ], 'ESPERANDO_VERSION', 'BOT', $profileName !== '' ? $profileName : null);
 
-    twiml_message(
+    twiml_message_and_save(
+        $from,
         "Perfecto 👍\n\n"
         . "Marca: {$marca}\n"
         . "Modelo: {$modelo}\n"
@@ -1340,12 +1474,11 @@ if (($userState['step'] ?? '') === 'version') {
     $idModel = (int)($userState['id_model'] ?? 0);
 
     if ($versionIngresada === '') {
-        twiml_message("No pude leer la versión. Escribime la VERSIÓN del vehículo o respondé NINGUNA.");
+        twiml_message_and_save($from, "No pude leer la versión. Escribime la VERSIÓN del vehículo o respondé NINGUNA.");
     }
 
-    // Opción explícita: no sabe la versión
     if (wa_version_es_ninguna($versionIngresada)) {
-        set_user_state($from, [
+        wa_set_user_state($from, [
             'step' => 'ficha_oficial',
             'marca' => $marca,
             'id_marca' => $userState['id_marca'] ?? null,
@@ -1355,18 +1488,13 @@ if (($userState['step'] ?? '') === 'version') {
             'anio' => $anio,
             'km' => $km,
             'version' => ''
-        ]);
+        ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message(
-            "Perfecto 👍\n\n"
-            . "Versión: sin especificar\n\n"
-            . "¿Posee ficha oficial?\n"
-            . "Respondé: SI o NO"
-        );
+        twiml_message_and_save($from, "Perfecto 👍\n\nVersión: sin especificar\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
     }
 
     if ($idMarca <= 0 || $idModel <= 0) {
-        set_user_state($from, [
+        wa_set_user_state($from, [
             'step' => 'ficha_oficial',
             'marca' => $marca,
             'id_marca' => $userState['id_marca'] ?? null,
@@ -1376,14 +1504,9 @@ if (($userState['step'] ?? '') === 'version') {
             'anio' => $anio,
             'km' => $km,
             'version' => $versionIngresada
-        ]);
+        ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message(
-            "Perfecto 👍\n\n"
-            . "Versión: {$versionIngresada}\n\n"
-            . "¿Posee ficha oficial?\n"
-            . "Respondé: SI o NO"
-        );
+        twiml_message_and_save($from, "Perfecto 👍\n\nVersión: {$versionIngresada}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
     }
 
     try {
@@ -1395,7 +1518,7 @@ if (($userState['step'] ?? '') === 'version') {
             'id_model' => $idModel
         ]);
 
-        set_user_state($from, [
+        wa_set_user_state($from, [
             'step' => 'ficha_oficial',
             'marca' => $marca,
             'id_marca' => $userState['id_marca'] ?? null,
@@ -1405,20 +1528,15 @@ if (($userState['step'] ?? '') === 'version') {
             'anio' => $anio,
             'km' => $km,
             'version' => $versionIngresada
-        ]);
+        ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message(
-            "Perfecto 👍\n\n"
-            . "Versión: {$versionIngresada}\n\n"
-            . "¿Posee ficha oficial?\n"
-            . "Respondé: SI o NO"
-        );
+        twiml_message_and_save($from, "Perfecto 👍\n\nVersión: {$versionIngresada}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
     }
 
     if ($versionExacta !== null) {
         $versionFinal = $versionExacta['nombre'];
 
-        set_user_state($from, [
+        wa_set_user_state($from, [
             'step' => 'ficha_oficial',
             'marca' => $marca,
             'id_marca' => $userState['id_marca'] ?? null,
@@ -1428,14 +1546,9 @@ if (($userState['step'] ?? '') === 'version') {
             'anio' => $anio,
             'km' => $km,
             'version' => $versionFinal
-        ]);
+        ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message(
-            "Perfecto 👍\n\n"
-            . "Versión: {$versionFinal}\n\n"
-            . "¿Posee ficha oficial?\n"
-            . "Respondé: SI o NO"
-        );
+        twiml_message_and_save($from, "Perfecto 👍\n\nVersión: {$versionFinal}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
     }
 
     try {
@@ -1447,7 +1560,7 @@ if (($userState['step'] ?? '') === 'version') {
             'id_model' => $idModel
         ]);
 
-        set_user_state($from, [
+        wa_set_user_state($from, [
             'step' => 'ficha_oficial',
             'marca' => $marca,
             'id_marca' => $userState['id_marca'] ?? null,
@@ -1457,14 +1570,9 @@ if (($userState['step'] ?? '') === 'version') {
             'anio' => $anio,
             'km' => $km,
             'version' => $versionIngresada
-        ]);
+        ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message(
-            "Perfecto 👍\n\n"
-            . "Versión: {$versionIngresada}\n\n"
-            . "¿Posee ficha oficial?\n"
-            . "Respondé: SI o NO"
-        );
+        twiml_message_and_save($from, "Perfecto 👍\n\nVersión: {$versionIngresada}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
     }
 
     if (!empty($sugerencias)) {
@@ -1480,7 +1588,7 @@ if (($userState['step'] ?? '') === 'version') {
             ];
         }
 
-        set_user_state($from, [
+        wa_set_user_state($from, [
             'step' => 'version_sugerida',
             'marca' => $marca,
             'id_marca' => $userState['id_marca'] ?? null,
@@ -1491,9 +1599,10 @@ if (($userState['step'] ?? '') === 'version') {
             'km' => $km,
             'version_input' => $versionIngresada,
             'version_opciones' => $opcionesEstado
-        ]);
+        ], 'ESPERANDO_VERSION', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message(
+        twiml_message_and_save(
+            $from,
             "No encontré esa versión exacta.\n\n"
             . "Quizás quisiste decir:\n"
             . implode("\n", $opcionesTexto)
@@ -1503,7 +1612,7 @@ if (($userState['step'] ?? '') === 'version') {
         );
     }
 
-    set_user_state($from, [
+    wa_set_user_state($from, [
         'step' => 'ficha_oficial',
         'marca' => $marca,
         'id_marca' => $userState['id_marca'] ?? null,
@@ -1513,14 +1622,9 @@ if (($userState['step'] ?? '') === 'version') {
         'anio' => $anio,
         'km' => $km,
         'version' => $versionIngresada
-    ]);
+    ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-    twiml_message(
-        "Perfecto 👍\n\n"
-        . "Versión: {$versionIngresada}\n\n"
-        . "¿Posee ficha oficial?\n"
-        . "Respondé: SI o NO"
-    );
+    twiml_message_and_save($from, "Perfecto 👍\n\nVersión: {$versionIngresada}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
 }
 
 // =========================
@@ -1539,9 +1643,8 @@ if (($userState['step'] ?? '') === 'version_sugerida') {
     $versionInput = trim((string)($userState['version_input'] ?? ''));
     $opciones = $userState['version_opciones'] ?? [];
 
-    // Opción explícita: no sabe la versión
     if (wa_version_es_ninguna($respuesta)) {
-        set_user_state($from, [
+        wa_set_user_state($from, [
             'step' => 'ficha_oficial',
             'marca' => $marca,
             'id_marca' => $userState['id_marca'] ?? null,
@@ -1551,18 +1654,13 @@ if (($userState['step'] ?? '') === 'version_sugerida') {
             'anio' => $anio,
             'km' => $km,
             'version' => ''
-        ]);
+        ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message(
-            "Perfecto 👍\n\n"
-            . "Versión: sin especificar\n\n"
-            . "¿Posee ficha oficial?\n"
-            . "Respondé: SI o NO"
-        );
+        twiml_message_and_save($from, "Perfecto 👍\n\nVersión: sin especificar\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
     }
 
     if (in_array($respuestaNorm, ['seguir', 'continuar', 'omitir'], true)) {
-        set_user_state($from, [
+        wa_set_user_state($from, [
             'step' => 'ficha_oficial',
             'marca' => $marca,
             'id_marca' => $userState['id_marca'] ?? null,
@@ -1572,21 +1670,16 @@ if (($userState['step'] ?? '') === 'version_sugerida') {
             'anio' => $anio,
             'km' => $km,
             'version' => $versionInput
-        ]);
+        ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message(
-            "Perfecto 👍\n\n"
-            . "Versión: {$versionInput}\n\n"
-            . "¿Posee ficha oficial?\n"
-            . "Respondé: SI o NO"
-        );
+        twiml_message_and_save($from, "Perfecto 👍\n\nVersión: {$versionInput}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
     }
 
     if (isset($opciones[$respuesta])) {
         $versionFinal = $opciones[$respuesta]['nombre'];
         $idVersion = (int)$opciones[$respuesta]['id_version'];
 
-        set_user_state($from, [
+        wa_set_user_state($from, [
             'step' => 'ficha_oficial',
             'marca' => $marca,
             'id_marca' => $userState['id_marca'] ?? null,
@@ -1596,14 +1689,9 @@ if (($userState['step'] ?? '') === 'version_sugerida') {
             'anio' => $anio,
             'km' => $km,
             'version' => $versionFinal
-        ]);
+        ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message(
-            "Perfecto 👍\n\n"
-            . "Versión: {$versionFinal}\n\n"
-            . "¿Posee ficha oficial?\n"
-            . "Respondé: SI o NO"
-        );
+        twiml_message_and_save($from, "Perfecto 👍\n\nVersión: {$versionFinal}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
     }
 
     foreach ($opciones as $op) {
@@ -1611,7 +1699,7 @@ if (($userState['step'] ?? '') === 'version_sugerida') {
             $versionFinal = (string)$op['nombre'];
             $idVersion = (int)$op['id_version'];
 
-            set_user_state($from, [
+            wa_set_user_state($from, [
                 'step' => 'ficha_oficial',
                 'marca' => $marca,
                 'id_marca' => $userState['id_marca'] ?? null,
@@ -1621,18 +1709,12 @@ if (($userState['step'] ?? '') === 'version_sugerida') {
                 'anio' => $anio,
                 'km' => $km,
                 'version' => $versionFinal
-            ]);
+            ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-            twiml_message(
-                "Perfecto 👍\n\n"
-                . "Versión: {$versionFinal}\n\n"
-                . "¿Posee ficha oficial?\n"
-                . "Respondé: SI o NO"
-            );
+            twiml_message_and_save($from, "Perfecto 👍\n\nVersión: {$versionFinal}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
         }
     }
 
-    // Si escribió otra cosa distinta, volver a buscar nuevas sugerencias
     try {
         $versionExacta = wa_buscar_version_exacta($idMarca, $idModel, $respuesta);
     } catch (Throwable $e) {
@@ -1648,7 +1730,7 @@ if (($userState['step'] ?? '') === 'version_sugerida') {
     if ($versionExacta !== null) {
         $versionFinal = $versionExacta['nombre'];
 
-        set_user_state($from, [
+        wa_set_user_state($from, [
             'step' => 'ficha_oficial',
             'marca' => $marca,
             'id_marca' => $userState['id_marca'] ?? null,
@@ -1658,14 +1740,9 @@ if (($userState['step'] ?? '') === 'version_sugerida') {
             'anio' => $anio,
             'km' => $km,
             'version' => $versionFinal
-        ]);
+        ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message(
-            "Perfecto 👍\n\n"
-            . "Versión: {$versionFinal}\n\n"
-            . "¿Posee ficha oficial?\n"
-            . "Respondé: SI o NO"
-        );
+        twiml_message_and_save($from, "Perfecto 👍\n\nVersión: {$versionFinal}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
     }
 
     try {
@@ -1693,7 +1770,7 @@ if (($userState['step'] ?? '') === 'version_sugerida') {
             ];
         }
 
-        set_user_state($from, [
+        wa_set_user_state($from, [
             'step' => 'version_sugerida',
             'marca' => $marca,
             'id_marca' => $userState['id_marca'] ?? null,
@@ -1704,9 +1781,10 @@ if (($userState['step'] ?? '') === 'version_sugerida') {
             'km' => $km,
             'version_input' => $respuesta,
             'version_opciones' => $opcionesEstado
-        ]);
+        ], 'ESPERANDO_VERSION', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message(
+        twiml_message_and_save(
+            $from,
             "No encontré esa versión exacta.\n\n"
             . "Quizás quisiste decir:\n"
             . implode("\n", $opcionesTexto)
@@ -1716,7 +1794,7 @@ if (($userState['step'] ?? '') === 'version_sugerida') {
         );
     }
 
-    set_user_state($from, [
+    wa_set_user_state($from, [
         'step' => 'ficha_oficial',
         'marca' => $marca,
         'id_marca' => $userState['id_marca'] ?? null,
@@ -1726,31 +1804,9 @@ if (($userState['step'] ?? '') === 'version_sugerida') {
         'anio' => $anio,
         'km' => $km,
         'version' => $respuesta
-    ]);
+    ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-    twiml_message(
-        "Perfecto 👍\n\n"
-        . "Versión: {$respuesta}\n\n"
-        . "¿Posee ficha oficial?\n"
-        . "Respondé: SI o NO"
-    );
-}
-
-function wa_version_es_ninguna(string $texto): bool
-{
-    $v = wa_normalizar_texto($texto);
-
-    return in_array($v, [
-        'ninguna',
-        'ninguno',
-        'no se',
-        'nose',
-        'ns',
-        'sin version',
-        'sin versión',
-        'no la se',
-        'no la sé'
-    ], true);
+    twiml_message_and_save($from, "Perfecto 👍\n\nVersión: {$respuesta}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
 }
 
 // =========================
@@ -1760,7 +1816,7 @@ if (($userState['step'] ?? '') === 'ficha_oficial') {
     $ficha = normalize_yes_no($body);
 
     if ($ficha === null) {
-        twiml_message("No entendí la respuesta. Respondé solamente: SI o NO");
+        twiml_message_and_save($from, "No entendí la respuesta. Respondé solamente: SI o NO");
     }
 
     $marca = trim((string)($userState['marca'] ?? ''));
@@ -1769,7 +1825,7 @@ if (($userState['step'] ?? '') === 'ficha_oficial') {
     $km = trim((string)($userState['km'] ?? ''));
     $version = trim((string)($userState['version'] ?? ''));
 
-    set_user_state($from, [
+    wa_set_user_state($from, [
         'step' => 'tipo_venta',
         'marca' => $marca,
         'id_marca' => $userState['id_marca'] ?? null,
@@ -1780,9 +1836,10 @@ if (($userState['step'] ?? '') === 'ficha_oficial') {
         'km' => $km,
         'version' => $version,
         'ficha_oficial' => $ficha
-    ]);
+    ], 'ESPERANDO_TIPO_VENTA', 'BOT', $profileName !== '' ? $profileName : null);
 
-    twiml_message(
+    twiml_message_and_save(
+        $from,
         "Perfecto 👍\n\n"
         . "Ficha oficial: " . strtoupper($ficha) . "\n\n"
         . "Ahora indicame el TIPO DE VENTA:\n"
@@ -1798,7 +1855,8 @@ if (($userState['step'] ?? '') === 'tipo_venta') {
     $tipoVenta = normalize_tipo_venta($body);
 
     if ($tipoVenta === null) {
-        twiml_message(
+        twiml_message_and_save(
+            $from,
             "No entendí el tipo de venta.\n\n"
             . "Respondé:\n"
             . "1 = Venta contado\n"
@@ -1813,7 +1871,7 @@ if (($userState['step'] ?? '') === 'tipo_venta') {
     $version = trim((string)($userState['version'] ?? ''));
     $ficha = trim((string)($userState['ficha_oficial'] ?? ''));
 
-    set_user_state($from, [
+    wa_set_user_state($from, [
         'step' => 'valor_pretendido',
         'marca' => $marca,
         'id_marca' => $userState['id_marca'] ?? null,
@@ -1825,9 +1883,10 @@ if (($userState['step'] ?? '') === 'tipo_venta') {
         'version' => $version,
         'ficha_oficial' => $ficha,
         'tipo_venta' => $tipoVenta
-    ]);
+    ], 'ESPERANDO_VALOR_PRETENDIDO', 'BOT', $profileName !== '' ? $profileName : null);
 
-    twiml_message(
+    twiml_message_and_save(
+        $from,
         "Perfecto 👍\n\n"
         . "Tipo de venta: " . format_tipo_venta_label($tipoVenta) . "\n\n"
         . "Ahora escribime el VALOR PRETENDIDO.\n"
@@ -1842,7 +1901,7 @@ if (($userState['step'] ?? '') === 'valor_pretendido') {
     $valor = preg_replace('/[^0-9]/', '', $body);
 
     if ($valor === '') {
-        twiml_message("El valor pretendido no parece válido. Escribime solo números. Ejemplo: 20000");
+        twiml_message_and_save($from, "El valor pretendido no parece válido. Escribime solo números. Ejemplo: 20000");
     }
 
     $marca = trim((string)($userState['marca'] ?? ''));
@@ -1853,7 +1912,7 @@ if (($userState['step'] ?? '') === 'valor_pretendido') {
     $ficha = trim((string)($userState['ficha_oficial'] ?? ''));
     $tipoVenta = trim((string)($userState['tipo_venta'] ?? ''));
 
-    set_user_state($from, [
+    wa_set_user_state($from, [
         'step' => 'email',
         'marca' => $marca,
         'id_marca' => $userState['id_marca'] ?? null,
@@ -1866,9 +1925,10 @@ if (($userState['step'] ?? '') === 'valor_pretendido') {
         'ficha_oficial' => $ficha,
         'tipo_venta' => $tipoVenta,
         'valor_pretendido' => $valor
-    ]);
+    ], 'ESPERANDO_EMAIL', 'BOT', $profileName !== '' ? $profileName : null);
 
-    twiml_message(
+    twiml_message_and_save(
+        $from,
         "Perfecto 👍\n\n"
         . "Valor pretendido: USD {$valor}\n\n"
         . "Por último, escribime tu EMAIL."
@@ -1882,7 +1942,7 @@ if (($userState['step'] ?? '') === 'email') {
     $email = trim($body);
 
     if (!is_valid_email_simple($email)) {
-        twiml_message("El email no parece válido. Escribilo nuevamente. Ejemplo: cliente@email.com");
+        twiml_message_and_save($from, "El email no parece válido. Escribilo nuevamente. Ejemplo: cliente@email.com");
     }
 
     $marca = trim((string)($userState['marca'] ?? ''));
@@ -1898,8 +1958,8 @@ if (($userState['step'] ?? '') === 'email') {
     $idModel = (int)($userState['id_model'] ?? 0);
     $idVersion = (int)($userState['id_version'] ?? 0);
 
-    set_user_state($from, [
-        'step' => 'completo',
+    $estadoFinalData = [
+        'step' => 'pendiente_humano',
         'marca' => $marca,
         'id_marca' => $idMarca > 0 ? $idMarca : null,
         'modelo' => $modelo,
@@ -1912,105 +1972,178 @@ if (($userState['step'] ?? '') === 'email') {
         'tipo_venta' => $tipoVenta,
         'valor_pretendido' => $valor,
         'email' => $email
-    ]);
+    ];
 
-    wa_log('FLOW_COMPLETED', [
+    wa_log('FLOW_COMPLETED_EMAIL', [
         'from' => $from,
-        'data' => get_user_state($from)
+        'data' => $estadoFinalData
     ]);
 
-    if ($idMarca <= 0 || $idModel <= 0) {
-        twiml_message(
-            "⚠️ No se pudo generar la cotización porque faltan IDs internos.\n\n" .
-            "id_marca: " . ($idMarca > 0 ? $idMarca : 'NULL') . "\n" .
-            "id_model: " . ($idModel > 0 ? $idModel : 'NULL') . "\n\n" .
-            "Escribí COTIZAR para volver a intentarlo."
+    if ($idMarca > 0 && $idModel > 0) {
+        $brandUrl = (string)$idMarca;
+
+        $apiPayload = [
+            'id_marca' => $idMarca,
+            'id_model' => $idModel,
+            'id_modelo' => $idModel,
+            'id_version' => $idVersion > 0 ? $idVersion : null,
+            'modelo' => $idModel,
+            'marca' => $marca,
+            'modelo_nombre' => $modelo,
+            'version' => $version,
+            'anio' => $anio,
+            'km' => $km,
+            'ficha_tecnica' => ($ficha === 'si') ? 1 : 0,
+            'cantidad_duenios' => 1,
+            'valor_pretendido' => $valor,
+            'venta_permuta' => ($tipoVenta === 'entrega_forma_pago') ? 1 : 0,
+            'nombre_auto' => trim($marca . ' ' . $modelo . ' ' . $anio . ' ' . $version),
+            'nombre' => $profileName !== '' ? $profileName : 'Cliente WhatsApp',
+            'email' => $email,
+            'telefono' => $from
+        ];
+
+        wa_log('PAYLOAD_FINAL_COTIZADOR', [
+            'brand_url' => $brandUrl,
+            'payload' => $apiPayload
+        ]);
+
+        $apiResult = cotizar_api($brandUrl, $apiPayload);
+
+        $estadoFinalData['api_result'] = $apiResult;
+        $estadoFinalData['step'] = 'pendiente_humano';
+
+        $idCotizacion = $apiResult['id_cotizacion']
+            ?? $apiResult['cotizacion']
+            ?? $apiResult['cotizacion_id']
+            ?? null;
+
+        wa_set_user_state(
+            $from,
+            $estadoFinalData,
+            'PENDIENTE_RESPUESTA_HUMANA',
+            'HUMANO',
+            $profileName !== '' ? $profileName : null,
+            $email,
+            $idCotizacion
+        );
+
+        twiml_message_and_save($from, wa_build_mensaje_post_email($idCotizacion));
+    }
+
+    wa_set_user_state(
+        $from,
+        $estadoFinalData,
+        'PENDIENTE_RESPUESTA_HUMANA',
+        'HUMANO',
+        $profileName !== '' ? $profileName : null,
+        $email,
+        null
+    );
+
+    twiml_message_and_save($from, wa_build_mensaje_post_email($idCotizacion));
+}
+
+// =========================
+// AGENDA - SUCURSAL
+// =========================
+if (($userState['step'] ?? '') === 'agenda_sucursal') {
+    $opc = trim($body);
+    $sucursal = null;
+
+    if ($opc === '1') {
+        $sucursal = 'Casa Central';
+    } elseif ($opc === '2') {
+        $sucursal = 'Carrasco';
+    }
+
+    if ($sucursal === null) {
+        twiml_message_and_save(
+            $from,
+            "No entendí la sucursal.\n\n"
+            . "Respondé:\n"
+            . "1 = Casa Central\n"
+            . "2 = Carrasco"
         );
     }
 
-    // IMPORTANTE:
-    // CotizacionService espera:
-    // - brand en la URL => id_marca NUMERICO
-    // - modelo en el body => id_model (numérico)
-    $brandUrl = (string)$idMarca;
+    $userState['step'] = 'agenda_fecha';
+    $userState['agenda_sucursal'] = $sucursal;
 
-    $apiPayload = [
-        'id_marca' => $idMarca,
-        'id_model' => $idModel,
-        'id_modelo' => $idModel,
-        'id_version' => $idVersion > 0 ? $idVersion : null,
+    wa_set_user_state($from, $userState, 'ESPERANDO_FECHA', 'BOT', $profileName !== '' ? $profileName : null);
 
-        // el servicio toma modelo desde $dataIn['modelo']
-        'modelo' => $idModel,
+    twiml_message_and_save(
+        $from,
+        "Perfecto 👍\n\n"
+        . "Sucursal: {$sucursal}\n\n"
+        . "Ahora indicá la fecha deseada para la inspección.\n"
+        . "Ejemplo: 15/04/2026"
+    );
+}
 
-        // textos auxiliares
-        'marca' => $marca,
-        'modelo_nombre' => $modelo,
-        'version' => $version,
+// =========================
+// AGENDA - FECHA
+// =========================
+if (($userState['step'] ?? '') === 'agenda_fecha') {
+    $fechaDeseada = trim($body);
 
-        // datos de cotización
-        'anio' => $anio,
-        'km' => $km,
-        'ficha_tecnica' => ($ficha === 'si') ? 1 : 0,
-        'cantidad_duenios' => 1,
-        'valor_pretendido' => $valor,
-        'venta_permuta' => ($tipoVenta === 'entrega_forma_pago') ? 1 : 0,
-        'nombre_auto' => trim($marca . ' ' . $modelo . ' ' . $anio . ' ' . $version),
-        'nombre' => $profileName !== '' ? $profileName : 'Cliente WhatsApp',
-        'email' => $email,
-        'telefono' => $from
-    ];
+    if ($fechaDeseada === '') {
+        twiml_message_and_save($from, "No pude leer la fecha. Escribila nuevamente. Ejemplo: 15/04/2026");
+    }
 
-    wa_log('PAYLOAD_FINAL_COTIZADOR', [
-        'brand_url' => $brandUrl,
-        'payload' => $apiPayload
-    ]);
+    $userState['step'] = 'agenda_hora';
+    $userState['agenda_fecha'] = $fechaDeseada;
 
-    $apiResult = cotizar_api($brandUrl, $apiPayload);
+    wa_set_user_state($from, $userState, 'ESPERANDO_HORA', 'BOT', $profileName !== '' ? $profileName : null);
 
-    wa_log('API_RESULT_RESUMEN', [
-        'id_cotizacion' => $apiResult['id_cotizacion'] ?? $apiResult['cotizacion'] ?? $apiResult['cotizacion_id'] ?? null,
-        'mensaje' => $apiResult['mensaje'] ?? $apiResult['msg'] ?? null,
-        'resultado' => $apiResult['resultado'] ?? $apiResult['valores'] ?? null
-    ]);
+    twiml_message_and_save(
+        $from,
+        "Perfecto 👍\n\n"
+        . "Fecha solicitada: {$fechaDeseada}\n\n"
+        . "Ahora indicá el horario deseado.\n"
+        . "Ejemplo: 10:30"
+    );
+}
 
-    set_user_state($from, [
-        'step' => 'resultado_enviado',
-        'marca' => $marca,
-        'id_marca' => $idMarca > 0 ? $idMarca : null,
-        'modelo' => $modelo,
-        'id_model' => $idModel > 0 ? $idModel : null,
-        'id_version' => $idVersion > 0 ? $idVersion : null,
-        'anio' => $anio,
-        'km' => $km,
-        'version' => $version,
-        'ficha_oficial' => $ficha,
-        'tipo_venta' => $tipoVenta,
-        'valor_pretendido' => $valor,
-        'email' => $email,
-        'api_result' => $apiResult
-    ]);
+// =========================
+// AGENDA - HORA
+// =========================
+if (($userState['step'] ?? '') === 'agenda_hora') {
+    $horaDeseada = trim($body);
 
-    $message = build_whatsapp_result_message(
-        $marca,
-        $modelo,
-        $anio,
-        $km,
-        $version,
-        $ficha,
-        $tipoVenta,
-        $valor,
-        $email,
-        $apiResult
+    if ($horaDeseada === '') {
+        twiml_message_and_save($from, "No pude leer la hora. Escribila nuevamente. Ejemplo: 10:30");
+    }
+
+    $userState['step'] = 'agenda_confirmacion_humana';
+    $userState['agenda_hora'] = $horaDeseada;
+
+    wa_set_user_state(
+        $from,
+        $userState,
+        'PENDIENTE_RESPUESTA_HUMANA',
+        'HUMANO',
+        $profileName !== '' ? $profileName : null,
+        isset($userState['email']) ? (string)$userState['email'] : null,
+        $currentConv['id_cotizacion'] ?? null
     );
 
-    twiml_message($message);
+    twiml_message_and_save(
+        $from,
+        "Perfecto 👍\n\n"
+        . "Recibimos tu solicitud de agenda:\n"
+        . "Sucursal: " . (string)($userState['agenda_sucursal'] ?? '-') . "\n"
+        . "Fecha: " . (string)($userState['agenda_fecha'] ?? '-') . "\n"
+        . "Hora: {$horaDeseada}\n\n"
+        . "A la brevedad un asesor confirmará la disponibilidad."
+    );
 }
 
 // =========================
 // DEFAULT
 // =========================
-twiml_message(
+twiml_message_and_save(
+    $from,
     "Recibí tu mensaje: {$body}\n\n"
     . "Escribí COTIZAR para iniciar el flujo."
 );
