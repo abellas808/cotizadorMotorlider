@@ -18,7 +18,7 @@ date_default_timezone_set('America/Montevideo');
 // =========================
 // CONFIG
 // =========================
-const TWILIO_AUTH_TOKEN = 'aa4367dc2659286fcf0f8cf0ddc6f487';
+const TWILIO_AUTH_TOKEN = '58f767d26211d9d0c20ea687df00b4c3';
 const COTIZADOR_BASE_URL = 'https://carplay.uy/apicotizador/cotizadorPublico/';
 
 const DB_HOST = 'localhost';
@@ -68,20 +68,30 @@ function build_current_url(): string
 
 function validate_twilio_signature(string $authToken): bool
 {
-    if ($authToken === '') {
-        wa_log('SIGNATURE_SKIPPED', ['reason' => 'auth token vacío']);
-        return true;
-    }
-
     $headers = get_request_headers_lower();
     $twilioSignature = $headers['x-twilio-signature'] ?? '';
+    $accountSid = (string)($_POST['AccountSid'] ?? '');
 
-    if ($twilioSignature === '') {
-        wa_log('SIGNATURE_FAIL', ['reason' => 'header ausente']);
+    // Dejamos fija la URL pública real para evitar diferencias por proxy/hosting
+    $url = 'https://carplay.uy/whatsapp/webhook.php';
+
+    if ($authToken === '') {
+        wa_log('SIGNATURE_FAIL', [
+            'reason' => 'auth token vacío',
+            'account_sid' => $accountSid,
+            'url' => $url
+        ]);
         return false;
     }
 
-    $url = build_current_url();
+    if ($twilioSignature === '') {
+        wa_log('SIGNATURE_FAIL', [
+            'reason' => 'header ausente',
+            'account_sid' => $accountSid,
+            'url' => $url
+        ]);
+        return false;
+    }
 
     $params = $_POST;
     ksort($params);
@@ -95,8 +105,9 @@ function validate_twilio_signature(string $authToken): bool
     $ok = hash_equals($hash, $twilioSignature);
 
     wa_log('SIGNATURE_CHECK', [
-        'ok'       => $ok,
-        'url'      => $url,
+        'ok' => $ok,
+        'account_sid' => $accountSid,
+        'url' => $url,
         'expected' => $hash,
         'received' => $twilioSignature
     ]);
@@ -923,13 +934,13 @@ function cotizar_api(string $brand, array $payload): array
 // =========================
 function wa_build_mensaje_post_email($idCotizacion = null): string
 {
-    $msg = "Gracias. Recibimos correctamente sus datos.\n\n";
+    $msg = "Excelente! Recibimos correctamente sus datos.\n\n";
 
     if (!empty($idCotizacion)) {
-        $msg .= "Su número de cotización es: " . $idCotizacion . "\n\n";
+        $msg .= "Su número de cotización es: {$idCotizacion}\n\n";
     }
 
-    $msg .= "A la brevedad le estaremos enviando una cotización personalizada.";
+    $msg .= "Le estaremos enviando la cotización de su vehículo en unos minutos ⏱️";
 
     return $msg;
 }
@@ -982,7 +993,6 @@ try {
     twiml_message('Ocurrió un problema inicializando la conversación.');
 }
 
-$bodyLower = body_to_lower($body);
 $bodyNorm = wa_normalizar_texto($body);
 $userState = wa_get_user_data($from);
 $currentConv = wa_get_conversation($from);
@@ -1979,6 +1989,8 @@ if (($userState['step'] ?? '') === 'email') {
         'data' => $estadoFinalData
     ]);
 
+    $idCotizacion = null;
+
     if ($idMarca > 0 && $idModel > 0) {
         $brandUrl = (string)$idMarca;
 
@@ -2041,7 +2053,7 @@ if (($userState['step'] ?? '') === 'email') {
         null
     );
 
-    twiml_message_and_save($from, wa_build_mensaje_post_email($idCotizacion));
+    twiml_message_and_save($from, wa_build_mensaje_post_email(null));
 }
 
 // =========================
