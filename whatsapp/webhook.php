@@ -11,7 +11,7 @@ date_default_timezone_set('America/Montevideo');
  * 2. BOT cotiza
  * 3. BOT envía mensaje final y pasa a HUMANO
  * 4. HUMANO responde tasación desde/hasta
- * 5. Si cliente escribe AGENDAR
+ * 5. Si cliente escribe AGENDAR o responde SI
  * 6. vuelve BOT y sigue agenda
  */
 
@@ -57,22 +57,11 @@ function get_request_headers_lower(): array
     return $headers;
 }
 
-function build_current_url(): string
-{
-    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-    $host   = $_SERVER['HTTP_HOST'] ?? 'localhost';
-    $uri    = $_SERVER['REQUEST_URI'] ?? '/';
-
-    return $scheme . '://' . $host . $uri;
-}
-
 function validate_twilio_signature(string $authToken): bool
 {
     $headers = get_request_headers_lower();
     $twilioSignature = $headers['x-twilio-signature'] ?? '';
     $accountSid = (string)($_POST['AccountSid'] ?? '');
-
-    // Dejamos fija la URL pública real para evitar diferencias por proxy/hosting
     $url = 'https://carplay.uy/whatsapp/webhook.php';
 
     if ($authToken === '') {
@@ -240,6 +229,36 @@ function wa_es_agendar(string $texto): bool
         'coordinar inspeccion',
         'coordinar inspección'
     ], true);
+}
+
+function wa_respuesta_es_si(string $texto): bool
+{
+    $v = wa_normalizar_texto($texto);
+
+    return in_array($v, [
+        'si', 'sí', 's', 'quiero agendar', 'agendar', 'si quiero', 'dale', 'ok', 'bueno'
+    ], true);
+}
+
+function wa_respuesta_es_no(string $texto): bool
+{
+    $v = wa_normalizar_texto($texto);
+
+    return in_array($v, [
+        'no', 'n', 'no gracias', 'ahora no', 'despues', 'después'
+    ], true);
+}
+
+function wa_es_atras(string $texto): bool
+{
+    $v = wa_normalizar_texto($texto);
+    return in_array($v, ['atras', 'atras menu', 'volver', 'volver atras'], true);
+}
+
+function wa_es_cancelar_agenda(string $texto): bool
+{
+    $v = wa_normalizar_texto($texto);
+    return in_array($v, ['cancelar', 'salir', 'menu', 'inicio'], true);
 }
 
 function wa_redondear_motorlider($valor): int
@@ -419,13 +438,16 @@ function wa_step_to_estado(string $step): string
         'tipo_venta'                 => 'ESPERANDO_TIPO_VENTA',
         'valor_pretendido'           => 'ESPERANDO_VALOR_PRETENDIDO',
         'email'                      => 'ESPERANDO_EMAIL',
-        'agenda_sucursal'            => 'ESPERANDO_SUCURSAL',
-        'agenda_fecha'               => 'ESPERANDO_FECHA',
+
+        'agenda_dia'                 => 'ESPERANDO_FECHA',
         'agenda_hora'                => 'ESPERANDO_HORA',
+        'agenda_confirmar'           => 'ESPERANDO_HORA',
+
         'agenda_confirmacion_humana' => 'PENDIENTE_RESPUESTA_HUMANA',
         'pendiente_humano'           => 'PENDIENTE_RESPUESTA_HUMANA',
         'resultado_enviado'          => 'PENDIENTE_RESPUESTA_HUMANA',
         'agendado'                   => 'AGENDADO',
+        'cerrado'                    => 'CERRADO',
     ];
 
     return $map[$step] ?? 'INICIO';
@@ -442,7 +464,7 @@ function wa_set_user_state(
 ): void {
     $step = (string)($data['step'] ?? '');
     $estadoFinal = $estado ?? wa_step_to_estado($step);
-    $modoFinal = $modoAtencion ?? (($estadoFinal === 'PENDIENTE_RESPUESTA_HUMANA') ? 'HUMANO' : 'BOT');
+    $modoFinal = $modoAtencion ?? (($estadoFinal === 'PENDIENTE_RESPUESTA_HUMANA' || $estadoFinal === 'HUMANO_EN_CONVERSACION') ? 'HUMANO' : 'BOT');
     $fecha = date('Y-m-d H:i:s');
 
     $campos = [
@@ -476,23 +498,6 @@ function wa_set_user_state(
     ]);
 }
 
-function wa_clear_user_state(string $telefono): void
-{
-    $fecha = date('Y-m-d H:i:s');
-
-    wa_update_conversation_fields($telefono, [
-        'estado' => 'INICIO',
-        'modo_atencion' => 'BOT',
-        'email' => null,
-        'id_cotizacion' => null,
-        'datos_json' => json_encode([], JSON_UNESCAPED_UNICODE),
-        'fecha_ultima_interaccion' => $fecha,
-        'fecha_mod' => $fecha
-    ]);
-
-    wa_log('STATE_CLEAR_DB', ['telefono' => $telefono]);
-}
-
 function wa_touch_incoming_message(string $telefono, string $mensaje): void
 {
     $fecha = date('Y-m-d H:i:s');
@@ -518,6 +523,149 @@ function twiml_message_and_save(string $telefono, string $mensaje): void
 {
     wa_save_last_bot_message($telefono, $mensaje);
     twiml_message($mensaje);
+}
+
+function wa_get_parametro_sistema(string $grupo, string $clave): ?string
+{
+    $cn = wa_db();
+
+    $sql = "SELECT valor
+            FROM parametros_sistema
+            WHERE grupo = ?
+              AND clave = ?
+              AND activo = 1
+            ORDER BY id DESC
+            LIMIT 1";
+
+    $st = $cn->prepare($sql);
+    if (!$st) {
+        throw new RuntimeException('Error prepare wa_get_parametro_sistema: ' . $cn->error);
+    }
+
+    $st->bind_param('ss', $grupo, $clave);
+    $st->execute();
+    $rs = $st->get_result();
+    $row = $rs ? $rs->fetch_assoc() : null;
+
+    if ($rs) $rs->free();
+    $st->close();
+    $cn->close();
+
+    return $row ? (string)$row['valor'] : null;
+}
+
+// =========================
+// WS AGENDA
+// =========================
+function wa_ws_post(string $peticion, array $data): array
+{
+    $url = 'https://carplay.uy/ws/index.php?peticion=' . rawurlencode($peticion);
+
+    wa_log('WS_REQUEST', [
+        'peticion' => $peticion,
+        'url' => $url,
+        'data' => $data
+    ]);
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => http_build_query($data),
+        CURLOPT_HTTPHEADER => [
+            'Content-Type: application/x-www-form-urlencoded'
+        ],
+        CURLOPT_TIMEOUT => 60,
+        CURLOPT_CONNECTTIMEOUT => 15,
+        CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_SSL_VERIFYHOST => 2,
+    ]);
+
+    $raw = curl_exec($ch);
+    $err = curl_error($ch);
+    $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($err !== '') {
+        wa_log('WS_ERROR', [
+            'peticion' => $peticion,
+            'error' => $err,
+            'http' => $http
+        ]);
+
+        return [
+            'codigo' => 500,
+            'mensaje' => 'Error de comunicación con agenda',
+            'error' => 500
+        ];
+    }
+
+    $decoded = json_decode((string)$raw, true);
+
+    wa_log('WS_RESPONSE', [
+        'peticion' => $peticion,
+        'http' => $http,
+        'raw' => $raw,
+        'decoded' => $decoded
+    ]);
+
+    if (!is_array($decoded)) {
+        return [
+            'codigo' => 500,
+            'mensaje' => 'Respuesta inválida del sistema de agenda',
+            'error' => 500
+        ];
+    }
+
+    return $decoded;
+}
+
+function wa_agenda_location_id(): int
+{
+    return 1;
+}
+
+function wa_formatear_fecha_chat(string $fechaYmd): string
+{
+    $ts = strtotime($fechaYmd);
+    if (!$ts) {
+        return $fechaYmd;
+    }
+
+    $dias = [
+        'Sunday' => 'Domingo',
+        'Monday' => 'Lunes',
+        'Tuesday' => 'Martes',
+        'Wednesday' => 'Miércoles',
+        'Thursday' => 'Jueves',
+        'Friday' => 'Viernes',
+        'Saturday' => 'Sábado',
+    ];
+
+    $dayName = date('l', $ts);
+    $dayEs = $dias[$dayName] ?? $dayName;
+
+    return $dayEs . ' ' . date('d/m/Y', $ts);
+}
+
+function wa_obtener_disponibilidad_agenda(int $location): array
+{
+    return wa_ws_post('availability', [
+        'location' => $location
+    ]);
+}
+
+function wa_obtener_horarios_agenda(int $location, string $fecha): array
+{
+    return wa_ws_post('schedules', [
+        'location' => $location,
+        'date' => $fecha
+    ]);
+}
+
+function wa_agendar_inspeccion(array $payload): array
+{
+    return wa_ws_post('scheduleInspection', $payload);
 }
 
 // =========================
@@ -935,11 +1083,7 @@ function cotizar_api(string $brand, array $payload): array
 function wa_build_mensaje_post_email($idCotizacion = null): string
 {
     $msg = "Excelente! Recibimos correctamente sus datos.\n\n";
-
-    if (!empty($idCotizacion)) {
-        $msg .= "Su número de cotización es: {$idCotizacion}\n\n";
-    }
-
+ 
     $msg .= "Le estaremos enviando la cotización de su vehículo en unos minutos ⏱️";
 
     return $msg;
@@ -1054,14 +1198,42 @@ if ($bodyNorm === 'cotizar') {
 // MODO HUMANO / HÍBRIDO
 // =========================
 if (in_array($currentEstado, ['PENDIENTE_RESPUESTA_HUMANA', 'HUMANO_EN_CONVERSACION'], true)) {
-    if (wa_es_agendar($body)) {
+
+    if (wa_es_agendar($body) || wa_respuesta_es_si($body)) {
+        $location = wa_agenda_location_id();
+        $disp = wa_obtener_disponibilidad_agenda($location);
+
+        if (($disp['codigo'] ?? 500) != 200 || empty($disp['availability']) || !is_array($disp['availability'])) {
+            twiml_message_and_save(
+                $from,
+                "En este momento no encontré días disponibles para agenda.\n\n"
+                . "Un asesor lo estará coordinando a la brevedad."
+            );
+        }
+
+        $opciones = [];
+        $lineas = [];
+        $max = min(5, count($disp['availability']));
+
+        for ($i = 0; $i < $max; $i++) {
+            $nro = (string)($i + 1);
+            $fecha = (string)$disp['availability'][$i]['fecha'];
+            $opciones[$nro] = [
+                'fecha' => $fecha
+            ];
+            $lineas[] = $nro . ' = ' . wa_formatear_fecha_chat($fecha);
+        }
+
         $nuevoEstado = $userState;
-        $nuevoEstado['step'] = 'agenda_sucursal';
+        $nuevoEstado['step'] = 'agenda_dia';
+        $nuevoEstado['agenda_location'] = $location;
+        $nuevoEstado['agenda_dias_opciones'] = $opciones;
+        unset($nuevoEstado['agenda_fecha'], $nuevoEstado['agenda_hora'], $nuevoEstado['agenda_horas_opciones']);
 
         wa_set_user_state(
             $from,
             $nuevoEstado,
-            'ESPERANDO_SUCURSAL',
+            'ESPERANDO_FECHA',
             'BOT',
             $profileName !== '' ? $profileName : null
         );
@@ -1069,11 +1241,31 @@ if (in_array($currentEstado, ['PENDIENTE_RESPUESTA_HUMANA', 'HUMANO_EN_CONVERSAC
         twiml_message_and_save(
             $from,
             "Perfecto 👍\n\n"
-            . "Vamos a coordinar la inspección.\n\n"
-            . "Indicá la sucursal deseada:\n"
-            . "1 = Casa Central\n"
-            . "2 = Carrasco"
+            . "Estos son los próximos días disponibles para la inspección:\n"
+            . implode("\n", $lineas)
+            . "\n\nRespondé con el número del día.\n"
+            . "También podés escribir ATRAS o CANCELAR."
         );
+    }
+
+    if (wa_respuesta_es_no($body)) {
+        $msgCierre = wa_get_parametro_sistema('whatsapp_cotizador', 'respuesta_cierre_no_agenda');
+        if ($msgCierre === null || trim($msgCierre) === '') {
+            $msgCierre = 'Gracias por comunicarte con Motorlider. Quedamos a las órdenes.';
+        }
+
+        $nuevoEstado = $userState;
+        $nuevoEstado['step'] = 'cerrado';
+
+        wa_set_user_state(
+            $from,
+            $nuevoEstado,
+            'CERRADO',
+            'HUMANO',
+            $profileName !== '' ? $profileName : null
+        );
+
+        twiml_message_and_save($from, $msgCierre);
     }
 
     wa_log('HUMAN_MODE_NO_AUTO_REPLY', [
@@ -1989,8 +2181,6 @@ if (($userState['step'] ?? '') === 'email') {
         'data' => $estadoFinalData
     ]);
 
-    $idCotizacion = null;
-
     if ($idMarca > 0 && $idModel > 0) {
         $brandUrl = (string)$idMarca;
 
@@ -2057,63 +2247,100 @@ if (($userState['step'] ?? '') === 'email') {
 }
 
 // =========================
-// AGENDA - SUCURSAL
+// AGENDA - DIA
 // =========================
-if (($userState['step'] ?? '') === 'agenda_sucursal') {
-    $opc = trim($body);
-    $sucursal = null;
+if (($userState['step'] ?? '') === 'agenda_dia') {
+    $respuesta = trim($body);
 
-    if ($opc === '1') {
-        $sucursal = 'Casa Central';
-    } elseif ($opc === '2') {
-        $sucursal = 'Carrasco';
+    if (wa_es_cancelar_agenda($body)) {
+        $nuevoEstado = $userState;
+        $nuevoEstado['step'] = 'cerrado';
+
+        wa_set_user_state(
+            $from,
+            $nuevoEstado,
+            'CERRADO',
+            'BOT',
+            $profileName !== '' ? $profileName : null
+        );
+
+        twiml_message_and_save($from, "Perfecto. Cancelé la agenda.\n\nGracias por comunicarte con Motorlider.");
     }
 
-    if ($sucursal === null) {
+    if (wa_es_atras($body)) {
+        wa_set_user_state(
+            $from,
+            $userState,
+            'HUMANO_EN_CONVERSACION',
+            'HUMANO',
+            $profileName !== '' ? $profileName : null
+        );
+
         twiml_message_and_save(
             $from,
-            "No entendí la sucursal.\n\n"
-            . "Respondé:\n"
-            . "1 = Casa Central\n"
-            . "2 = Carrasco"
+            "Perfecto.\n\nVolvimos un paso atrás.\n"
+            . "Si querés coordinar la inspección, respondé AGENDAR."
         );
     }
 
-    $userState['step'] = 'agenda_fecha';
-    $userState['agenda_sucursal'] = $sucursal;
-
-    wa_set_user_state($from, $userState, 'ESPERANDO_FECHA', 'BOT', $profileName !== '' ? $profileName : null);
-
-    twiml_message_and_save(
-        $from,
-        "Perfecto 👍\n\n"
-        . "Sucursal: {$sucursal}\n\n"
-        . "Ahora indicá la fecha deseada para la inspección.\n"
-        . "Ejemplo: 15/04/2026"
-    );
-}
-
-// =========================
-// AGENDA - FECHA
-// =========================
-if (($userState['step'] ?? '') === 'agenda_fecha') {
-    $fechaDeseada = trim($body);
-
-    if ($fechaDeseada === '') {
-        twiml_message_and_save($from, "No pude leer la fecha. Escribila nuevamente. Ejemplo: 15/04/2026");
+    $opciones = $userState['agenda_dias_opciones'] ?? [];
+    if (!isset($opciones[$respuesta])) {
+        twiml_message_and_save(
+            $from,
+            "No entendí el día elegido.\n\n"
+            . "Respondé con el número del día disponible.\n"
+            . "También podés escribir ATRAS o CANCELAR."
+        );
     }
 
-    $userState['step'] = 'agenda_hora';
-    $userState['agenda_fecha'] = $fechaDeseada;
+    $fechaElegida = (string)$opciones[$respuesta]['fecha'];
+    $location = (int)($userState['agenda_location'] ?? wa_agenda_location_id());
 
-    wa_set_user_state($from, $userState, 'ESPERANDO_HORA', 'BOT', $profileName !== '' ? $profileName : null);
+    $respHorarios = wa_obtener_horarios_agenda($location, $fechaElegida);
+
+    if (($respHorarios['codigo'] ?? 500) != 200 || empty($respHorarios['schedules']['horas_disponibles'])) {
+        twiml_message_and_save(
+            $from,
+            "No encontré horarios disponibles para " . wa_formatear_fecha_chat($fechaElegida) . ".\n\n"
+            . "Respondé ATRAS para elegir otro día."
+        );
+    }
+
+    $horasOpciones = [];
+    $lineas = [];
+    $horas = $respHorarios['schedules']['horas_disponibles'];
+    $max = min(8, count($horas));
+
+    for ($i = 0; $i < $max; $i++) {
+        $nro = (string)($i + 1);
+        $hora = (string)$horas[$i]['hora'];
+        $horasOpciones[$nro] = [
+            'hora' => $hora
+        ];
+        $lineas[] = $nro . ' = ' . substr($hora, 0, 5);
+    }
+
+    $nuevoEstado = $userState;
+    $nuevoEstado['step'] = 'agenda_hora';
+    $nuevoEstado['agenda_fecha'] = $fechaElegida;
+    $nuevoEstado['agenda_horas_opciones'] = $horasOpciones;
+
+    wa_set_user_state(
+        $from,
+        $nuevoEstado,
+        'ESPERANDO_HORA',
+        'BOT',
+        $profileName !== '' ? $profileName : null
+    );
 
     twiml_message_and_save(
         $from,
         "Perfecto 👍\n\n"
-        . "Fecha solicitada: {$fechaDeseada}\n\n"
-        . "Ahora indicá el horario deseado.\n"
-        . "Ejemplo: 10:30"
+        . "Día elegido: " . wa_formatear_fecha_chat($fechaElegida) . "\n\n"
+        . "Estos son los horarios disponibles:\n"
+        . implode("\n", $lineas)
+        . "\n\nRespondé con el número de la hora.\n"
+        . "También podés escribir ATRAS o CANCELAR."
     );
 }
 
@@ -2121,33 +2348,216 @@ if (($userState['step'] ?? '') === 'agenda_fecha') {
 // AGENDA - HORA
 // =========================
 if (($userState['step'] ?? '') === 'agenda_hora') {
-    $horaDeseada = trim($body);
+    $respuesta = trim($body);
 
-    if ($horaDeseada === '') {
-        twiml_message_and_save($from, "No pude leer la hora. Escribila nuevamente. Ejemplo: 10:30");
+    if (wa_es_cancelar_agenda($body)) {
+        $nuevoEstado = $userState;
+        $nuevoEstado['step'] = 'cerrado';
+
+        wa_set_user_state(
+            $from,
+            $nuevoEstado,
+            'CERRADO',
+            'BOT',
+            $profileName !== '' ? $profileName : null
+        );
+
+        twiml_message_and_save($from, "Perfecto. Cancelé la agenda.\n\nGracias por comunicarte con Motorlider.");
     }
 
-    $userState['step'] = 'agenda_confirmacion_humana';
-    $userState['agenda_hora'] = $horaDeseada;
+    if (wa_es_atras($body)) {
+        $location = (int)($userState['agenda_location'] ?? wa_agenda_location_id());
+        $disp = wa_obtener_disponibilidad_agenda($location);
+
+        if (($disp['codigo'] ?? 500) != 200 || empty($disp['availability']) || !is_array($disp['availability'])) {
+            twiml_message_and_save(
+                $from,
+                "No pude volver a cargar los días disponibles.\n\nIntentá nuevamente respondiendo AGENDAR."
+            );
+        }
+
+        $opciones = [];
+        $lineas = [];
+        $max = min(5, count($disp['availability']));
+
+        for ($i = 0; $i < $max; $i++) {
+            $nro = (string)($i + 1);
+            $fecha = (string)$disp['availability'][$i]['fecha'];
+            $opciones[$nro] = ['fecha' => $fecha];
+            $lineas[] = $nro . ' = ' . wa_formatear_fecha_chat($fecha);
+        }
+
+        $nuevoEstado = $userState;
+        $nuevoEstado['step'] = 'agenda_dia';
+        $nuevoEstado['agenda_dias_opciones'] = $opciones;
+        unset($nuevoEstado['agenda_fecha'], $nuevoEstado['agenda_hora'], $nuevoEstado['agenda_horas_opciones']);
+
+        wa_set_user_state(
+            $from,
+            $nuevoEstado,
+            'ESPERANDO_FECHA',
+            'BOT',
+            $profileName !== '' ? $profileName : null
+        );
+
+        twiml_message_and_save(
+            $from,
+            "Perfecto 👍\n\n"
+            . "Volvemos a elegir el día.\n\n"
+            . implode("\n", $lineas)
+            . "\n\nRespondé con el número del día."
+        );
+    }
+
+    $opciones = $userState['agenda_horas_opciones'] ?? [];
+    if (!isset($opciones[$respuesta])) {
+        twiml_message_and_save(
+            $from,
+            "No entendí la hora elegida.\n\n"
+            . "Respondé con el número del horario.\n"
+            . "También podés escribir ATRAS o CANCELAR."
+        );
+    }
+
+    $horaElegida = (string)$opciones[$respuesta]['hora'];
+
+    $nuevoEstado = $userState;
+    $nuevoEstado['step'] = 'agenda_confirmar';
+    $nuevoEstado['agenda_hora'] = $horaElegida;
 
     wa_set_user_state(
         $from,
-        $userState,
-        'PENDIENTE_RESPUESTA_HUMANA',
-        'HUMANO',
-        $profileName !== '' ? $profileName : null,
-        isset($userState['email']) ? (string)$userState['email'] : null,
-        $currentConv['id_cotizacion'] ?? null
+        $nuevoEstado,
+        'ESPERANDO_HORA',
+        'BOT',
+        $profileName !== '' ? $profileName : null
     );
 
     twiml_message_and_save(
         $from,
         "Perfecto 👍\n\n"
-        . "Recibimos tu solicitud de agenda:\n"
-        . "Sucursal: " . (string)($userState['agenda_sucursal'] ?? '-') . "\n"
-        . "Fecha: " . (string)($userState['agenda_fecha'] ?? '-') . "\n"
-        . "Hora: {$horaDeseada}\n\n"
-        . "A la brevedad un asesor confirmará la disponibilidad."
+        . "Reserva solicitada:\n"
+        . "Fecha: " . wa_formatear_fecha_chat((string)$nuevoEstado['agenda_fecha']) . "\n"
+        . "Hora: " . substr($horaElegida, 0, 5) . "\n\n"
+        . "Respondé CONFIRMAR para agendar.\n"
+        . "O escribí ATRAS / CANCELAR."
+    );
+}
+
+// =========================
+// AGENDA - CONFIRMAR
+// =========================
+if (($userState['step'] ?? '') === 'agenda_confirmar') {
+    $respuestaNorm = wa_normalizar_texto($body);
+
+    if (wa_es_cancelar_agenda($body)) {
+        $nuevoEstado = $userState;
+        $nuevoEstado['step'] = 'cerrado';
+
+        wa_set_user_state(
+            $from,
+            $nuevoEstado,
+            'CERRADO',
+            'BOT',
+            $profileName !== '' ? $profileName : null
+        );
+
+        twiml_message_and_save($from, "Perfecto. Cancelé la agenda.\n\nGracias por comunicarte con Motorlider.");
+    }
+
+    if (wa_es_atras($body)) {
+        $nuevoEstado = $userState;
+        $nuevoEstado['step'] = 'agenda_hora';
+        unset($nuevoEstado['agenda_hora']);
+
+        wa_set_user_state(
+            $from,
+            $nuevoEstado,
+            'ESPERANDO_HORA',
+            'BOT',
+            $profileName !== '' ? $profileName : null
+        );
+
+        $horasOpciones = $nuevoEstado['agenda_horas_opciones'] ?? [];
+        $lineas = [];
+
+        foreach ($horasOpciones as $nro => $item) {
+            $lineas[] = $nro . ' = ' . substr((string)$item['hora'], 0, 5);
+        }
+
+        twiml_message_and_save(
+            $from,
+            "Perfecto 👍\n\n"
+            . "Volvemos a elegir el horario.\n\n"
+            . implode("\n", $lineas)
+            . "\n\nRespondé con el número del horario disponible."
+        );
+    }
+
+    if (!in_array($respuestaNorm, ['confirmar', 'confirmo', 'si', 'ok'], true)) {
+        twiml_message_and_save(
+            $from,
+            "Para agendar, respondé CONFIRMAR.\n"
+            . "También podés escribir ATRAS o CANCELAR."
+        );
+    }
+
+    $location = (int)($userState['agenda_location'] ?? wa_agenda_location_id());
+    $fecha = (string)($userState['agenda_fecha'] ?? '');
+    $hora = (string)($userState['agenda_hora'] ?? '');
+
+    $conv = wa_get_conversation($from);
+    $idCotizacion = (int)($conv['id_cotizacion'] ?? 0);
+
+    $payload = [
+        'location' => $location,
+        'date' => $fecha,
+        'hora' => $hora,
+        'modelo' => (string)($userState['id_model'] ?? ''),
+        'marca' => (string)($userState['id_marca'] ?? ''),
+        'anio' => (string)($userState['anio'] ?? ''),
+        'familia' => (string)($userState['version'] ?? ''),
+        'auto' => trim(
+            (string)($userState['marca'] ?? '') . ' ' .
+            (string)($userState['modelo'] ?? '') . ' ' .
+            (string)($userState['anio'] ?? '') . ' ' .
+            (string)($userState['version'] ?? '')
+        ),
+        'nombre' => (string)($conv['nombre'] ?? ($profileName !== '' ? $profileName : 'Cliente WhatsApp')),
+        'email' => (string)($conv['email'] ?? ''),
+        'telefono' => $from,
+        'id_cotizacion' => $idCotizacion
+    ];
+
+    $respAgenda = wa_agendar_inspeccion($payload);
+
+    if (($respAgenda['codigo'] ?? 500) != 200) {
+        twiml_message_and_save(
+            $from,
+            "No pude confirmar la agenda en este momento.\n\n"
+            . "Probá nuevamente o un asesor lo estará coordinando."
+        );
+    }
+
+    $nuevoEstado = $userState;
+    $nuevoEstado['step'] = 'agendado';
+
+    wa_set_user_state(
+        $from,
+        $nuevoEstado,
+        'AGENDADO',
+        'BOT',
+        $profileName !== '' ? $profileName : null,
+        (string)($conv['email'] ?? ''),
+        $idCotizacion > 0 ? $idCotizacion : null
+    );
+
+    twiml_message_and_save(
+        $from,
+        "¡Agenda confirmada! ✅\n\n"
+        . "Fecha: " . wa_formatear_fecha_chat($fecha) . "\n"
+        . "Hora: " . substr($hora, 0, 5) . "\n\n"
+        . "Te esperamos en Av. de las Américas 7868."
     );
 }
 

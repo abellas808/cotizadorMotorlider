@@ -73,60 +73,8 @@ if (($elemento['familia'] ?? '') == 'otro') {
 <?php require_once('sistema_pre_contenido.php'); ?>
 
 <style>
-	.modal-cotizacion-overlay {
-		display: none;
-		position: fixed;
-		inset: 0;
-		background: rgba(0,0,0,.45);
-		z-index: 9998;
-	}
-
-	.modal-cotizacion {
-		display: none;
-		position: fixed;
-		top: 8%;
-		left: 50%;
-		transform: translateX(-50%);
-		width: 640px;
-		max-width: 92%;
-		background: #fff;
-		border: 1px solid #d9d9d9;
-		border-radius: 8px;
-		box-shadow: 0 8px 30px rgba(0,0,0,.18);
-		z-index: 9999;
-		padding: 18px;
-	}
-
-	.modal-cotizacion h4 {
-		margin: 0 0 14px 0;
-	}
-
-	.modal-cotizacion .fila {
-		margin-bottom: 12px;
-	}
-
-	.modal-cotizacion input[type="text"],
-	.modal-cotizacion textarea {
-		width: 100%;
-		box-sizing: border-box;
-	}
-
-	.modal-cotizacion textarea {
-		min-height: 160px;
-		resize: vertical;
-	}
-
-	.modal-cotizacion .acciones {
-		margin-top: 14px;
-		display: flex;
-		gap: 8px;
-		align-items: center;
-		flex-wrap: wrap;
-	}
-
 	.estado-pendiente { color: #c09853; }
 	.estado-finalizada { color: #468847; }
-	#envio_feedback { font-weight: bold; }
 
 	.cot-card {
 		background: #fff;
@@ -345,6 +293,13 @@ if (($elemento['familia'] ?? '') == 'otro') {
 				<span class="cot-feedback" id="tasacion_feedback"></span>
 			</div>
 
+			<div class="cot-edit-actions" style="margin-top:10px;">
+				<button type="button" class="btn btn-success" id="btn_enviar_whatsapp" onclick="enviarRespuestaWhatsapp();">
+					Enviar respuesta WhatsApp
+				</button>
+				<span class="cot-feedback" id="whatsapp_feedback"></span>
+			</div>
+
 			<?php if ($usuario_cotizo && !empty($usuario_cotizo['email'])): ?>
 			<div class="cot-item" style="margin-top:12px;">
 				<div class="cot-label">Email usuario</div>
@@ -375,51 +330,10 @@ if (($elemento['familia'] ?? '') == 'otro') {
 	</div>
 </div>
 
-<?php if (($elemento['estado'] ?? '') == 'PENDIENTE'): ?>
-<div class="row" style="margin-top:15px;">
-	<div class="span8">
-		<button type="button" class="btn btn-success" onclick="abrirEnviarCotizacion();">Enviar cotización</button>
-	</div>
-</div>
-<?php endif; ?>
-
-<div class="modal-cotizacion-overlay" id="modal_enviar_overlay" onclick="cerrarEnviarCotizacion();"></div>
-
-<div class="modal-cotizacion" id="modal_enviar">
-	<h4>Enviar cotización</h4>
-
-	<div class="fila">
-		<label for="email_envio"><strong>Email del cliente</strong></label>
-		<input type="text" id="email_envio" value="<?php echo htmlspecialchars((string)$elemento['email']); ?>">
-	</div>
-
-	<div class="fila">
-		<label for="mensaje_envio"><strong>Mensaje a enviar</strong></label>
-		<textarea id="mensaje_envio"><?php echo htmlspecialchars(strip_tags((string)$elemento['msg'])); ?></textarea>
-	</div>
-
-	<div class="acciones">
-		<button type="button" class="btn btn-success" id="btn_confirmar_envio" onclick="enviarCotizacionManual();">Enviar</button>
-		<button type="button" class="btn" onclick="cerrarEnviarCotizacion();">Cancelar</button>
-		<span id="envio_feedback"></span>
-	</div>
-</div>
-
 <script>
 var pretasacionDesdeOriginal = document.getElementById('pretasacion_desde').value;
 var pretasacionHastaOriginal = document.getElementById('pretasacion_hasta').value;
 var tasacionFinalOriginal = document.getElementById('tasacion_final').value;
-
-function abrirEnviarCotizacion() {
-	document.getElementById('modal_enviar_overlay').style.display = 'block';
-	document.getElementById('modal_enviar').style.display = 'block';
-	document.getElementById('envio_feedback').innerHTML = '';
-}
-
-function cerrarEnviarCotizacion() {
-	document.getElementById('modal_enviar_overlay').style.display = 'none';
-	document.getElementById('modal_enviar').style.display = 'none';
-}
 
 function habilitarEdicionTasacion() {
 	document.getElementById('pretasacion_desde').disabled = false;
@@ -456,9 +370,9 @@ function guardarTasacionInterna() {
 	var feedback = document.getElementById('tasacion_feedback');
 	var btn = document.getElementById('btn_guardar_tasacion');
 
-	if (!pretasacion_desde.trim() || !pretasacion_hasta.trim() || !tasacion_final.trim()) {
+	if (!pretasacion_desde.trim() || !pretasacion_hasta.trim()) {
 		feedback.style.color = '#b94a48';
-		feedback.innerHTML = 'Completá todos los campos.';
+		feedback.innerHTML = 'Completá pre tasación desde y hasta.';
 		return;
 	}
 
@@ -517,21 +431,21 @@ function guardarTasacionInterna() {
 	);
 }
 
-function enviarCotizacionManual() {
-	var email = document.getElementById('email_envio').value || '';
-	var mensaje = document.getElementById('mensaje_envio').value || '';
-	var btn = document.getElementById('btn_confirmar_envio');
-	var feedback = document.getElementById('envio_feedback');
+function enviarRespuestaWhatsapp() {
+	var pretasacion_desde = document.getElementById('pretasacion_desde').value || '';
+	var pretasacion_hasta = document.getElementById('pretasacion_hasta').value || '';
+	var feedback = document.getElementById('whatsapp_feedback');
+	var btn = document.getElementById('btn_enviar_whatsapp');
 
-	if (!email.trim()) {
+	if (!pretasacion_desde.trim() || !pretasacion_hasta.trim()) {
 		feedback.style.color = '#b94a48';
-		feedback.innerHTML = 'Ingresá un email válido.';
+		feedback.innerHTML = 'Para enviar, completá pre tasación desde y hasta.';
 		return;
 	}
 
 	btn.disabled = true;
 	feedback.style.color = '#666';
-	feedback.innerHTML = 'Enviando...';
+	feedback.innerHTML = 'Enviando WhatsApp...';
 
 	var xhr = new XMLHttpRequest();
 	xhr.open('POST', '/adm/modulos/cot/ajax_enviar_cotizacion.php', true);
@@ -553,10 +467,10 @@ function enviarCotizacionManual() {
 
 			if (res.ok) {
 				feedback.style.color = '#468847';
-				feedback.innerHTML = 'Cotización enviada correctamente.';
+				feedback.innerHTML = res.mensaje ? res.mensaje : 'Respuesta enviada correctamente.';
 				setTimeout(function() {
 					window.location.reload();
-				}, 700);
+				}, 900);
 			} else {
 				feedback.style.color = '#b94a48';
 				feedback.innerHTML = res.mensaje ? res.mensaje : 'No se pudo enviar.';
@@ -569,8 +483,8 @@ function enviarCotizacionManual() {
 
 	xhr.send(
 		'id=<?php echo intval($id); ?>' +
-		'&email=' + encodeURIComponent(email) +
-		'&mensaje=' + encodeURIComponent(mensaje)
+		'&pretasacion_desde=' + encodeURIComponent(pretasacion_desde) +
+		'&pretasacion_hasta=' + encodeURIComponent(pretasacion_hasta)
 	);
 }
 </script>
