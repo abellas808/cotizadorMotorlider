@@ -414,110 +414,6 @@ function wa_registrar_input_no_match_safe(array $data): void
     }
 }
 
-
-function wa_finalizar_cotizacion_desde_estado(string $from, string $profileName, array $userState, string $valor): void
-{
-    $marca = trim((string)($userState['marca'] ?? ''));
-    $modelo = trim((string)($userState['modelo'] ?? ''));
-    $anio = trim((string)($userState['anio'] ?? ''));
-    $km = trim((string)($userState['km'] ?? ''));
-    $version = trim((string)($userState['version'] ?? ''));
-    $ficha = trim((string)($userState['ficha_oficial'] ?? ''));
-    $tipoVenta = trim((string)($userState['tipo_venta'] ?? ''));
-
-    $idMarca = (int)($userState['id_marca'] ?? 0);
-    $idModel = (int)($userState['id_model'] ?? 0);
-    $idVersion = (int)($userState['id_version'] ?? 0);
-
-    $emailSistema = 'abella.motorlider@gmail.com';
-
-    $estadoFinalData = [
-        'step' => 'pendiente_humano',
-        'marca' => $marca,
-        'id_marca' => $idMarca > 0 ? $idMarca : null,
-        'modelo' => $modelo,
-        'id_model' => $idModel > 0 ? $idModel : null,
-        'id_version' => $idVersion > 0 ? $idVersion : null,
-        'anio' => $anio,
-        'km' => $km,
-        'version' => $version,
-        'ficha_oficial' => $ficha,
-        'tipo_venta' => $tipoVenta,
-        'valor_pretendido' => $valor,
-        'email' => $emailSistema
-    ];
-
-    wa_log('FLOW_COMPLETED_SIN_EMAIL', [
-        'from' => $from,
-        'data' => $estadoFinalData
-    ]);
-
-    if ($idMarca > 0 && $idModel > 0) {
-        $brandUrl = (string)$idMarca;
-
-        $apiPayload = [
-            'id_marca' => $idMarca,
-            'id_model' => $idModel,
-            'id_modelo' => $idModel,
-            'id_version' => $idVersion > 0 ? $idVersion : null,
-            'modelo' => $idModel,
-            'marca' => $marca,
-            'modelo_nombre' => $modelo,
-            'version' => $version,
-            'anio' => $anio,
-            'km' => $km,
-            'ficha_tecnica' => ($ficha === 'si') ? 1 : 0,
-            'cantidad_duenios' => 1,
-            'valor_pretendido' => $valor,
-            'venta_permuta' => ($tipoVenta === 'entrega_forma_pago') ? 1 : 0,
-            'nombre_auto' => trim($marca . ' ' . $modelo . ' ' . $anio . ' ' . $version),
-            'nombre' => $profileName !== '' ? $profileName : 'Cliente WhatsApp',
-            'email' => $emailSistema,
-            'telefono' => $from
-        ];
-
-        wa_log('PAYLOAD_FINAL_COTIZADOR', [
-            'brand_url' => $brandUrl,
-            'payload' => $apiPayload
-        ]);
-
-        $apiResult = cotizar_api($brandUrl, $apiPayload);
-
-        $estadoFinalData['api_result'] = $apiResult;
-        $estadoFinalData['step'] = 'pendiente_humano';
-
-        $idCotizacion = $apiResult['id_cotizacion']
-            ?? $apiResult['cotizacion']
-            ?? $apiResult['cotizacion_id']
-            ?? null;
-
-        wa_set_user_state(
-            $from,
-            $estadoFinalData,
-            'PENDIENTE_RESPUESTA_HUMANA',
-            'HUMANO',
-            $profileName !== '' ? $profileName : null,
-            $emailSistema,
-            $idCotizacion
-        );
-
-        twiml_message_and_save($from, wa_build_mensaje_post_email($idCotizacion));
-    }
-
-    wa_set_user_state(
-        $from,
-        $estadoFinalData,
-        'PENDIENTE_RESPUESTA_HUMANA',
-        'HUMANO',
-        $profileName !== '' ? $profileName : null,
-        $emailSistema,
-        null
-    );
-
-    twiml_message_and_save($from, wa_build_mensaje_post_email(null));
-}
-
-
 // =========================
 // CONVERSACIONES DB
 // =========================
@@ -648,6 +544,7 @@ function wa_step_to_estado(string $step): string
         'ficha_oficial'              => 'ESPERANDO_FICHA_OFICIAL',
         'tipo_venta'                 => 'ESPERANDO_TIPO_VENTA',
         'valor_pretendido'           => 'ESPERANDO_VALOR_PRETENDIDO',
+        'email'                      => 'ESPERANDO_EMAIL',
 
         'agenda_dia'                 => 'ESPERANDO_FECHA',
         'agenda_hora'                => 'ESPERANDO_HORA',
@@ -803,8 +700,25 @@ function wa_marcar_confirmacion_agenda(int $idAgenda, string $estado, ?string $m
 {
     $cn = wa_db();
     $fecha = date('Y-m-d H:i:s');
+    $estado = strtoupper(trim($estado));
 
-    if ($estado === 'NO') {
+    if ($estado === 'SI') {
+        $estadoDb = 'CONFIRMADO';
+
+        $sql = "UPDATE agendas
+                SET confirmacion_asistencia = ?,
+                    fecha_confirmacion_asistencia = ?
+                WHERE id_agenda = ?";
+        $st = $cn->prepare($sql);
+
+        if (!$st) {
+            throw new RuntimeException('Error prepare wa_marcar_confirmacion_agenda(SI): ' . $cn->error);
+        }
+
+        $st->bind_param('ssi', $estadoDb, $fecha, $idAgenda);
+    } elseif ($estado === 'NO') {
+        $estadoDb = 'CANCELADO';
+
         $sql = "UPDATE agendas
                 SET confirmacion_asistencia = ?,
                     fecha_confirmacion_asistencia = ?,
@@ -819,19 +733,9 @@ function wa_marcar_confirmacion_agenda(int $idAgenda, string $estado, ?string $m
         }
 
         $motivo = $motivoCancelacion ?? 'Cancelada por cliente vía WhatsApp';
-        $st->bind_param('ssssi', $estado, $fecha, $motivo, $fecha, $idAgenda);
+        $st->bind_param('ssssi', $estadoDb, $fecha, $motivo, $fecha, $idAgenda);
     } else {
-        $sql = "UPDATE agendas
-                SET confirmacion_asistencia = ?,
-                    fecha_confirmacion_asistencia = ?
-                WHERE id_agenda = ?";
-        $st = $cn->prepare($sql);
-
-        if (!$st) {
-            throw new RuntimeException('Error prepare wa_marcar_confirmacion_agenda: ' . $cn->error);
-        }
-
-        $st->bind_param('ssi', $estado, $fecha, $idAgenda);
+        throw new RuntimeException('Estado de confirmación inválido: ' . $estado);
     }
 
     $ok = $st->execute();
@@ -1437,6 +1341,86 @@ $userState = wa_get_user_data($from);
 $currentConv = wa_get_conversation($from);
 $currentEstado = (string)($currentConv['estado'] ?? 'INICIO');
 
+
+// =========================
+// CONFIRMACION DE AGENDA PENDIENTE (GLOBAL)
+// =========================
+try {
+    $agendaPendienteConfirmacionGlobal = wa_obtener_agenda_pendiente_confirmacion($from);
+} catch (Throwable $e) {
+    wa_log('AGENDA_CONFIRMACION_LOOKUP_ERROR_GLOBAL', [
+        'from' => $from,
+        'error' => $e->getMessage()
+    ]);
+    $agendaPendienteConfirmacionGlobal = null;
+}
+
+if ($agendaPendienteConfirmacionGlobal !== null) {
+    if (wa_respuesta_es_si($body)) {
+        try {
+            wa_marcar_confirmacion_agenda((int)$agendaPendienteConfirmacionGlobal['id_agenda'], 'SI');
+        } catch (Throwable $e) {
+            wa_log('AGENDA_CONFIRMACION_UPDATE_ERROR_GLOBAL', [
+                'from' => $from,
+                'id_agenda' => (int)$agendaPendienteConfirmacionGlobal['id_agenda'],
+                'estado' => 'SI',
+                'error' => $e->getMessage()
+            ]);
+            twiml_message_and_save(
+                $from,
+                "Ocurrió un problema confirmando tu agenda. Un asesor lo revisará a la brevedad."
+            );
+        }
+
+        wa_log('AGENDA_CONFIRMADA_POR_CLIENTE_GLOBAL', [
+            'from' => $from,
+            'id_agenda' => (int)$agendaPendienteConfirmacionGlobal['id_agenda']
+        ]);
+
+        twiml_message_and_save(
+            $from,
+            "Perfecto 👍\n\nTu agenda quedó confirmada para el "
+            . wa_formatear_fecha_chat((string)$agendaPendienteConfirmacionGlobal['fecha'])
+            . " a las " . substr((string)$agendaPendienteConfirmacionGlobal['hora'], 0, 5)
+            . ".\n\nTe estaremos enviando un recordatorio antes de la inspección."
+        );
+    }
+
+    if (wa_respuesta_es_no($body) || wa_es_cancelar_agenda($body)) {
+        try {
+            wa_marcar_confirmacion_agenda(
+                (int)$agendaPendienteConfirmacionGlobal['id_agenda'],
+                'NO',
+                'Cancelada por cliente vía WhatsApp'
+            );
+        } catch (Throwable $e) {
+            wa_log('AGENDA_CANCELACION_UPDATE_ERROR_GLOBAL', [
+                'from' => $from,
+                'id_agenda' => (int)$agendaPendienteConfirmacionGlobal['id_agenda'],
+                'estado' => 'NO',
+                'error' => $e->getMessage()
+            ]);
+            twiml_message_and_save(
+                $from,
+                "Ocurrió un problema cancelando tu agenda. Un asesor lo revisará a la brevedad."
+            );
+        }
+
+        wa_log('AGENDA_CANCELADA_POR_CLIENTE_GLOBAL', [
+            'from' => $from,
+            'id_agenda' => (int)$agendaPendienteConfirmacionGlobal['id_agenda']
+        ]);
+
+        twiml_message_and_save(
+            $from,
+            "Perfecto. Tu agenda del "
+            . wa_formatear_fecha_chat((string)$agendaPendienteConfirmacionGlobal['fecha'])
+            . " a las " . substr((string)$agendaPendienteConfirmacionGlobal['hora'], 0, 5)
+            . " fue cancelada.\n\nSi querés coordinar una nueva fecha, respondé AGENDAR."
+        );
+    }
+}
+
 // =========================
 // COMANDOS GLOBALES
 // =========================
@@ -1584,7 +1568,7 @@ if (in_array($currentEstado, ['PENDIENTE_RESPUESTA_HUMANA', 'HUMANO_EN_CONVERSAC
 
         $opciones = [];
         $lineas = [];
-        $max = min(7, count($disp['availability']));
+        $max = min(5, count($disp['availability']));
 
         for ($i = 0; $i < $max; $i++) {
             $nro = (string)($i + 1);
@@ -2560,8 +2544,8 @@ if (($userState['step'] ?? '') === 'valor_pretendido') {
     $ficha = trim((string)($userState['ficha_oficial'] ?? ''));
     $tipoVenta = trim((string)($userState['tipo_venta'] ?? ''));
 
-    $nuevoEstado = [
-        'step' => 'pendiente_humano',
+    wa_set_user_state($from, [
+        'step' => 'email',
         'marca' => $marca,
         'id_marca' => $userState['id_marca'] ?? null,
         'modelo' => $modelo,
@@ -2573,41 +2557,123 @@ if (($userState['step'] ?? '') === 'valor_pretendido') {
         'ficha_oficial' => $ficha,
         'tipo_venta' => $tipoVenta,
         'valor_pretendido' => $valor
-    ];
+    ], 'ESPERANDO_EMAIL', 'BOT', $profileName !== '' ? $profileName : null);
 
-    wa_set_user_state(
+    twiml_message_and_save(
         $from,
-        $nuevoEstado,
-        'PENDIENTE_RESPUESTA_HUMANA',
-        'HUMANO',
-        $profileName !== '' ? $profileName : null
+        "Perfecto 👍\n\n"
+        . "Valor pretendido: USD {$valor}\n\n"
+        . "Por último, escribime tu EMAIL."
     );
-
-    wa_finalizar_cotizacion_desde_estado($from, $profileName, $nuevoEstado, $valor);
 }
 
 // =========================
-// PASO: EMAIL (compatibilidad conversaciones viejas)
+// PASO: EMAIL
 // =========================
 if (($userState['step'] ?? '') === 'email') {
-    $valor = trim((string)($userState['valor_pretendido'] ?? ''));
+    $email = trim($body);
 
-    if ($valor === '') {
-        wa_set_user_state(
-            $from,
-            ['step' => null],
-            'INICIO',
-            'BOT',
-            $profileName !== '' ? $profileName : null
-        );
-
-        twiml_message_and_save(
-            $from,
-            "Se perdió el estado de la cotización.\n\nEscribí COTIZAR para comenzar nuevamente."
-        );
+    if (!is_valid_email_simple($email)) {
+        twiml_message_and_save($from, "El email no parece válido. Escribilo nuevamente. Ejemplo: cliente@email.com");
     }
 
-    wa_finalizar_cotizacion_desde_estado($from, $profileName, $userState, $valor);
+    $marca = trim((string)($userState['marca'] ?? ''));
+    $modelo = trim((string)($userState['modelo'] ?? ''));
+    $anio = trim((string)($userState['anio'] ?? ''));
+    $km = trim((string)($userState['km'] ?? ''));
+    $version = trim((string)($userState['version'] ?? ''));
+    $ficha = trim((string)($userState['ficha_oficial'] ?? ''));
+    $tipoVenta = trim((string)($userState['tipo_venta'] ?? ''));
+    $valor = trim((string)($userState['valor_pretendido'] ?? ''));
+
+    $idMarca = (int)($userState['id_marca'] ?? 0);
+    $idModel = (int)($userState['id_model'] ?? 0);
+    $idVersion = (int)($userState['id_version'] ?? 0);
+
+    $estadoFinalData = [
+        'step' => 'pendiente_humano',
+        'marca' => $marca,
+        'id_marca' => $idMarca > 0 ? $idMarca : null,
+        'modelo' => $modelo,
+        'id_model' => $idModel > 0 ? $idModel : null,
+        'id_version' => $idVersion > 0 ? $idVersion : null,
+        'anio' => $anio,
+        'km' => $km,
+        'version' => $version,
+        'ficha_oficial' => $ficha,
+        'tipo_venta' => $tipoVenta,
+        'valor_pretendido' => $valor,
+        'email' => $email
+    ];
+
+    wa_log('FLOW_COMPLETED_EMAIL', [
+        'from' => $from,
+        'data' => $estadoFinalData
+    ]);
+
+    if ($idMarca > 0 && $idModel > 0) {
+        $brandUrl = (string)$idMarca;
+
+        $apiPayload = [
+            'id_marca' => $idMarca,
+            'id_model' => $idModel,
+            'id_modelo' => $idModel,
+            'id_version' => $idVersion > 0 ? $idVersion : null,
+            'modelo' => $idModel,
+            'marca' => $marca,
+            'modelo_nombre' => $modelo,
+            'version' => $version,
+            'anio' => $anio,
+            'km' => $km,
+            'ficha_tecnica' => ($ficha === 'si') ? 1 : 0,
+            'cantidad_duenios' => 1,
+            'valor_pretendido' => $valor,
+            'venta_permuta' => ($tipoVenta === 'entrega_forma_pago') ? 1 : 0,
+            'nombre_auto' => trim($marca . ' ' . $modelo . ' ' . $anio . ' ' . $version),
+            'nombre' => $profileName !== '' ? $profileName : 'Cliente WhatsApp',
+            'email' => $email,
+            'telefono' => $from
+        ];
+
+        wa_log('PAYLOAD_FINAL_COTIZADOR', [
+            'brand_url' => $brandUrl,
+            'payload' => $apiPayload
+        ]);
+
+        $apiResult = cotizar_api($brandUrl, $apiPayload);
+
+        $estadoFinalData['api_result'] = $apiResult;
+        $estadoFinalData['step'] = 'pendiente_humano';
+
+        $idCotizacion = $apiResult['id_cotizacion']
+            ?? $apiResult['cotizacion']
+            ?? $apiResult['cotizacion_id']
+            ?? null;
+
+        wa_set_user_state(
+            $from,
+            $estadoFinalData,
+            'PENDIENTE_RESPUESTA_HUMANA',
+            'HUMANO',
+            $profileName !== '' ? $profileName : null,
+            $email,
+            $idCotizacion
+        );
+
+        twiml_message_and_save($from, wa_build_mensaje_post_email($idCotizacion));
+    }
+
+    wa_set_user_state(
+        $from,
+        $estadoFinalData,
+        'PENDIENTE_RESPUESTA_HUMANA',
+        'HUMANO',
+        $profileName !== '' ? $profileName : null,
+        $email,
+        null
+    );
+
+    twiml_message_and_save($from, wa_build_mensaje_post_email(null));
 }
 
 // =========================
@@ -2742,7 +2808,7 @@ if (($userState['step'] ?? '') === 'agenda_hora') {
 
         $opciones = [];
         $lineas = [];
-        $max = min(7, count($disp['availability']));
+        $max = min(5, count($disp['availability']));
 
         for ($i = 0; $i < $max; $i++) {
             $nro = (string)($i + 1);
