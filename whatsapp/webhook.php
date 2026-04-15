@@ -307,7 +307,6 @@ function wa_db(): mysqli
     return $cn;
 }
 
-
 function wa_registrar_input_no_match(array $data): void
 {
     $cn = wa_db();
@@ -316,17 +315,21 @@ function wa_registrar_input_no_match(array $data): void
             (
                 telefono,
                 nombre_cliente,
+                tipo_input,
+                valor_input,
                 marca_input,
                 modelo_input,
                 version_input,
-                anio_input,
-                mensaje_original,
-                hash_input,
-                fecha,
+                id_marca_ref,
+                id_modelo_ref,
+                step_origen,
+                mensaje_cliente,
+                message_sid,
                 procesado,
-                observaciones
+                observaciones,
+                fecha_alta
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), 0, NULL)";
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NOW())";
 
     $st = $cn->prepare($sql);
 
@@ -336,45 +339,47 @@ function wa_registrar_input_no_match(array $data): void
 
     $telefono      = (string)($data['telefono'] ?? '');
     $nombreCliente = (string)($data['nombre_cliente'] ?? '');
-    $marcaInput    = trim((string)($data['marca_input'] ?? ''));
-    $modeloInput   = trim((string)($data['modelo_input'] ?? ''));
-    $versionInput  = trim((string)($data['version_input'] ?? ''));
-    $anioInput     = trim((string)($data['anio_input'] ?? ''));
-    $mensaje       = (string)($data['mensaje_original'] ?? '');
-
-    $hashBase = wa_normalizar_texto($marcaInput . '|' . $modeloInput . '|' . $versionInput . '|' . $anioInput);
-    $hashInput = md5($hashBase);
+    $tipoInput     = (string)($data['tipo_input'] ?? '');
+    $valorInput    = (string)($data['valor_input'] ?? '');
+    $marcaInput    = (string)($data['marca_input'] ?? '');
+    $modeloInput   = (string)($data['modelo_input'] ?? '');
+    $versionInput  = (string)($data['version_input'] ?? '');
+    $idMarcaRef    = isset($data['id_marca_ref']) ? (int)$data['id_marca_ref'] : null;
+    $idModeloRef   = isset($data['id_modelo_ref']) ? (int)$data['id_modelo_ref'] : null;
+    $stepOrigen    = (string)($data['step_origen'] ?? '');
+    $mensaje       = (string)($data['mensaje_cliente'] ?? '');
+    $messageSid    = (string)($data['message_sid'] ?? '');
 
     $st->bind_param(
-        'ssssssss',
+        'sssssssiisss',
         $telefono,
         $nombreCliente,
+        $tipoInput,
+        $valorInput,
         $marcaInput,
         $modeloInput,
         $versionInput,
-        $anioInput,
+        $idMarcaRef,
+        $idModeloRef,
+        $stepOrigen,
         $mensaje,
-        $hashInput
+        $messageSid
     );
 
-    if (!$st->execute()) {
-        $err = $st->error;
-        $st->close();
-        $cn->close();
-        throw new RuntimeException('Error execute wa_registrar_input_no_match: ' . $err);
-    }
-
+    $st->execute();
     $st->close();
     $cn->close();
 
     wa_log('INPUT_NO_MATCH_GUARDADO', [
         'telefono' => $telefono,
-        'nombre_cliente' => $nombreCliente,
+        'tipo_input' => $tipoInput,
+        'valor_input' => $valorInput,
         'marca_input' => $marcaInput,
         'modelo_input' => $modeloInput,
         'version_input' => $versionInput,
-        'anio_input' => $anioInput,
-        'hash_input' => $hashInput
+        'id_marca_ref' => $idMarcaRef,
+        'id_modelo_ref' => $idModeloRef,
+        'step_origen' => $stepOrigen
     ]);
 }
 
@@ -384,11 +389,13 @@ function wa_registrar_input_no_match_safe(array $data): void
 
     $key = md5(json_encode([
         $data['telefono'] ?? '',
-        wa_normalizar_texto((string)($data['marca_input'] ?? '')),
-        wa_normalizar_texto((string)($data['modelo_input'] ?? '')),
-        wa_normalizar_texto((string)($data['version_input'] ?? '')),
-        (string)($data['anio_input'] ?? ''),
-        wa_normalizar_texto((string)($data['mensaje_original'] ?? ''))
+        $data['tipo_input'] ?? '',
+        $data['valor_input'] ?? '',
+        $data['marca_input'] ?? '',
+        $data['modelo_input'] ?? '',
+        $data['version_input'] ?? '',
+        $data['step_origen'] ?? '',
+        $data['message_sid'] ?? ''
     ], JSON_UNESCAPED_UNICODE));
 
     if (isset($registrados[$key])) {
@@ -407,6 +414,7 @@ function wa_registrar_input_no_match_safe(array $data): void
     }
 }
 
+
 function wa_finalizar_cotizacion_desde_estado(string $from, string $profileName, array $userState, string $valor): void
 {
     $marca = trim((string)($userState['marca'] ?? ''));
@@ -421,6 +429,8 @@ function wa_finalizar_cotizacion_desde_estado(string $from, string $profileName,
     $idModel = (int)($userState['id_model'] ?? 0);
     $idVersion = (int)($userState['id_version'] ?? 0);
 
+    $emailSistema = 'abella.motorlider@gmail.com';
+
     $estadoFinalData = [
         'step' => 'pendiente_humano',
         'marca' => $marca,
@@ -433,7 +443,8 @@ function wa_finalizar_cotizacion_desde_estado(string $from, string $profileName,
         'version' => $version,
         'ficha_oficial' => $ficha,
         'tipo_venta' => $tipoVenta,
-        'valor_pretendido' => $valor
+        'valor_pretendido' => $valor,
+        'email' => $emailSistema
     ];
 
     wa_log('FLOW_COMPLETED_SIN_EMAIL', [
@@ -461,7 +472,7 @@ function wa_finalizar_cotizacion_desde_estado(string $from, string $profileName,
             'venta_permuta' => ($tipoVenta === 'entrega_forma_pago') ? 1 : 0,
             'nombre_auto' => trim($marca . ' ' . $modelo . ' ' . $anio . ' ' . $version),
             'nombre' => $profileName !== '' ? $profileName : 'Cliente WhatsApp',
-            'email' => 'abella.motorlider@gmail.com',
+            'email' => $emailSistema,
             'telefono' => $from
         ];
 
@@ -486,7 +497,7 @@ function wa_finalizar_cotizacion_desde_estado(string $from, string $profileName,
             'PENDIENTE_RESPUESTA_HUMANA',
             'HUMANO',
             $profileName !== '' ? $profileName : null,
-            null,
+            $emailSistema,
             $idCotizacion
         );
 
@@ -499,12 +510,13 @@ function wa_finalizar_cotizacion_desde_estado(string $from, string $profileName,
         'PENDIENTE_RESPUESTA_HUMANA',
         'HUMANO',
         $profileName !== '' ? $profileName : null,
-        null,
+        $emailSistema,
         null
     );
 
     twiml_message_and_save($from, wa_build_mensaje_post_email(null));
 }
+
 
 // =========================
 // CONVERSACIONES DB
@@ -750,6 +762,91 @@ function wa_get_parametro_sistema(string $grupo, string $clave): ?string
     $cn->close();
 
     return $row ? (string)$row['valor'] : null;
+}
+
+
+
+function wa_obtener_agenda_pendiente_confirmacion(string $telefono): ?array
+{
+    $cn = wa_db();
+
+    $sql = "SELECT *
+            FROM agendas
+            WHERE telefono = ?
+              AND cancelado = 0
+              AND finalizada = 0
+              AND confirmacion_asistencia = 'PENDIENTE'
+              AND CONCAT(fecha, ' ', hora) >= NOW()
+            ORDER BY fecha ASC, hora ASC
+            LIMIT 1";
+
+    $st = $cn->prepare($sql);
+    if (!$st) {
+        throw new RuntimeException('Error prepare wa_obtener_agenda_pendiente_confirmacion: ' . $cn->error);
+    }
+
+    $st->bind_param('s', $telefono);
+    $st->execute();
+    $rs = $st->get_result();
+    $row = $rs ? $rs->fetch_assoc() : null;
+
+    if ($rs) {
+        $rs->free();
+    }
+    $st->close();
+    $cn->close();
+
+    return $row ?: null;
+}
+
+function wa_marcar_confirmacion_agenda(int $idAgenda, string $estado, ?string $motivoCancelacion = null): bool
+{
+    $cn = wa_db();
+    $fecha = date('Y-m-d H:i:s');
+
+    if ($estado === 'NO') {
+        $sql = "UPDATE agendas
+                SET confirmacion_asistencia = ?,
+                    fecha_confirmacion_asistencia = ?,
+                    cancelado = 1,
+                    motivo_cancelacion = ?,
+                    fecha_cancelacion = ?
+                WHERE id_agenda = ?";
+        $st = $cn->prepare($sql);
+
+        if (!$st) {
+            throw new RuntimeException('Error prepare wa_marcar_confirmacion_agenda(NO): ' . $cn->error);
+        }
+
+        $motivo = $motivoCancelacion ?? 'Cancelada por cliente vía WhatsApp';
+        $st->bind_param('ssssi', $estado, $fecha, $motivo, $fecha, $idAgenda);
+    } else {
+        $sql = "UPDATE agendas
+                SET confirmacion_asistencia = ?,
+                    fecha_confirmacion_asistencia = ?
+                WHERE id_agenda = ?";
+        $st = $cn->prepare($sql);
+
+        if (!$st) {
+            throw new RuntimeException('Error prepare wa_marcar_confirmacion_agenda: ' . $cn->error);
+        }
+
+        $st->bind_param('ssi', $estado, $fecha, $idAgenda);
+    }
+
+    $ok = $st->execute();
+
+    if (!$ok) {
+        $err = $st->error;
+        $st->close();
+        $cn->close();
+        throw new RuntimeException('Error execute wa_marcar_confirmacion_agenda: ' . $err);
+    }
+
+    $st->close();
+    $cn->close();
+
+    return true;
 }
 
 // =========================
@@ -1397,6 +1494,82 @@ if ($bodyNorm === 'cotizar') {
 // =========================
 if (in_array($currentEstado, ['PENDIENTE_RESPUESTA_HUMANA', 'HUMANO_EN_CONVERSACION'], true)) {
 
+    try {
+        $agendaPendienteConfirmacion = wa_obtener_agenda_pendiente_confirmacion($from);
+    } catch (Throwable $e) {
+        wa_log('AGENDA_CONFIRMACION_LOOKUP_ERROR', [
+            'from' => $from,
+            'error' => $e->getMessage()
+        ]);
+        $agendaPendienteConfirmacion = null;
+    }
+
+    if ($agendaPendienteConfirmacion !== null) {
+        if (wa_respuesta_es_si($body)) {
+            try {
+                wa_marcar_confirmacion_agenda((int)$agendaPendienteConfirmacion['id_agenda'], 'SI');
+            } catch (Throwable $e) {
+                wa_log('AGENDA_CONFIRMACION_UPDATE_ERROR', [
+                    'from' => $from,
+                    'id_agenda' => (int)$agendaPendienteConfirmacion['id_agenda'],
+                    'estado' => 'SI',
+                    'error' => $e->getMessage()
+                ]);
+                twiml_message_and_save(
+                    $from,
+                    "Ocurrió un problema confirmando tu agenda. Un asesor lo revisará a la brevedad."
+                );
+            }
+
+            wa_log('AGENDA_CONFIRMADA_POR_CLIENTE', [
+                'from' => $from,
+                'id_agenda' => (int)$agendaPendienteConfirmacion['id_agenda']
+            ]);
+
+            twiml_message_and_save(
+                $from,
+                "Perfecto 👍\n\nTu agenda quedó confirmada para el "
+                . wa_formatear_fecha_chat((string)$agendaPendienteConfirmacion['fecha'])
+                . " a las " . substr((string)$agendaPendienteConfirmacion['hora'], 0, 5)
+                . ".\n\nTe estaremos enviando un recordatorio antes de la inspección."
+            );
+        }
+
+        if (wa_respuesta_es_no($body) || wa_es_cancelar_agenda($body)) {
+            try {
+                wa_marcar_confirmacion_agenda(
+                    (int)$agendaPendienteConfirmacion['id_agenda'],
+                    'NO',
+                    'Cancelada por cliente vía WhatsApp'
+                );
+            } catch (Throwable $e) {
+                wa_log('AGENDA_CANCELACION_UPDATE_ERROR', [
+                    'from' => $from,
+                    'id_agenda' => (int)$agendaPendienteConfirmacion['id_agenda'],
+                    'estado' => 'NO',
+                    'error' => $e->getMessage()
+                ]);
+                twiml_message_and_save(
+                    $from,
+                    "Ocurrió un problema cancelando tu agenda. Un asesor lo revisará a la brevedad."
+                );
+            }
+
+            wa_log('AGENDA_CANCELADA_POR_CLIENTE', [
+                'from' => $from,
+                'id_agenda' => (int)$agendaPendienteConfirmacion['id_agenda']
+            ]);
+
+            twiml_message_and_save(
+                $from,
+                "Perfecto. Tu agenda del "
+                . wa_formatear_fecha_chat((string)$agendaPendienteConfirmacion['fecha'])
+                . " a las " . substr((string)$agendaPendienteConfirmacion['hora'], 0, 5)
+                . " fue cancelada.\n\nSi querés coordinar una nueva fecha, respondé AGENDAR."
+            );
+        }
+    }
+
     if (wa_es_agendar($body) || wa_respuesta_es_si($body)) {
         $location = wa_agenda_location_id();
         $disp = wa_obtener_disponibilidad_agenda($location);
@@ -1512,16 +1685,6 @@ if (($userState['step'] ?? '') === 'marca') {
         );
     }
 
-    wa_registrar_input_no_match_safe([
-        'telefono' => $from,
-        'nombre_cliente' => $profileName,
-        'marca_input' => $marcaIngresada,
-        'modelo_input' => '',
-        'version_input' => '',
-        'anio_input' => '',
-        'mensaje_original' => $body
-    ]);
-
     try {
         $sugerencias = wa_buscar_marcas_similares($marcaIngresada, 5);
     } catch (Throwable $e) {
@@ -1557,6 +1720,21 @@ if (($userState['step'] ?? '') === 'marca') {
             . "\n\nRespondé con el número o con el nombre correcto."
         );
     }
+
+    wa_registrar_input_no_match_safe([
+        'telefono' => $from,
+        'nombre_cliente' => $profileName,
+        'tipo_input' => 'marca',
+        'valor_input' => $marcaIngresada,
+        'marca_input' => $marcaIngresada,
+        'modelo_input' => '',
+        'version_input' => '',
+        'id_marca_ref' => null,
+        'id_modelo_ref' => null,
+        'step_origen' => 'marca',
+        'mensaje_cliente' => $body,
+        'message_sid' => $messageSid
+    ]);
 
     twiml_message_and_save($from, "No encontré esa marca.\n\nProbá escribiendo nuevamente el nombre de la marca.");
 }
@@ -1618,16 +1796,6 @@ if (($userState['step'] ?? '') === 'marca_sugerida') {
 
         twiml_message_and_save($from, "Perfecto 👍\n\nMarca: {$marcaFinal}\n\nAhora escribime el MODELO.");
     }
-
-    wa_registrar_input_no_match_safe([
-        'telefono' => $from,
-        'nombre_cliente' => $profileName,
-        'marca_input' => $respuesta,
-        'modelo_input' => '',
-        'version_input' => '',
-        'anio_input' => '',
-        'mensaje_original' => $body
-    ]);
 
     try {
         $nuevasSugerencias = wa_buscar_marcas_similares($respuesta, 5);
@@ -1716,16 +1884,6 @@ if (($userState['step'] ?? '') === 'modelo') {
         );
     }
 
-    wa_registrar_input_no_match_safe([
-        'telefono' => $from,
-        'nombre_cliente' => $profileName,
-        'marca_input' => $marca,
-        'modelo_input' => $modeloIngresado,
-        'version_input' => '',
-        'anio_input' => '',
-        'mensaje_original' => $body
-    ]);
-
     try {
         $sugerencias = wa_buscar_modelos_similares($idMarca, $modeloIngresado, 5);
     } catch (Throwable $e) {
@@ -1764,6 +1922,21 @@ if (($userState['step'] ?? '') === 'modelo') {
             . "\n\nRespondé con el número o con el nombre correcto."
         );
     }
+
+    wa_registrar_input_no_match_safe([
+        'telefono' => $from,
+        'nombre_cliente' => $profileName,
+        'tipo_input' => 'modelo',
+        'valor_input' => $modeloIngresado,
+        'marca_input' => $marca,
+        'modelo_input' => $modeloIngresado,
+        'version_input' => '',
+        'id_marca_ref' => $idMarca > 0 ? $idMarca : null,
+        'id_modelo_ref' => null,
+        'step_origen' => 'modelo',
+        'mensaje_cliente' => $body,
+        'message_sid' => $messageSid
+    ]);
 
     twiml_message_and_save($from, "No encontré ese modelo para {$marca}.\n\nProbá escribiendo nuevamente el nombre del modelo.");
 }
@@ -1810,94 +1983,31 @@ if (($userState['step'] ?? '') === 'modelo_sugerido') {
         }
     }
 
-    try {
-        $modeloExacto = wa_buscar_modelo_exacto($idMarca, $respuesta);
-    } catch (Throwable $e) {
-        wa_log('MODELO_REBUSQUEDA_DB_EXCEPTION', [
-            'error' => $e->getMessage(),
-            'id_marca' => $idMarca,
-            'respuesta' => $respuesta
-        ]);
-        twiml_message_and_save($from, "Ocurrió un problema consultando el catálogo de modelos. Probá nuevamente en unos instantes.");
-    }
-
-    if ($modeloExacto !== null) {
-        $modeloFinal = $modeloExacto['nombre'];
-
-        wa_set_user_state($from, [
-            'step' => 'anio',
-            'marca' => $marca,
-            'id_marca' => $idMarca,
-            'modelo' => $modeloFinal,
-            'id_model' => $modeloExacto['id_model']
-        ], 'ESPERANDO_ANIO', 'BOT', $profileName !== '' ? $profileName : null);
-
-        twiml_message_and_save($from, "Excelente 👍\n\nMarca: {$marca}\nModelo: {$modeloFinal}\n\nAhora escribime el AÑO del vehículo. Ejemplo: 2021");
+    $opcionesTexto = [];
+    foreach ($opciones as $nro => $op) {
+        $opcionesTexto[] = $nro . '. ' . $op['nombre'];
     }
 
     wa_registrar_input_no_match_safe([
         'telefono' => $from,
         'nombre_cliente' => $profileName,
+        'tipo_input' => 'modelo',
+        'valor_input' => $respuesta,
         'marca_input' => $marca,
         'modelo_input' => $respuesta,
         'version_input' => '',
-        'anio_input' => '',
-        'mensaje_original' => $body
+        'id_marca_ref' => $idMarca > 0 ? $idMarca : null,
+        'id_modelo_ref' => null,
+        'step_origen' => 'modelo_sugerido',
+        'mensaje_cliente' => $body,
+        'message_sid' => $messageSid
     ]);
-
-    try {
-        $nuevasSugerencias = wa_buscar_modelos_similares($idMarca, $respuesta, 5);
-    } catch (Throwable $e) {
-        wa_log('MODELO_REBUSQUEDA_SUGERENCIAS_DB_EXCEPTION', [
-            'error' => $e->getMessage(),
-            'id_marca' => $idMarca,
-            'respuesta' => $respuesta
-        ]);
-        twiml_message_and_save($from, "Ocurrió un problema consultando el catálogo de modelos. Probá nuevamente en unos instantes.");
-    }
-
-    if (!empty($nuevasSugerencias)) {
-        $opcionesTexto = [];
-        $opcionesEstado = [];
-
-        foreach ($nuevasSugerencias as $i => $op) {
-            $nro = $i + 1;
-            $opcionesTexto[] = $nro . '. ' . $op['nombre'];
-            $opcionesEstado[(string)$nro] = [
-                'id' => $op['id'],
-                'id_marca' => $op['id_marca'],
-                'id_model' => $op['id_model'],
-                'nombre' => $op['nombre']
-            ];
-        }
-
-        wa_set_user_state($from, [
-            'step' => 'modelo_sugerido',
-            'marca' => $marca,
-            'id_marca' => $idMarca,
-            'modelo_input' => $respuesta,
-            'modelo_opciones' => $opcionesEstado
-        ], 'ESPERANDO_MODELO', 'BOT', $profileName !== '' ? $profileName : null);
-
-        twiml_message_and_save(
-            $from,
-            "No encontré ese modelo exacto para {$marca}.\n\n"
-            . "Quizás quisiste decir:\n"
-            . implode("\n", $opcionesTexto)
-            . "\n\nRespondé con el número o con el nombre correcto."
-        );
-    }
-
-    wa_set_user_state($from, [
-        'step' => 'modelo',
-        'marca' => $marca,
-        'id_marca' => $idMarca
-    ], 'ESPERANDO_MODELO', 'BOT', $profileName !== '' ? $profileName : null);
 
     twiml_message_and_save(
         $from,
         "No entendí la opción elegida.\n\n"
-        . "Respondé con el número, con el nombre correcto o escribí nuevamente el modelo."
+        . "Respondé con el número o con uno de estos nombres:\n"
+        . implode("\n", $opcionesTexto)
     );
 }
 
@@ -2059,16 +2169,6 @@ if (($userState['step'] ?? '') === 'version') {
         twiml_message_and_save($from, "Perfecto 👍\n\nVersión: {$versionFinal}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
     }
 
-    wa_registrar_input_no_match_safe([
-        'telefono' => $from,
-        'nombre_cliente' => $profileName,
-        'marca_input' => $marca,
-        'modelo_input' => $modelo,
-        'version_input' => $versionIngresada,
-        'anio_input' => $anio,
-        'mensaje_original' => $body
-    ]);
-
     try {
         $sugerencias = wa_buscar_versiones_similares($idMarca, $idModel, $versionIngresada, 5);
     } catch (Throwable $e) {
@@ -2118,6 +2218,21 @@ if (($userState['step'] ?? '') === 'version') {
             'version_input' => $versionIngresada,
             'version_opciones' => $opcionesEstado
         ], 'ESPERANDO_VERSION', 'BOT', $profileName !== '' ? $profileName : null);
+
+        wa_registrar_input_no_match_safe([
+            'telefono' => $from,
+            'nombre_cliente' => $profileName,
+            'tipo_input' => 'version',
+            'valor_input' => $versionIngresada,
+            'marca_input' => $marca,
+            'modelo_input' => $modelo,
+            'version_input' => $versionIngresada,
+            'id_marca_ref' => $idMarca > 0 ? $idMarca : null,
+            'id_modelo_ref' => $idModel > 0 ? $idModel : null,
+            'step_origen' => 'version',
+            'mensaje_cliente' => $body,
+            'message_sid' => $messageSid
+        ]);
 
         twiml_message_and_save(
             $from,
@@ -2263,16 +2378,6 @@ if (($userState['step'] ?? '') === 'version_sugerida') {
         twiml_message_and_save($from, "Perfecto 👍\n\nVersión: {$versionFinal}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
     }
 
-    wa_registrar_input_no_match_safe([
-        'telefono' => $from,
-        'nombre_cliente' => $profileName,
-        'marca_input' => $marca,
-        'modelo_input' => $modelo,
-        'version_input' => $respuesta,
-        'anio_input' => $anio,
-        'mensaje_original' => $body
-    ]);
-
     try {
         $nuevasSugerencias = wa_buscar_versiones_similares($idMarca, $idModel, $respuesta, 5);
     } catch (Throwable $e) {
@@ -2297,6 +2402,21 @@ if (($userState['step'] ?? '') === 'version_sugerida') {
                 'nombre' => $op['nombre']
             ];
         }
+
+        wa_registrar_input_no_match_safe([
+            'telefono' => $from,
+            'nombre_cliente' => $profileName,
+            'tipo_input' => 'version',
+            'valor_input' => $respuesta,
+            'marca_input' => $marca,
+            'modelo_input' => $modelo,
+            'version_input' => $respuesta,
+            'id_marca_ref' => $idMarca > 0 ? $idMarca : null,
+            'id_modelo_ref' => $idModel > 0 ? $idModel : null,
+            'step_origen' => 'version_sugerida',
+            'mensaje_cliente' => $body,
+            'message_sid' => $messageSid
+        ]);
 
         wa_set_user_state($from, [
             'step' => 'version_sugerida',
@@ -2467,8 +2587,31 @@ if (($userState['step'] ?? '') === 'valor_pretendido') {
 }
 
 // =========================
-// AGENDA - DIA
+// PASO: EMAIL (compatibilidad conversaciones viejas)
+// =========================
+if (($userState['step'] ?? '') === 'email') {
+    $valor = trim((string)($userState['valor_pretendido'] ?? ''));
 
+    if ($valor === '') {
+        wa_set_user_state(
+            $from,
+            ['step' => null],
+            'INICIO',
+            'BOT',
+            $profileName !== '' ? $profileName : null
+        );
+
+        twiml_message_and_save(
+            $from,
+            "Se perdió el estado de la cotización.\n\nEscribí COTIZAR para comenzar nuevamente."
+        );
+    }
+
+    wa_finalizar_cotizacion_desde_estado($from, $profileName, $userState, $valor);
+}
+
+// =========================
+// AGENDA - DIA
 // =========================
 if (($userState['step'] ?? '') === 'agenda_dia') {
     $respuesta = trim($body);

@@ -8,7 +8,6 @@ header('Content-Type: application/json; charset=utf-8');
 
 /**
  * CONFIG TWILIO
- * Ajustar si cambia la cuenta o sender.
  */
 const TWILIO_ACCOUNT_SID    = 'AC4a648c5c55de9d9b1f1f6601b14d4c4d';
 const TWILIO_AUTH_TOKEN     = '58f767d26211d9d0c20ea687df00b4c3';
@@ -18,8 +17,12 @@ const TWILIO_API_URL_FORMAT = 'https://api.twilio.com/2010-04-01/Accounts/%s/Mes
 /**
  * SETTINGS DEL PROCESO
  */
-const RECORDATORIO_SEGUNDOS_ANTES = 10800; // 3 horas
+const SEGUNDOS_3_HORAS   = 10800;
+const SEGUNDOS_24_HORAS  = 86400;
+const SEGUNDOS_48_HORAS  = 172800;
+
 const TIPO_NOTIFICACION_RECORDATORIO_3H = 'recordatorio_3h';
+const TIPO_NOTIFICACION_CONFIRMACION_24H = 'confirmacion_24h';
 
 function logMensajeAutomatico(string $msg, array $extra = []): void
 {
@@ -28,6 +31,25 @@ function logMensajeAutomatico(string $msg, array $extra = []): void
         $line .= ' ' . json_encode($extra, JSON_UNESCAPED_UNICODE);
     }
     error_log($line . PHP_EOL, 3, __DIR__ . '/mensajes_automaticos.log');
+}
+
+function normalizarTelefonoWhatsapp(string $telefono): string
+{
+    $telefono = trim($telefono);
+
+    if ($telefono === '') {
+        return '';
+    }
+
+    if (stripos($telefono, 'whatsapp:') === 0) {
+        return $telefono;
+    }
+
+    if ($telefono[0] !== '+') {
+        $telefono = '+' . $telefono;
+    }
+
+    return 'whatsapp:' . $telefono;
 }
 
 function yaFueEnviado(mysqli $db, int $idAgenda, string $tipo): bool
@@ -112,26 +134,37 @@ function registrarEnvio(
     return $ok;
 }
 
-function normalizarTelefonoWhatsapp(string $telefono): string
+function actualizarConfirmacionAsistencia(mysqli $db, int $idAgenda, ?string $estado): bool
 {
-    $telefono = trim($telefono);
+    $fecha = date('Y-m-d H:i:s');
 
-    if ($telefono === '') {
-        return '';
+    $sql = "UPDATE agendas
+            SET confirmacion_asistencia = ?,
+                fecha_confirmacion_asistencia = ?
+            WHERE id_agenda = ?";
+
+    $st = $db->prepare($sql);
+    if (!$st) {
+        logMensajeAutomatico('ERROR_PREPARE_ACTUALIZAR_CONFIRMACION', ['error' => $db->error]);
+        return false;
     }
 
-    if (stripos($telefono, 'whatsapp:') === 0) {
-        return $telefono;
+    $st->bind_param('ssi', $estado, $fecha, $idAgenda);
+    $ok = $st->execute();
+
+    if (!$ok) {
+        logMensajeAutomatico('ERROR_EXECUTE_ACTUALIZAR_CONFIRMACION', [
+            'error' => $st->error,
+            'id_agenda' => $idAgenda,
+            'estado' => $estado
+        ]);
     }
 
-    if ($telefono[0] !== '+') {
-        $telefono = '+' . $telefono;
-    }
-
-    return 'whatsapp:' . $telefono;
+    $st->close();
+    return $ok;
 }
 
-function enviarWhatsappRecordatorio(string $telefono, string $mensaje): array
+function enviarWhatsapp(string $telefono, string $mensaje): array
 {
     $to = normalizarTelefonoWhatsapp($telefono);
 
@@ -216,40 +249,49 @@ function enviarWhatsappRecordatorio(string $telefono, string $mensaje): array
         'ok' => false,
         'http_code' => $httpCode,
         'error' => $decoded['message'] ?? 'Twilio no devolvió éxito',
-        'raw' => $raw,
-        'sid' => $decoded['sid'] ?? ''
+        'raw' => $raw
     ];
 }
 
-function construirMensajeRecordatorio(array $agenda): string
+function formatearFechaEs(string $fecha): string
 {
-    $nombre = trim((string)($agenda['nombre'] ?? ''));
-    $hora = substr((string)($agenda['hora'] ?? ''), 0, 5);
-    $fecha = (string)($agenda['fecha'] ?? '');
-    $auto = trim((string)($agenda['auto'] ?? ''));
+    $ts = strtotime($fecha);
+    if (!$ts) {
+        return $fecha;
+    }
+
+    $dias = [
+        'Sunday' => 'Domingo',
+        'Monday' => 'Lunes',
+        'Tuesday' => 'Martes',
+        'Wednesday' => 'Miércoles',
+        'Thursday' => 'Jueves',
+        'Friday' => 'Viernes',
+        'Saturday' => 'Sábado',
+    ];
+
+    $dayName = date('l', $ts);
+    return ($dias[$dayName] ?? $dayName) . ' ' . date('d/m/Y', $ts);
+}
+
+function resolverDireccionAgenda(array $agenda): string
+{
     $direccion = trim((string)($agenda['direccion'] ?? ''));
 
     if ($direccion === '' || strtolower($direccion) === 'n/a') {
         $direccion = 'Av. de las Américas 7868';
     }
 
-    $fechaFmt = $fecha;
-    if ($fecha !== '') {
-        $ts = strtotime($fecha);
-        if ($ts) {
-            $dias = [
-                'Sunday' => 'Domingo',
-                'Monday' => 'Lunes',
-                'Tuesday' => 'Martes',
-                'Wednesday' => 'Miércoles',
-                'Thursday' => 'Jueves',
-                'Friday' => 'Viernes',
-                'Saturday' => 'Sábado',
-            ];
-            $dayName = date('l', $ts);
-            $fechaFmt = ($dias[$dayName] ?? $dayName) . ' ' . date('d/m/Y', $ts);
-        }
-    }
+    return $direccion;
+}
+
+function construirMensajeRecordatorio(array $agenda): string
+{
+    $nombre = trim((string)($agenda['nombre'] ?? ''));
+    $hora = substr((string)($agenda['hora'] ?? ''), 0, 5);
+    $fechaFmt = formatearFechaEs((string)($agenda['fecha'] ?? ''));
+    $auto = trim((string)($agenda['auto'] ?? ''));
+    $direccion = resolverDireccionAgenda($agenda);
 
     $saludo = $nombre !== '' ? "Hola {$nombre}," : "Hola,";
 
@@ -262,9 +304,88 @@ function construirMensajeRecordatorio(array $agenda): string
     $msg .= "Fecha: {$fechaFmt}\n";
     $msg .= "Hora: {$hora}\n";
     $msg .= "Dirección: {$direccion}\n\n";
-    $msg .= "Te esperamos en Av. de las Américas 7868.";
+    $msg .= "Te esperamos en Motorlider.";
 
     return $msg;
+}
+
+function construirMensajeConfirmacion24h(array $agenda): string
+{
+    $nombre = trim((string)($agenda['nombre'] ?? ''));
+    $hora = substr((string)($agenda['hora'] ?? ''), 0, 5);
+    $fechaFmt = formatearFechaEs((string)($agenda['fecha'] ?? ''));
+    $auto = trim((string)($agenda['auto'] ?? ''));
+    $direccion = resolverDireccionAgenda($agenda);
+
+    $saludo = $nombre !== '' ? "Hola {$nombre}," : "Hola,";
+
+    $msg  = $saludo . "\n\n";
+    $msg .= "Te escribimos para confirmar tu asistencia a la agenda de inspección";
+    if ($auto !== '') {
+        $msg .= " de tu vehículo ({$auto})";
+    }
+    $msg .= ".\n";
+    $msg .= "Fecha: {$fechaFmt}\n";
+    $msg .= "Hora: {$hora}\n";
+    $msg .= "Dirección: {$direccion}\n\n";
+    $msg .= "Por favor respondé SI o NO.";
+
+    return $msg;
+}
+
+function esMismoDia(string $fecha): bool
+{
+    return $fecha === date('Y-m-d');
+}
+
+function segundosDesdeCreacion(?string $fechaCreacion): ?int
+{
+    if (!$fechaCreacion) {
+        return null;
+    }
+
+    $ts = strtotime($fechaCreacion);
+    if (!$ts) {
+        return null;
+    }
+
+    return time() - $ts;
+}
+
+function agendaCreadaDentroDe24hPrevias(array $agenda): bool
+{
+    $fechaCreacion = (string)($agenda['fecha_creacion'] ?? '');
+    if ($fechaCreacion === '') {
+        return false;
+    }
+
+    $creacionTs = strtotime($fechaCreacion);
+    $agendaTs   = strtotime((string)$agenda['fecha'] . ' ' . (string)$agenda['hora']);
+
+    if (!$creacionTs || !$agendaTs) {
+        return false;
+    }
+
+    $diff = $agendaTs - $creacionTs;
+    return $diff > 0 && $diff <= SEGUNDOS_24_HORAS;
+}
+
+function agendaCreadaDentroDe48hPrevias(array $agenda): bool
+{
+    $fechaCreacion = (string)($agenda['fecha_creacion'] ?? '');
+    if ($fechaCreacion === '') {
+        return false;
+    }
+
+    $creacionTs = strtotime($fechaCreacion);
+    $agendaTs   = strtotime((string)$agenda['fecha'] . ' ' . (string)$agenda['hora']);
+
+    if (!$creacionTs || !$agendaTs) {
+        return false;
+    }
+
+    $diff = $agendaTs - $creacionTs;
+    return $diff > SEGUNDOS_24_HORAS && $diff <= SEGUNDOS_48_HORAS;
 }
 
 $debug = isset($_GET['debug']) && $_GET['debug'] == '1';
@@ -283,14 +404,19 @@ $ahora = time();
 
 $sql = "SELECT
             id_agenda,
+            id_sucursal,
             fecha,
             hora,
-            nombre,
-            telefono,
             auto,
+            nombre,
+            email,
+            telefono,
             direccion,
             cancelado,
-            finalizada
+            finalizada,
+            fecha_creacion,
+            confirmacion_asistencia,
+            fecha_confirmacion_asistencia
         FROM agendas
         WHERE cancelado = 0
           AND finalizada = 0
@@ -311,8 +437,9 @@ $resumen = [
     'ok' => true,
     'debug' => $debug,
     'agendas_encontradas' => 0,
-    'agendas_en_ventana' => 0,
-    'enviados' => 0,
+    'agendas_evaluadas' => 0,
+    'confirmaciones_24h_enviadas' => 0,
+    'recordatorios_3h_enviados' => 0,
     'omitidos_duplicado' => 0,
     'errores_envio' => 0,
     'detalles' => []
@@ -325,6 +452,7 @@ while ($row = $q->fetch_assoc()) {
     $telefono = trim((string)$row['telefono']);
     $fecha = (string)$row['fecha'];
     $hora = (string)$row['hora'];
+    $confirmacionAsistencia = trim((string)($row['confirmacion_asistencia'] ?? ''));
 
     $fechaHoraAgenda = strtotime($fecha . ' ' . $hora);
     if ($fechaHoraAgenda === false) {
@@ -336,105 +464,146 @@ while ($row = $q->fetch_assoc()) {
         continue;
     }
 
+    $resumen['agendas_evaluadas']++;
     $faltan = $fechaHoraAgenda - $ahora;
 
-    if ($faltan <= 0 || $faltan > RECORDATORIO_SEGUNDOS_ANTES) {
-        if ($debug) {
-            $resumen['detalles'][] = [
-                'id_agenda' => $idAgenda,
-                'accion' => 'fuera_de_ventana',
-                'faltan_segundos' => $faltan
-            ];
-        }
-        continue;
+    if ($debug) {
+        $resumen['detalles'][] = [
+            'id_agenda' => $idAgenda,
+            'faltan_segundos' => $faltan,
+            'fecha_creacion' => $row['fecha_creacion'] ?? null,
+            'confirmacion_asistencia' => $confirmacionAsistencia
+        ];
     }
 
-    $resumen['agendas_en_ventana']++;
+    /**
+     * REGLA 3:
+     * Si fue creada dentro de las 48h previas a la cita,
+     * pero no dentro de las 24h previas, enviar confirmación 24h antes.
+     */
+    if (agendaCreadaDentroDe48hPrevias($row)) {
+        if ($faltan > 0 && $faltan <= SEGUNDOS_24_HORAS) {
+            $tipo = TIPO_NOTIFICACION_CONFIRMACION_24H;
 
-    $tipo = TIPO_NOTIFICACION_RECORDATORIO_3H;
+            if (!yaFueEnviado($db, $idAgenda, $tipo) && $confirmacionAsistencia === '') {
+                $mensaje = construirMensajeConfirmacion24h($row);
+                $envio = enviarWhatsapp($telefono, $mensaje);
 
-    if (yaFueEnviado($db, $idAgenda, $tipo)) {
-        $resumen['omitidos_duplicado']++;
+                if (!empty($envio['ok'])) {
+                    registrarEnvio(
+                        $db,
+                        $idAgenda,
+                        $telefono,
+                        $tipo,
+                        $fecha,
+                        $hora,
+                        $mensaje,
+                        (string)($envio['sid'] ?? ''),
+                        json_encode($envio, JSON_UNESCAPED_UNICODE),
+                        'ENVIADO'
+                    );
 
-        logMensajeAutomatico('OMITIDO_DUPLICADO', [
-            'id_agenda' => $idAgenda,
-            'telefono' => $telefono,
-            'tipo' => $tipo
-        ]);
+                    actualizarConfirmacionAsistencia($db, $idAgenda, 'PENDIENTE');
 
-        if ($debug) {
-            $resumen['detalles'][] = [
-                'id_agenda' => $idAgenda,
-                'accion' => 'omitido_duplicado'
-            ];
+                    $resumen['confirmaciones_24h_enviadas']++;
+
+                    logMensajeAutomatico('CONFIRMACION_24H_ENVIADA', [
+                        'id_agenda' => $idAgenda,
+                        'telefono' => $telefono,
+                        'sid' => $envio['sid'] ?? null
+                    ]);
+                } else {
+                    registrarEnvio(
+                        $db,
+                        $idAgenda,
+                        $telefono,
+                        $tipo,
+                        $fecha,
+                        $hora,
+                        $mensaje,
+                        (string)($envio['sid'] ?? ''),
+                        json_encode($envio, JSON_UNESCAPED_UNICODE),
+                        'ERROR'
+                    );
+
+                    $resumen['errores_envio']++;
+
+                    logMensajeAutomatico('CONFIRMACION_24H_ERROR', [
+                        'id_agenda' => $idAgenda,
+                        'telefono' => $telefono,
+                        'http_code' => $envio['http_code'] ?? null,
+                        'error' => $envio['error'] ?? null
+                    ]);
+                }
+            } elseif (yaFueEnviado($db, $idAgenda, $tipo)) {
+                $resumen['omitidos_duplicado']++;
+            }
         }
-        continue;
     }
 
-    $mensaje = construirMensajeRecordatorio($row);
-    $envio = enviarWhatsappRecordatorio($telefono, $mensaje);
+    /**
+     * REGLAS 1 y 2:
+     * - mismo día => recordatorio 3h antes
+     * - creada dentro de las 24h previas => solo recordatorio 3h antes
+     * Además, si fue confirmada SI o está pendiente / null, sigue activa para recordatorio.
+     * Si tiene confirmacion_asistencia = NO ya debería estar cancelada por webhook,
+     * pero igual no mandamos nada.
+     */
+    if ($confirmacionAsistencia !== 'NO') {
+        if ($faltan > 0 && $faltan <= SEGUNDOS_3_HORAS) {
+            $tipo = TIPO_NOTIFICACION_RECORDATORIO_3H;
 
-    if (!empty($envio['ok'])) {
-        registrarEnvio(
-            $db,
-            $idAgenda,
-            $telefono,
-            $tipo,
-            $fecha,
-            $hora,
-            $mensaje,
-            (string)($envio['sid'] ?? ''),
-            json_encode($envio, JSON_UNESCAPED_UNICODE),
-            'ENVIADO'
-        );
+            if (!yaFueEnviado($db, $idAgenda, $tipo)) {
+                $mensaje = construirMensajeRecordatorio($row);
+                $envio = enviarWhatsapp($telefono, $mensaje);
 
-        $resumen['enviados']++;
+                if (!empty($envio['ok'])) {
+                    registrarEnvio(
+                        $db,
+                        $idAgenda,
+                        $telefono,
+                        $tipo,
+                        $fecha,
+                        $hora,
+                        $mensaje,
+                        (string)($envio['sid'] ?? ''),
+                        json_encode($envio, JSON_UNESCAPED_UNICODE),
+                        'ENVIADO'
+                    );
 
-        logMensajeAutomatico('ENVIADO_OK', [
-            'id_agenda' => $idAgenda,
-            'telefono' => $telefono,
-            'sid' => $envio['sid'] ?? null,
-            'status' => $envio['status'] ?? null
-        ]);
+                    $resumen['recordatorios_3h_enviados']++;
 
-        if ($debug) {
-            $resumen['detalles'][] = [
-                'id_agenda' => $idAgenda,
-                'accion' => 'enviado',
-                'sid' => $envio['sid'] ?? null
-            ];
-        }
-    } else {
-        registrarEnvio(
-            $db,
-            $idAgenda,
-            $telefono,
-            $tipo,
-            $fecha,
-            $hora,
-            $mensaje,
-            (string)($envio['sid'] ?? ''),
-            json_encode($envio, JSON_UNESCAPED_UNICODE),
-            'ERROR'
-        );
+                    logMensajeAutomatico('RECORDATORIO_3H_ENVIADO', [
+                        'id_agenda' => $idAgenda,
+                        'telefono' => $telefono,
+                        'sid' => $envio['sid'] ?? null
+                    ]);
+                } else {
+                    registrarEnvio(
+                        $db,
+                        $idAgenda,
+                        $telefono,
+                        $tipo,
+                        $fecha,
+                        $hora,
+                        $mensaje,
+                        (string)($envio['sid'] ?? ''),
+                        json_encode($envio, JSON_UNESCAPED_UNICODE),
+                        'ERROR'
+                    );
 
-        $resumen['errores_envio']++;
+                    $resumen['errores_envio']++;
 
-        logMensajeAutomatico('ENVIO_ERROR', [
-            'id_agenda' => $idAgenda,
-            'telefono' => $telefono,
-            'http_code' => $envio['http_code'] ?? null,
-            'error' => $envio['error'] ?? null,
-            'raw' => $envio['raw'] ?? null
-        ]);
-
-        if ($debug) {
-            $resumen['detalles'][] = [
-                'id_agenda' => $idAgenda,
-                'accion' => 'error_envio',
-                'http_code' => $envio['http_code'] ?? null,
-                'error' => $envio['error'] ?? null
-            ];
+                    logMensajeAutomatico('RECORDATORIO_3H_ERROR', [
+                        'id_agenda' => $idAgenda,
+                        'telefono' => $telefono,
+                        'http_code' => $envio['http_code'] ?? null,
+                        'error' => $envio['error'] ?? null
+                    ]);
+                }
+            } else {
+                $resumen['omitidos_duplicado']++;
+            }
         }
     }
 }
