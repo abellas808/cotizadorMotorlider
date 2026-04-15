@@ -1472,9 +1472,50 @@ function obtenerContenidoURLConCurl($url) {
 		}
 	} 
 
+	
+	function agenda_es_hoy($fecha){
+		return $fecha === date('Y-m-d');
+	}
+
+	function agenda_hora_minima_hoy($fecha, $horas_base){
+		if (!agenda_es_hoy($fecha) || empty($horas_base)) {
+			return null;
+		}
+
+		$horas = array_values($horas_base);
+		sort($horas);
+
+		$hora_apertura = $horas[0];
+		$apertura_ts = strtotime($fecha . ' ' . $hora_apertura);
+		$ahora_ts = time();
+
+		if ($ahora_ts < $apertura_ts) {
+			return $apertura_ts + (3 * 3600);
+		}
+
+		return $ahora_ts + (3 * 3600);
+	}
+
+	function agenda_hora_habilitada($fecha, $hora, $horas_base){
+		if (!agenda_es_hoy($fecha)) {
+			return true;
+		}
+
+		$min_ts = agenda_hora_minima_hoy($fecha, $horas_base);
+		if ($min_ts === null) {
+			return false;
+		}
+
+		$hora_ts = strtotime($fecha . ' ' . $hora);
+		return $hora_ts >= $min_ts;
+	}
+
+
 	/* calendar - Parámetros POST: location, anio, mes */
 	function calendar($bd){	
-		LogCron("\n\n------- START getCalendar -------");
+		LogCron("
+
+------- START getCalendar -------");
 
 		$sucursal = $_POST['location'];
 		$year = $_POST['anio'];
@@ -1492,115 +1533,54 @@ function obtenerContenidoURLConCurl($url) {
 			return array("codigo"=>500, "mensaje"=> "No se pudo obtener el calendario.","error"=>500);
 		}
 
-		$daysInMonth 	= date("t", mktime(0, 0, 0, $month, 1, $year));
-		$firstDay 		= date("w", mktime(0, 0, 0, $month, 1, $year));
-
-		if ($firstDay == 0)
-		$firstDay = 7;
-
-		$tempDays 		= $firstDay + $daysInMonth;
-		$weeksInMonth 	= ceil($tempDays / 7);
-
-		$calendar = array();
-
-		for ($i = 1; $i <= $daysInMonth + $firstDay; $i++) {
-			$calendar[$i] = $i - $firstDay + 1;
-		}
-
-		$meses = array("Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre");
-
 		if($year < date('Y')){
 			LogCron("Error >> El año es menor al actual");
-			LogCron("year " . $year);
-			LogCron("dateY " . (date('Y')));
 			return array("codigo"=>500, "mensaje"=> "No puede seleccionar horarios con fecha anterior a la de hoy.","error"=>500);
 		}
 
-		if ($month < (date('m'))) {
+		if (($year == date('Y')) && ($month < date('m'))) {
 			LogCron("Error >> El mes es menor al actual");
-			LogCron("month " . $month);
-			LogCron("dateM " . (date('m')));
 			return array("codigo"=>500, "mensaje"=> "No puede seleccionar horarios con fecha anterior a la de hoy.","error"=>500);
 		}
-
-		LogCron("mes " . $meses[$month - 1]);
 
 		$array_calendar = array();
-
+		$meses = array("Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre");
 		$array_calendar['sucursal'] = $sucursal;
 		$array_calendar['mes'] = $meses[$month - 1];
 		$array_calendar['anio'] = (int)$year;
 
 		$numero_mes = (intval($month) < 10) ? '0' . $month : $month;
-		$j = 1;
-		$fecha_actual = date("d-m-Y");
-		$dia_actual_mas_dos = date("d",strtotime($fecha_actual."+ 2 days"));
 		$array_fechas = array();
-		for ($w = 0; $w <= $weeksInMonth; $w++) {
-			for ($i = 0; $i < 7; $i++) {
-				if (isset($calendar[$j])) {
-					if ($calendar[$j] > 0 && $calendar[$j] <= $daysInMonth) {
-						$clase = '';
-						if ((($calendar[$j] < $dia_actual_mas_dos) && ($month == date('m'))) || (($month < date('m')) && ($year == date('y'))) || ($year < date('y'))) {
-							//
-						} else {
-							$now = time();
-							$your_date = strtotime($year . "-" . $month . "-" . $calendar[$j]);
-							$datediff = $your_date - $now;
-							$cantdias = floor($datediff / (60 * 60 * 24));
-							if ($cantdias >= 90) {
-								//invalido
-							} else {
-								$fecha_mysql = $year . "-" . $month . "-" . $calendar[$j];
-								setlocale(LC_ALL, "es_ES@euro", "es_ES", "esp");
-								$date = DateTime::createFromFormat("Y-m-d", $fecha_mysql);
-								$dia = strftime("%A", $date->getTimestamp());
 
-								$horario_estable = $bd->query('SELECT * FROM agenda_estables
-								INNER JOIN agenda_horas
-								ON agenda_estables.id_sucursal = "' . $sucursal . '"
-								where agenda_horas.id_estables = agenda_estables.id_estable
-								and agenda_estables.dia = "' . utf8_encode($dia) . '"');
+		for ($i = 0; $i <= 7; $i++) {
+			$fecha = date('Y-m-d', strtotime(date('Y-m-d') . " +$i days"));
+			$partes = explode('-', $fecha);
 
-								if ($horario_estable) {
-									$sql_aux = $bd->query('SELECT COUNT(*) as cantidad FROM agenda_estables
-									INNER JOIN agenda_horas
-									ON agenda_estables.id_sucursal = "' . $sucursal . '"
-									where agenda_horas.id_estables = agenda_estables.id_estable
-									and agenda_estables.dia = "' . utf8_encode($dia) . '"');
-									$sql_aux = $sql_aux->fetch_array(MYSQLI_ASSOC);
-									$cantidad_turnos_disponibles = $sql_aux['cantidad'];
+			if ((int)$partes[0] !== (int)$year || (int)$partes[1] !== (int)$month) {
+				continue;
+			}
 
-									$sql_aux = $bd->query('SELECT COUNT(*) as cantidad FROM agendas
-									WHERE id_sucursal = "' . $sucursal . '"
-									and fecha = "' . $fecha_mysql . '"');
-									$sql_aux = $sql_aux->fetch_array(MYSQLI_ASSOC);
-									$cantidad_turnos_reservados = $sql_aux['cantidad'];
+			$_POST['location'] = $sucursal;
+			$_POST['date'] = $fecha;
+			$resp = schedules($bd);
 
-									$cantidad_turnos_cancelados = 0;
-
-									if (($cantidad_turnos_reservados + $cantidad_turnos_cancelados) < $cantidad_turnos_disponibles) {
-										$clase = 'verde_central';
-									}
-								}
-							}
-						}
-						if($clase == 'verde_central'){
-							LogCron("dias_disponibles " . $calendar[$j]);
-							$array_fechas[] = array(
-								"fecha" => $year . "-" . $numero_mes . "-" . $calendar[$j],
-								"dia" => $calendar[$j]
-							);
-						}
-					}
-				}
-				$j++;
+			if(
+				isset($resp['codigo']) &&
+				$resp['codigo'] == 200 &&
+				isset($resp['schedules']['horas_disponibles']) &&
+				is_array($resp['schedules']['horas_disponibles']) &&
+				count($resp['schedules']['horas_disponibles']) > 0
+			){
+				$array_fechas[] = array(
+					"fecha" => $fecha,
+					"dia" => (int)$partes[2]
+				);
 			}
 		}
 
 		if(count($array_fechas)<=0){
 			LogCron("array_fechas vacio no hay dias disponibles");
-			return array("codigo"=>500, "mensaje"=> "No puedes reservar horarios con más de 90 días de anticipación.","error"=>500);
+			return array("codigo"=>500, "mensaje"=> "No hay días disponibles para agenda.","error"=>500);
 		}
 
 		$array_calendar['dias_disponibles'] = $array_fechas;
@@ -1610,7 +1590,9 @@ function obtenerContenidoURLConCurl($url) {
 
 	/* schedules - Parámetros POST: location, fecha */
 	function schedules($bd){	
-		LogCron("\n\n------- START getSchedules -------");
+		LogCron("
+
+------- START getSchedules -------");
 
 		$sucursal = $_POST['location'];
 		$fecha = $_POST['date'];
@@ -1624,38 +1606,38 @@ function obtenerContenidoURLConCurl($url) {
 
 		setlocale(LC_ALL,"es_ES@euro","es_ES","esp");
 		$date = DateTime::createFromFormat("Y-m-d", $fecha);
+		if (!$date) {
+			return array("codigo"=>500, "mensaje"=> "No hay horarios para la fecha indicada.","error"=>500);
+		}
+
 		$dia = strftime("%A", $date->getTimestamp());
 
 		$year = $date->format('Y');
 		if($year < date('Y')){
 			LogCron("Error >> El año es menor al actual");
-			LogCron("year " . $year);
-			LogCron("dateY " . (date('Y')));
 			return array("codigo"=>500, "mensaje"=> "No hay horarios para la fecha indicada.","error"=>500);
 		}
 
-		$fecha_actual = date("d-m-Y");
-		$dia_actual_mas_dos = date("d",strtotime($fecha_actual."+ 2 days"));
-		$day = $date->format('d');
-		if($day < $dia_actual_mas_dos){
-			LogCron("Error >> El dia es menor al permitido");
-			LogCron("day " . $day);
-			LogCron("dia_actual_mas_dos " . $dia_actual_mas_dos);
+		$hoy = date('Y-m-d');
+		if($fecha < $hoy){
+			LogCron("Error >> La fecha es anterior a hoy");
 			return array("codigo"=>500, "mensaje"=> "No hay horarios para la fecha indicada.","error"=>500);
 		}
 
 		$now = time();
 		$your_date = strtotime($fecha);
-		$datediff = $your_date - $now;
+		$datediff = $your_date - strtotime($hoy . ' 00:00:00');
 		$cantdias = floor($datediff / (60 * 60 * 24));
+		if ($cantdias >= 7) {
+			LogCron("Error >> Más de 7 días de anticipación");
+			return array("codigo"=>500, "mensaje"=> "No hay horarios para la fecha indicada.","error"=>500);
+		}
+
 		if ($cantdias >= 90) {
 			LogCron("Error >> Más de 90 días de anticipación");
 			return array("codigo"=>500, "mensaje"=> "No hay horarios con más de 90 días de anticipación.","error"=>500);
 		}
 
-		// =========================
-		// BLOQUEOS MANUALES
-		// =========================
 		$bloqueo_dia_completo = false;
 		$horas_bloqueadas = array();
 
@@ -1716,46 +1698,37 @@ function obtenerContenidoURLConCurl($url) {
 		ORDER BY hora_comienzo asc');
 
 		$array_horarios = array();
-
 		$array_horarios['sucursal'] = $sucursal;
 		$array_horarios['fecha'] = strftime('%d/%m/%Y', strtotime($fecha));
-
-		$val_fec = 0;
-
-		if(date('d/m/Y') == strftime('%d/%m/%Y', strtotime($fecha))){
-			$val_fec = 1;
-		}
 
 		if($horarios->num_rows > 0) {
 			LogCron("Hay horarios");
 			$array_horas = array();
+			$horas_base = array();
 
 			while($horario = $horarios->fetch_object()){
-
 				$hora_actual_loop = substr($horario->hora_comienzo, 0, 5);
 
-				// BLOQUEO POR HORA
 				if (in_array($hora_actual_loop, $horas_bloqueadas)) {
 					LogCron("Horario bloqueado manualmente, no se muestra: " . $hora_actual_loop);
 					continue;
 				}
 
+				$horas_base[] = $horario->hora_comienzo;
+
 				$query_horario_ocupado = $bd->query('SELECT * FROM agendas WHERE fecha = "'.($fecha).'"  AND hora = "'.$horario->hora_comienzo.'"');
 				$horario_ocupado = $query_horario_ocupado->fetch_all(MYSQLI_ASSOC);
 
-				date_default_timezone_set ('America/Montevideo');
-				$time = time();
-				$hora_actual = date("H:i", $time);
-
 				if (count($horario_ocupado) == 0) {
-					if(($horario->hora_comienzo <= $hora_actual) && $val_fec == 1) {
-						LogCron("horario disabled");
-					} else {
-						LogCron("horas_disponibles " . $horario->hora_comienzo);
-						$array_horas[] = array(
-							"hora" => $horario->hora_comienzo
-						);
+					if(!agenda_hora_habilitada($fecha, $horario->hora_comienzo, $horas_base)){
+						LogCron("horario deshabilitado por regla de hoy + 3 horas: " . $horario->hora_comienzo);
+						continue;
 					}
+
+					LogCron("horas_disponibles " . $horario->hora_comienzo);
+					$array_horas[] = array(
+						"hora" => $horario->hora_comienzo
+					);
 				}
 			}
 
@@ -3028,7 +3001,9 @@ function obtenerContenidoURLConCurl($url) {
 	}
 
 	function availability($bd){	
-		LogCron("\n\n------- START availability -------");
+		LogCron("
+
+------- START availability -------");
 
 		$sucursal = $_POST['location'] ?? $_GET['location'];
 
@@ -3037,14 +3012,11 @@ function obtenerContenidoURLConCurl($url) {
 		}
 
 		$result = array();
-
 		$hoy = date('Y-m-d');
 
-		for ($i = 0; $i < 15; $i++) {
-
+		for ($i = 0; $i <= 7; $i++) {
 			$fecha = date('Y-m-d', strtotime($hoy . " +$i days"));
 
-			// reutiliza la lógica existente de schedules
 			$_POST['location'] = $sucursal;
 			$_POST['date'] = $fecha;
 
