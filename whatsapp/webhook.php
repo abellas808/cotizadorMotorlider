@@ -307,6 +307,62 @@ function wa_db(): mysqli
     return $cn;
 }
 
+
+function registrarEnvio(
+    mysqli $db,
+    int $idAgenda,
+    string $telefono,
+    string $tipo,
+    string $fechaAgenda,
+    string $horaAgenda,
+    string $mensajeEnviado = '',
+    string $sidMensaje = '',
+    string $respuestaApi = '',
+    string $estado = 'ENVIADO'
+): bool {
+    $sql = "INSERT INTO whatsapp_agenda_notificaciones
+            (
+                id_agenda,
+                telefono,
+                tipo_notificacion,
+                fecha_agenda,
+                hora_agenda,
+                fecha_envio,
+                estado_envio,
+                mensaje_enviado,
+                sid_mensaje,
+                respuesta_api
+            )
+            VALUES (?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?)";
+
+    $st = $db->prepare($sql);
+    if (!$st) {
+        wa_log('ERROR_PREPARE_REGISTRAR_ENVIO', ['error' => $db->error]);
+        return false;
+    }
+
+    $st->bind_param(
+        'issssssss',
+        $idAgenda,
+        $telefono,
+        $tipo,
+        $fechaAgenda,
+        $horaAgenda,
+        $estado,
+        $mensajeEnviado,
+        $sidMensaje,
+        $respuestaApi
+    );
+
+    $ok = $st->execute();
+    if (!$ok) {
+        wa_log('ERROR_EXECUTE_REGISTRAR_ENVIO', ['error' => $st->error]);
+    }
+
+    $st->close();
+    return $ok;
+}
+
 function wa_registrar_input_no_match(array $data): void
 {
     $cn = wa_db();
@@ -1521,6 +1577,25 @@ if ($agendaPendienteConfirmacionGlobal !== null) {
     if (wa_respuesta_es_si($body)) {
         try {
             wa_marcar_confirmacion_agenda((int)$agendaPendienteConfirmacionGlobal['id_agenda'], 'SI');
+
+            $cn = wa_db();
+            registrarEnvio(
+                $cn,
+                (int)$agendaPendienteConfirmacionGlobal['id_agenda'],
+                $from,
+                'respuesta_cliente',
+                (string)$agendaPendienteConfirmacionGlobal['fecha'],
+                (string)$agendaPendienteConfirmacionGlobal['hora'],
+                'Cliente respondió: SI',
+                '',
+                json_encode([
+                    'origen' => 'whatsapp',
+                    'mensaje_cliente' => $body,
+                    'resultado' => 'CONFIRMADO'
+                ], JSON_UNESCAPED_UNICODE),
+                'RECIBIDO'
+            );
+            $cn->close();
         } catch (Throwable $e) {
             wa_log('AGENDA_CONFIRMACION_UPDATE_ERROR_GLOBAL', [
                 'from' => $from,
