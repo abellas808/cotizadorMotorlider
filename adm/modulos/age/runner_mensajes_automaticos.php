@@ -18,6 +18,8 @@ const TWILIO_API_URL_FORMAT = 'https://api.twilio.com/2010-04-01/Accounts/%s/Mes
  * SETTINGS DEL PROCESO
  */
 const SEGUNDOS_3_HORAS   = 10800;
+const SEGUNDOS_6_HORAS   = 21600;
+const SEGUNDOS_12_HORAS  = 43200;
 const SEGUNDOS_24_HORAS  = 86400;
 const SEGUNDOS_48_HORAS  = 172800;
 const SEGUNDOS_72_HORAS  = 259200;
@@ -25,6 +27,9 @@ const SEGUNDOS_72_HORAS  = 259200;
 const TIPO_NOTIFICACION_RECORDATORIO_3H = 'recordatorio_3h';
 const TIPO_NOTIFICACION_CONFIRMACION_24H = 'confirmacion_24h';
 const TIPO_NOTIFICACION_CONFIRMACION_48H = 'confirmacion_48h';
+const TIPO_NOTIFICACION_REINTENTO_CONFIRMACION_24H = 'reintento_confirmacion_24h';
+const TIPO_NOTIFICACION_REINTENTO_CONFIRMACION_48H = 'reintento_confirmacion_48h';
+const TIPO_NOTIFICACION_SIN_RESPUESTA_CONFIRMACION = 'sin_respuesta_confirmacion';
 
 function logMensajeAutomatico(string $msg, array $extra = []): void
 {
@@ -164,6 +169,79 @@ function actualizarConfirmacionAsistencia(mysqli $db, int $idAgenda, ?string $es
 
     $st->close();
     return $ok;
+}
+
+function obtenerUltimaNotificacion(mysqli $db, int $idAgenda, string $tipo): ?array
+{
+    $sql = "SELECT id, fecha_envio, estado_envio, tipo_notificacion
+            FROM whatsapp_agenda_notificaciones
+            WHERE id_agenda = ?
+              AND tipo_notificacion = ?
+            ORDER BY id DESC
+            LIMIT 1";
+
+    $st = $db->prepare($sql);
+    if (!$st) {
+        logMensajeAutomatico('ERROR_PREPARE_OBTENER_ULTIMA_NOTIFICACION', ['error' => $db->error]);
+        return null;
+    }
+
+    $st->bind_param('is', $idAgenda, $tipo);
+    $st->execute();
+    $rs = $st->get_result();
+    $row = $rs ? $rs->fetch_assoc() : null;
+
+    if ($rs) {
+        $rs->free();
+    }
+    $st->close();
+
+    return $row ?: null;
+}
+
+function notificacionFueEnviadaHaceSegundos(mysqli $db, int $idAgenda, string $tipo, int $segundos): bool
+{
+    $noti = obtenerUltimaNotificacion($db, $idAgenda, $tipo);
+    if (!$noti || empty($noti['fecha_envio'])) {
+        return false;
+    }
+
+    $ts = strtotime((string)$noti['fecha_envio']);
+    if (!$ts) {
+        return false;
+    }
+
+    return (time() - $ts) >= $segundos;
+}
+
+function registrarInfoSinRespuesta(
+    mysqli $db,
+    int $idAgenda,
+    string $telefono,
+    string $fechaAgenda,
+    string $horaAgenda,
+    string $mensaje,
+    array $extra = []
+): bool {
+    return registrarEnvio(
+        $db,
+        $idAgenda,
+        $telefono,
+        TIPO_NOTIFICACION_SIN_RESPUESTA_CONFIRMACION,
+        $fechaAgenda,
+        $horaAgenda,
+        $mensaje,
+        '',
+        json_encode($extra, JSON_UNESCAPED_UNICODE),
+        'INFO'
+    );
+}
+
+function puedeEnviarRecordatorioSegunConfirmacion(array $agenda): bool
+{
+    $estado = trim((string)($agenda['confirmacion_asistencia'] ?? ''));
+
+    return $estado === '' || $estado === 'CONFIRMADO';
 }
 
 function enviarWhatsapp(string $telefono, string $mensaje): array
@@ -483,6 +561,9 @@ $resumen = [
     'agendas_evaluadas' => 0,
     'confirmaciones_48h_enviadas' => 0,
     'confirmaciones_24h_enviadas' => 0,
+    'reintentos_48h_enviados' => 0,
+    'reintentos_24h_enviados' => 0,
+    'sin_respuesta_marcadas' => 0,
     'recordatorios_3h_enviados' => 0,
     'omitidos_duplicado' => 0,
     'errores_envio' => 0,
@@ -651,14 +732,199 @@ while ($row = $q->fetch_assoc()) {
     }
 
     /**
+     * REINTENTOS Y SIN RESPUESTA
+     * Flujo 48h:
+     *   - reintento una vez luego de 24h sin respuesta
+     *   - si pasan 12h desde el reintento y sigue pendiente, marcar SIN_RESPUESTA
+     *
+     * Flujo 24h:
+     *   - reintento una vez luego de 12h sin respuesta
+     *   - si pasan 6h desde el reintento y sigue pendiente, marcar SIN_RESPUESTA
+     */
+    if ($confirmacionAsistencia === 'PENDIENTE') {
+        if (yaFueEnviado($db, $idAgenda, TIPO_NOTIFICACION_CONFIRMACION_48H)) {
+            if (
+                !yaFueEnviado($db, $idAgenda, TIPO_NOTIFICACION_REINTENTO_CONFIRMACION_48H)
+                && notificacionFueEnviadaHaceSegundos($db, $idAgenda, TIPO_NOTIFICACION_CONFIRMACION_48H, SEGUNDOS_24_HORAS)
+                && $faltan > SEGUNDOS_3_HORAS
+            ) {
+                $mensaje = construirMensajeConfirmacion48h($row);
+                $envio = enviarWhatsapp($telefono, $mensaje);
+
+                if (!empty($envio['ok'])) {
+                    registrarEnvio(
+                        $db,
+                        $idAgenda,
+                        $telefono,
+                        TIPO_NOTIFICACION_REINTENTO_CONFIRMACION_48H,
+                        $fecha,
+                        $hora,
+                        $mensaje,
+                        (string)($envio['sid'] ?? ''),
+                        json_encode($envio, JSON_UNESCAPED_UNICODE),
+                        'ENVIADO'
+                    );
+
+                    $resumen['reintentos_48h_enviados']++;
+
+                    logMensajeAutomatico('REINTENTO_CONFIRMACION_48H_ENVIADO', [
+                        'id_agenda' => $idAgenda,
+                        'telefono' => $telefono,
+                        'sid' => $envio['sid'] ?? null
+                    ]);
+                } else {
+                    registrarEnvio(
+                        $db,
+                        $idAgenda,
+                        $telefono,
+                        TIPO_NOTIFICACION_REINTENTO_CONFIRMACION_48H,
+                        $fecha,
+                        $hora,
+                        $mensaje,
+                        (string)($envio['sid'] ?? ''),
+                        json_encode($envio, JSON_UNESCAPED_UNICODE),
+                        'ERROR'
+                    );
+
+                    $resumen['errores_envio']++;
+
+                    logMensajeAutomatico('REINTENTO_CONFIRMACION_48H_ERROR', [
+                        'id_agenda' => $idAgenda,
+                        'telefono' => $telefono,
+                        'http_code' => $envio['http_code'] ?? null,
+                        'error' => $envio['error'] ?? null
+                    ]);
+                }
+            }
+
+            if (
+                yaFueEnviado($db, $idAgenda, TIPO_NOTIFICACION_REINTENTO_CONFIRMACION_48H)
+                && !yaFueEnviado($db, $idAgenda, TIPO_NOTIFICACION_SIN_RESPUESTA_CONFIRMACION)
+                && notificacionFueEnviadaHaceSegundos($db, $idAgenda, TIPO_NOTIFICACION_REINTENTO_CONFIRMACION_48H, SEGUNDOS_12_HORAS)
+            ) {
+                if (actualizarConfirmacionAsistencia($db, $idAgenda, 'SIN_RESPUESTA')) {
+                    registrarInfoSinRespuesta(
+                        $db,
+                        $idAgenda,
+                        $telefono,
+                        $fecha,
+                        $hora,
+                        'Cliente no respondió la confirmación de agenda (flujo 48h).',
+                        [
+                            'origen' => 'runner_mensajes_automaticos',
+                            'flujo' => '48h',
+                            'tipo_base' => TIPO_NOTIFICACION_CONFIRMACION_48H
+                        ]
+                    );
+
+                    $confirmacionAsistencia = 'SIN_RESPUESTA';
+                    $row['confirmacion_asistencia'] = 'SIN_RESPUESTA';
+                    $resumen['sin_respuesta_marcadas']++;
+
+                    logMensajeAutomatico('AGENDA_SIN_RESPUESTA_48H', [
+                        'id_agenda' => $idAgenda,
+                        'telefono' => $telefono
+                    ]);
+                }
+            }
+        }
+
+        if (yaFueEnviado($db, $idAgenda, TIPO_NOTIFICACION_CONFIRMACION_24H)) {
+            if (
+                !yaFueEnviado($db, $idAgenda, TIPO_NOTIFICACION_REINTENTO_CONFIRMACION_24H)
+                && notificacionFueEnviadaHaceSegundos($db, $idAgenda, TIPO_NOTIFICACION_CONFIRMACION_24H, SEGUNDOS_12_HORAS)
+                && $faltan > SEGUNDOS_3_HORAS
+            ) {
+                $mensaje = construirMensajeConfirmacion24h($row);
+                $envio = enviarWhatsapp($telefono, $mensaje);
+
+                if (!empty($envio['ok'])) {
+                    registrarEnvio(
+                        $db,
+                        $idAgenda,
+                        $telefono,
+                        TIPO_NOTIFICACION_REINTENTO_CONFIRMACION_24H,
+                        $fecha,
+                        $hora,
+                        $mensaje,
+                        (string)($envio['sid'] ?? ''),
+                        json_encode($envio, JSON_UNESCAPED_UNICODE),
+                        'ENVIADO'
+                    );
+
+                    $resumen['reintentos_24h_enviados']++;
+
+                    logMensajeAutomatico('REINTENTO_CONFIRMACION_24H_ENVIADO', [
+                        'id_agenda' => $idAgenda,
+                        'telefono' => $telefono,
+                        'sid' => $envio['sid'] ?? null
+                    ]);
+                } else {
+                    registrarEnvio(
+                        $db,
+                        $idAgenda,
+                        $telefono,
+                        TIPO_NOTIFICACION_REINTENTO_CONFIRMACION_24H,
+                        $fecha,
+                        $hora,
+                        $mensaje,
+                        (string)($envio['sid'] ?? ''),
+                        json_encode($envio, JSON_UNESCAPED_UNICODE),
+                        'ERROR'
+                    );
+
+                    $resumen['errores_envio']++;
+
+                    logMensajeAutomatico('REINTENTO_CONFIRMACION_24H_ERROR', [
+                        'id_agenda' => $idAgenda,
+                        'telefono' => $telefono,
+                        'http_code' => $envio['http_code'] ?? null,
+                        'error' => $envio['error'] ?? null
+                    ]);
+                }
+            }
+
+            if (
+                yaFueEnviado($db, $idAgenda, TIPO_NOTIFICACION_REINTENTO_CONFIRMACION_24H)
+                && !yaFueEnviado($db, $idAgenda, TIPO_NOTIFICACION_SIN_RESPUESTA_CONFIRMACION)
+                && notificacionFueEnviadaHaceSegundos($db, $idAgenda, TIPO_NOTIFICACION_REINTENTO_CONFIRMACION_24H, SEGUNDOS_6_HORAS)
+            ) {
+                if (actualizarConfirmacionAsistencia($db, $idAgenda, 'SIN_RESPUESTA')) {
+                    registrarInfoSinRespuesta(
+                        $db,
+                        $idAgenda,
+                        $telefono,
+                        $fecha,
+                        $hora,
+                        'Cliente no respondió la confirmación de agenda (flujo 24h).',
+                        [
+                            'origen' => 'runner_mensajes_automaticos',
+                            'flujo' => '24h',
+                            'tipo_base' => TIPO_NOTIFICACION_CONFIRMACION_24H
+                        ]
+                    );
+
+                    $confirmacionAsistencia = 'SIN_RESPUESTA';
+                    $row['confirmacion_asistencia'] = 'SIN_RESPUESTA';
+                    $resumen['sin_respuesta_marcadas']++;
+
+                    logMensajeAutomatico('AGENDA_SIN_RESPUESTA_24H', [
+                        'id_agenda' => $idAgenda,
+                        'telefono' => $telefono
+                    ]);
+                }
+            }
+        }
+    }
+
+    /**
      * REGLAS 1 y 2:
      * - mismo día => recordatorio 3h antes
      * - creada dentro de las 24h previas => solo recordatorio 3h antes
-     * Además, si fue confirmada SI o está pendiente / null, sigue activa para recordatorio.
-     * Si tiene confirmacion_asistencia = NO ya debería estar cancelada por webhook,
-     * pero igual no mandamos nada.
+     * El recordatorio se envía solo si no requiere confirmación previa
+     * o si la agenda ya quedó CONFIRMADA.
      */
-    if (!in_array($confirmacionAsistencia, ['NO', 'CANCELADO'], true)) {
+    if (puedeEnviarRecordatorioSegunConfirmacion($row)) {
         if ($faltan > 0 && $faltan <= SEGUNDOS_3_HORAS) {
             $tipo = TIPO_NOTIFICACION_RECORDATORIO_3H;
 
