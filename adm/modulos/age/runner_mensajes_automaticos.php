@@ -20,9 +20,11 @@ const TWILIO_API_URL_FORMAT = 'https://api.twilio.com/2010-04-01/Accounts/%s/Mes
 const SEGUNDOS_3_HORAS   = 10800;
 const SEGUNDOS_24_HORAS  = 86400;
 const SEGUNDOS_48_HORAS  = 172800;
+const SEGUNDOS_72_HORAS  = 259200;
 
 const TIPO_NOTIFICACION_RECORDATORIO_3H = 'recordatorio_3h';
 const TIPO_NOTIFICACION_CONFIRMACION_24H = 'confirmacion_24h';
+const TIPO_NOTIFICACION_CONFIRMACION_48H = 'confirmacion_48h';
 
 function logMensajeAutomatico(string $msg, array $extra = []): void
 {
@@ -333,6 +335,11 @@ function construirMensajeConfirmacion24h(array $agenda): string
     return $msg;
 }
 
+function construirMensajeConfirmacion48h(array $agenda): string
+{
+    return construirMensajeConfirmacion24h($agenda);
+}
+
 function esMismoDia(string $fecha): bool
 {
     return $fecha === date('Y-m-d');
@@ -388,6 +395,42 @@ function agendaCreadaDentroDe48hPrevias(array $agenda): bool
     return $diff > SEGUNDOS_24_HORAS && $diff <= SEGUNDOS_48_HORAS;
 }
 
+function agendaCreadaDentroDe72hPrevias(array $agenda): bool
+{
+    $fechaCreacion = (string)($agenda['fecha_creacion'] ?? '');
+    if ($fechaCreacion === '') {
+        return false;
+    }
+
+    $creacionTs = strtotime($fechaCreacion);
+    $agendaTs   = strtotime((string)$agenda['fecha'] . ' ' . (string)$agenda['hora']);
+
+    if (!$creacionTs || !$agendaTs) {
+        return false;
+    }
+
+    $diff = $agendaTs - $creacionTs;
+    return $diff > SEGUNDOS_24_HORAS && $diff <= SEGUNDOS_72_HORAS;
+}
+
+function agendaCreadaMasDe72hAntes(array $agenda): bool
+{
+    $fechaCreacion = (string)($agenda['fecha_creacion'] ?? '');
+    if ($fechaCreacion === '') {
+        return false;
+    }
+
+    $creacionTs = strtotime($fechaCreacion);
+    $agendaTs   = strtotime((string)$agenda['fecha'] . ' ' . (string)$agenda['hora']);
+
+    if (!$creacionTs || !$agendaTs) {
+        return false;
+    }
+
+    $diff = $agendaTs - $creacionTs;
+    return $diff > SEGUNDOS_72_HORAS;
+}
+
 $debug = isset($_GET['debug']) && $_GET['debug'] == '1';
 
 $db = new mysqli($config['db_host'], $config['db_user'], $config['db_pass'], $config['db_database']);
@@ -438,6 +481,7 @@ $resumen = [
     'debug' => $debug,
     'agendas_encontradas' => 0,
     'agendas_evaluadas' => 0,
+    'confirmaciones_48h_enviadas' => 0,
     'confirmaciones_24h_enviadas' => 0,
     'recordatorios_3h_enviados' => 0,
     'omitidos_duplicado' => 0,
@@ -477,11 +521,76 @@ while ($row = $q->fetch_assoc()) {
     }
 
     /**
+     * NUEVA REGLA:
+     * Si fue creada con más de 72h de anticipación,
+     * enviar confirmación 48h antes.
+     */
+    if (agendaCreadaMasDe72hAntes($row)) {
+        if ($faltan > 0 && $faltan <= SEGUNDOS_48_HORAS) {
+            $tipo = TIPO_NOTIFICACION_CONFIRMACION_48H;
+
+            if (!yaFueEnviado($db, $idAgenda, $tipo) && $confirmacionAsistencia === '') {
+                $mensaje = construirMensajeConfirmacion48h($row);
+                $envio = enviarWhatsapp($telefono, $mensaje);
+
+                if (!empty($envio['ok'])) {
+                    registrarEnvio(
+                        $db,
+                        $idAgenda,
+                        $telefono,
+                        $tipo,
+                        $fecha,
+                        $hora,
+                        $mensaje,
+                        (string)($envio['sid'] ?? ''),
+                        json_encode($envio, JSON_UNESCAPED_UNICODE),
+                        'ENVIADO'
+                    );
+
+                    actualizarConfirmacionAsistencia($db, $idAgenda, 'PENDIENTE');
+
+                    $resumen['confirmaciones_48h_enviadas']++;
+
+                    logMensajeAutomatico('CONFIRMACION_48H_ENVIADA', [
+                        'id_agenda' => $idAgenda,
+                        'telefono' => $telefono,
+                        'sid' => $envio['sid'] ?? null
+                    ]);
+                } else {
+                    registrarEnvio(
+                        $db,
+                        $idAgenda,
+                        $telefono,
+                        $tipo,
+                        $fecha,
+                        $hora,
+                        $mensaje,
+                        (string)($envio['sid'] ?? ''),
+                        json_encode($envio, JSON_UNESCAPED_UNICODE),
+                        'ERROR'
+                    );
+
+                    $resumen['errores_envio']++;
+
+                    logMensajeAutomatico('CONFIRMACION_48H_ERROR', [
+                        'id_agenda' => $idAgenda,
+                        'telefono' => $telefono,
+                        'http_code' => $envio['http_code'] ?? null,
+                        'error' => $envio['error'] ?? null
+                    ]);
+                }
+            } elseif (yaFueEnviado($db, $idAgenda, $tipo)) {
+                $resumen['omitidos_duplicado']++;
+            }
+        }
+    }
+
+    /**
      * REGLA 3:
-     * Si fue creada dentro de las 48h previas a la cita,
+     * Si fue creada dentro de las 72h previas a la cita,
      * pero no dentro de las 24h previas, enviar confirmación 24h antes.
      */
-    if (agendaCreadaDentroDe48hPrevias($row)) {
+    if (agendaCreadaDentroDe72hPrevias($row)) {
         if ($faltan > 0 && $faltan <= SEGUNDOS_24_HORAS) {
             $tipo = TIPO_NOTIFICACION_CONFIRMACION_24H;
 
@@ -549,7 +658,7 @@ while ($row = $q->fetch_assoc()) {
      * Si tiene confirmacion_asistencia = NO ya debería estar cancelada por webhook,
      * pero igual no mandamos nada.
      */
-    if ($confirmacionAsistencia !== 'NO') {
+    if (!in_array($confirmacionAsistencia, ['NO', 'CANCELADO'], true)) {
         if ($faltan > 0 && $faltan <= SEGUNDOS_3_HORAS) {
             $tipo = TIPO_NOTIFICACION_RECORDATORIO_3H;
 
