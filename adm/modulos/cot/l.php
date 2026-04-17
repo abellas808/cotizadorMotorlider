@@ -73,14 +73,32 @@ if (!function_exists('cot_badge')) {
 }
 
 if (!function_exists('cot_estado_cotizacion_badge')) {
-	function cot_estado_cotizacion_badge($estado) {
-		$estado = trim((string)$estado);
+	function cot_estado_cotizacion_badge($entrada) {
+		$estado = trim((string)($entrada['estado'] ?? ''));
 		$upper = strtoupper($estado);
-		if ($upper === 'FINALIZADA') return cot_badge('FINALIZADA', 'verde');
-		if ($upper === 'PENDIENTE') return cot_badge('PENDIENTE', 'amarillo');
-		if ($upper === 'CANCELADA') return cot_badge('CANCELADA', 'rojo');
-		if ($estado === '') return cot_badge('SIN ESTADO', 'gris');
-		return cot_badge($estado, 'gris');
+
+		$detalleEstado = strtoupper(trim((string)($entrada['detalle_estado'] ?? '')));
+		$detalleTecnico = strtoupper(trim((string)($entrada['detalle_tecnico'] ?? '')));
+		$texto = $detalleEstado . ' ' . $detalleTecnico;
+
+		$tasFinal = isset($entrada['tasacion_final']) ? trim((string)$entrada['tasacion_final']) : '';
+
+		// 1. Finalizada
+		if ($tasFinal !== '' && $tasFinal !== '0' && $tasFinal !== '0.00') {
+			return cot_badge('FINALIZADA', 'verde');
+		}
+
+		// 2. No cotizó
+		if (
+			strpos($texto, 'NO TENEMOS COMPARABLES') !== false ||
+			strpos($texto, 'NO SE ENCONTRARON PUBLICACIONES COMPARABLES') !== false ||
+			strpos($texto, 'NO SE ENCONTRARON COMPARABLES') !== false
+		) {
+			return cot_badge('NO COTIZÓ', 'gris');
+		}
+
+		// 3. Cotizado preliminarmente
+		return cot_badge('COTIZADO PREL.', 'amarillo');
 	}
 }
 
@@ -798,7 +816,7 @@ $cant_cotizaciones = $db->query_first('SELECT COUNT(*) AS cant ' . $sql_from);
 						<td class="cot-col-money"><?php echo_s(cot_format_tasacion($tasHasta)); ?></td>
 						<td class="cot-col-money" style="font-weight:bold;"><?php echo_s(cot_format_tasacion($tasFinal)); ?></td>
 						<td class="cot-col-fecha"><?php echo_s(cot_format_fecha($entrada['fecha'])); ?></td>
-						<td class="cot-col-estado"><?php echo cot_estado_cotizacion_badge($entrada['estado']); ?></td>
+						<td class="cot-col-estado"><?php echo cot_estado_cotizacion_badge($entrada); ?></td>
 						<td class="cot-col-agecod sep-age">
 							<?php if (intval(cot_pick_first($entrada, array('agenda_id_agenda'), 0)) > 0) { ?>
 								<a href="?m=age_v&i=<?php echo intval($entrada['agenda_id_agenda']); ?>"><?php echo intval($entrada['agenda_id_agenda']); ?></a>

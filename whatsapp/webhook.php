@@ -104,16 +104,41 @@ function validate_twilio_signature(string $authToken): bool
     return $ok;
 }
 
-function twiml_message(string $message): void
-{
-    header('Content-Type: text/xml; charset=UTF-8');
+function twiml_message($msg) {
 
-    $safe = htmlspecialchars($message, ENT_XML1 | ENT_QUOTES, 'UTF-8');
+    // contexto actual
+    $telefono = $GLOBALS['wa_current_from'] ?? '';
+    $id_conv  = $GLOBALS['wa_current_conv'] ?? 0;
 
-    echo '<?xml version="1.0" encoding="UTF-8"?>';
-    echo '<Response>';
-    echo '<Message>' . $safe . '</Message>';
-    echo '</Response>';
+    // 🔥 GUARDAR SIEMPRE MENSAJE DEL BOT
+    if ($id_conv > 0 && $telefono != '') {
+
+        $db = Database::getInstance()->getConnection();
+        $db->set_charset("utf8mb4");
+
+        $sql = "INSERT INTO whatsapp_conversacion_mensajes
+            (id_conversacion, telefono, direccion, emisor, mensaje, meta_json, sid_mensaje, fecha)
+            VALUES (?, ?, 'SALIENTE', 'BOT', ?, ?, NULL, NOW())";
+
+        $stmt = $db->prepare($sql);
+
+        if ($stmt) {
+            $meta = json_encode(["origen" => "webhook_bot"]);
+            $stmt->bind_param("isss", $id_conv, $telefono, $msg, $meta);
+
+            if (!$stmt->execute()) {
+                error_log("MSG_HISTORY_ERROR: " . $stmt->error);
+            } else {
+                error_log("MSG_HISTORY_OK BOT: " . $msg);
+            }
+        } else {
+            error_log("MSG_HISTORY_PREPARE_ERROR: " . $db->error);
+        }
+    }
+
+    // respuesta Twilio
+    header('Content-Type: text/xml');
+    echo "<Response><Message>" . htmlspecialchars($msg) . "</Message></Response>";
     exit;
 }
 
@@ -564,6 +589,7 @@ function wa_finalizar_cotizacion_desde_estado(string $from, string $profileName,
         );
 
         twiml_message_and_save($from, wa_build_mensaje_post_email($idCotizacion));
+        return;
     }
 
     wa_set_user_state(
@@ -640,6 +666,54 @@ function wa_create_conversation_if_not_exists(string $telefono, string $nombre =
     return wa_get_conversation($telefono) ?? [];
 }
 
+
+function wa_insert_conversation_message(
+    string $telefono,
+    string $direccion,
+    string $emisor,
+    string $mensaje,
+    ?string $metaJson = null,
+    ?string $sidMensaje = null
+): void {
+    $conv = wa_create_conversation_if_not_exists($telefono);
+    $idConversacion = (int)($conv['id'] ?? 0);
+    if ($idConversacion <= 0) {
+        throw new RuntimeException('No se pudo obtener la conversación para historial.');
+    }
+
+    $cn = wa_db();
+
+    $sql = "INSERT INTO whatsapp_conversacion_mensajes
+            (id_conversacion, telefono, direccion, emisor, mensaje, meta_json, sid_mensaje, fecha)
+            VALUES (?, ?, ?, ?, ?, ?, ?, NOW())";
+
+    $st = $cn->prepare($sql);
+    if (!$st) {
+        throw new RuntimeException('Error prepare wa_insert_conversation_message: ' . $cn->error);
+    }
+
+    $st->bind_param(
+        'issssss',
+        $idConversacion,
+        $telefono,
+        $direccion,
+        $emisor,
+        $mensaje,
+        $metaJson,
+        $sidMensaje
+    );
+
+    if (!$st->execute()) {
+        $err = $st->error;
+        $st->close();
+        $cn->close();
+        throw new RuntimeException('Error execute wa_insert_conversation_message: ' . $err);
+    }
+
+    $st->close();
+    $cn->close();
+}
+
 function wa_update_conversation_fields(string $telefono, array $fields): void
 {
     if (empty($fields)) {
@@ -675,6 +749,73 @@ function wa_update_conversation_fields(string $telefono, array $fields): void
     }
 
     call_user_func_array([$st, 'bind_param'], $bind);
+    $st->execute();
+    $st->close();
+    $cn->close();
+}
+
+
+function wa_get_or_create_conversation(string $telefono, string $nombre = ''): array
+{
+    $conv = wa_get_conversation($telefono);
+    if ($conv !== null) {
+        return $conv;
+    }
+    return wa_create_conversation_if_not_exists($telefono, $nombre);
+}
+
+function wa_insert_message_history(
+    string $telefono,
+    string $direccion,
+    string $emisor,
+    string $mensaje,
+    array $meta = [],
+    string $sidMensaje = '',
+    string $nombre = ''
+): void {
+    $mensaje = trim($mensaje);
+    if ($mensaje === '') {
+        return;
+    }
+
+    $conv = wa_get_or_create_conversation($telefono, $nombre);
+    $idConversacion = intval($conv['id'] ?? 0);
+    if ($idConversacion <= 0) {
+        wa_log('MSG_HISTORY_SKIP', [
+            'telefono' => $telefono,
+            'direccion' => $direccion,
+            'emisor' => $emisor,
+            'motivo' => 'sin_conversacion'
+        ]);
+        return;
+    }
+
+    $cn = wa_db();
+
+    $metaJson = !empty($meta) ? json_encode($meta, JSON_UNESCAPED_UNICODE) : null;
+    $fecha = date('Y-m-d H:i:s');
+
+    $sql = "INSERT INTO whatsapp_conversacion_mensajes
+            (id_conversacion, telefono, direccion, emisor, mensaje, meta_json, sid_mensaje, fecha)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+    $st = $cn->prepare($sql);
+
+    if (!$st) {
+        $cn->close();
+        throw new RuntimeException('Error prepare wa_insert_message_history: ' . $cn->error);
+    }
+
+    $st->bind_param(
+        'isssssss',
+        $idConversacion,
+        $telefono,
+        $direccion,
+        $emisor,
+        $mensaje,
+        $metaJson,
+        $sidMensaje,
+        $fecha
+    );
     $st->execute();
     $st->close();
     $cn->close();
@@ -770,7 +911,13 @@ function wa_set_user_state(
     ]);
 }
 
-function wa_touch_incoming_message(string $telefono, string $mensaje): void
+function wa_touch_incoming_message(
+    string $telefono,
+    string $mensaje,
+    string $sidMensaje = '',
+    string $nombre = '',
+    array $meta = []
+): void
 {
     $fecha = date('Y-m-d H:i:s');
 
@@ -779,9 +926,25 @@ function wa_touch_incoming_message(string $telefono, string $mensaje): void
         'fecha_ultima_interaccion' => $fecha,
         'fecha_mod' => $fecha
     ]);
+
+    wa_insert_message_history(
+        $telefono,
+        'ENTRANTE',
+        'CLIENTE',
+        $mensaje,
+        $meta,
+        $sidMensaje,
+        $nombre
+    );
 }
 
-function wa_save_last_bot_message(string $telefono, string $mensaje): void
+function wa_save_last_bot_message(
+    string $telefono,
+    string $mensaje,
+    array $meta = [],
+    string $sidMensaje = '',
+    string $emisor = 'BOT'
+): void
 {
     $fecha = date('Y-m-d H:i:s');
 
@@ -789,11 +952,50 @@ function wa_save_last_bot_message(string $telefono, string $mensaje): void
         'ultima_respuesta_bot' => $mensaje,
         'fecha_mod' => $fecha
     ]);
+
+    wa_insert_message_history(
+        $telefono,
+        'SALIENTE',
+        $emisor,
+        $mensaje,
+        $meta,
+        $sidMensaje
+    );
 }
 
-function twiml_message_and_save(string $telefono, string $mensaje): void
+function twiml_message_and_save(
+    string $telefono,
+    string $mensaje,
+    array $meta = [],
+    string $sidMensaje = '',
+    string $emisor = 'BOT'
+): void
 {
-    wa_save_last_bot_message($telefono, $mensaje);
+    $GLOBALS['wa_current_from'] = $telefono;
+    $GLOBALS['wa_current_outgoing_meta'] = !empty($meta) ? $meta : ['origen' => 'webhook_bot'];
+    $GLOBALS['wa_current_outgoing_sid'] = $sidMensaje;
+    $GLOBALS['wa_current_outgoing_emisor'] = $emisor;
+    $GLOBALS['wa_current_outgoing_already_saved'] = false;
+
+    try {
+        wa_save_last_bot_message($telefono, $mensaje, !empty($meta) ? $meta : ['origen' => 'webhook_bot'], $sidMensaje, $emisor);
+        $GLOBALS['wa_current_outgoing_already_saved'] = true;
+        wa_log('MSG_HISTORY_OK', [
+            'telefono' => $telefono,
+            'direccion' => 'SALIENTE',
+            'emisor' => $emisor,
+            'mensaje' => $mensaje
+        ]);
+    } catch (Throwable $e) {
+        wa_log('MSG_HISTORY_ERROR', [
+            'telefono' => $telefono,
+            'direccion' => 'SALIENTE',
+            'emisor' => $emisor,
+            'mensaje' => $mensaje,
+            'error' => $e->getMessage()
+        ]);
+    }
+
     twiml_message($mensaje);
 }
 
@@ -1653,7 +1855,7 @@ function wa_build_mensaje_post_email($idCotizacion = null): string
 {
     $msg = "Excelente! Recibimos correctamente sus datos.\n\n";
  
-    $msg .= "Le estaremos enviando la cotización de su vehículo en unos minutos ⏱️";
+    $msg .= "Le estaremos enviando la cotización de su vehículo en unos minutos ⏱";
 
     return $msg;
 }
@@ -1686,6 +1888,13 @@ $body        = trim((string)($_POST['Body'] ?? ''));
 $messageSid  = trim((string)($_POST['MessageSid'] ?? ''));
 $profileName = trim((string)($_POST['ProfileName'] ?? ''));
 
+$GLOBALS['wa_current_from'] = $from;
+$GLOBALS['wa_current_conv'] = $id_conversacion;
+$GLOBALS['wa_current_outgoing_meta'] = ['origen' => 'webhook_bot'];
+$GLOBALS['wa_current_outgoing_sid'] = '';
+$GLOBALS['wa_current_outgoing_emisor'] = 'BOT';
+$GLOBALS['wa_current_outgoing_already_saved'] = false;
+
 wa_log('INCOMING_PARSED', [
     'from'         => $from,
     'to'           => $to,
@@ -1700,7 +1909,17 @@ if ($from === '') {
 
 try {
     wa_create_conversation_if_not_exists($from, $profileName);
-    wa_touch_incoming_message($from, $body);
+    wa_touch_incoming_message(
+    $from,
+    $body,
+    $messageSid,
+    $profileName,
+    [
+        'to' => $to,
+        'profile_name' => $profileName,
+        'raw_post' => $_POST
+    ]
+);
 } catch (Throwable $e) {
     wa_log('CONV_INIT_ERROR', ['error' => $e->getMessage()]);
     twiml_message('Ocurrió un problema inicializando la conversación.');
@@ -1767,7 +1986,7 @@ if ($agendaPendienteConfirmacionGlobal !== null) {
 
         twiml_message_and_save(
             $from,
-            "Perfecto 👍
+            "Perfecto
 
 Tu agenda quedó confirmada para el "
             . wa_formatear_fecha_chat((string)$agendaPendienteConfirmacionGlobal['fecha'])
@@ -1922,7 +2141,7 @@ if (in_array($currentEstado, ['PENDIENTE_RESPUESTA_HUMANA', 'HUMANO_EN_CONVERSAC
 
             twiml_message_and_save(
                 $from,
-                "Perfecto 👍\n\nTu agenda quedó confirmada para el "
+                "Perfecto\n\nTu agenda quedó confirmada para el "
                 . wa_formatear_fecha_chat((string)$agendaPendienteConfirmacion['fecha'])
                 . " a las " . substr((string)$agendaPendienteConfirmacion['hora'], 0, 5)
                 . ".\n\nTe estaremos enviando un recordatorio antes de la inspección."
@@ -2005,7 +2224,7 @@ if (in_array($currentEstado, ['PENDIENTE_RESPUESTA_HUMANA', 'HUMANO_EN_CONVERSAC
 
         twiml_message_and_save(
             $from,
-            "Perfecto 👍\n\n"
+            "Perfecto \n\n"
             . "Estos son los próximos días disponibles para la inspección:\n"
             . implode("\n", $lineas)
             . "\n\nRespondé con el número del día.\n"
@@ -2073,7 +2292,7 @@ if (($userState['step'] ?? '') === 'marca') {
 
         twiml_message_and_save(
             $from,
-            "Perfecto 👍\n\n"
+            "Perfecto \n\n"
             . "Marca: {$marcaFinal}\n\n"
             . "Ahora escribime el MODELO."
         );
@@ -2151,7 +2370,7 @@ if (($userState['step'] ?? '') === 'marca_sugerida') {
             'id_marca' => $idMarca
         ], 'ESPERANDO_MODELO', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message_and_save($from, "Perfecto 👍\n\nMarca: {$marcaFinal}\n\nAhora escribime el MODELO.");
+        twiml_message_and_save($from, "Perfecto \n\nMarca: {$marcaFinal}\n\nAhora escribime el MODELO.");
     }
 
     foreach ($opciones as $op) {
@@ -2165,7 +2384,7 @@ if (($userState['step'] ?? '') === 'marca_sugerida') {
                 'id_marca' => $idMarca
             ], 'ESPERANDO_MODELO', 'BOT', $profileName !== '' ? $profileName : null);
 
-            twiml_message_and_save($from, "Perfecto 👍\n\nMarca: {$marcaFinal}\n\nAhora escribime el MODELO.");
+            twiml_message_and_save($from, "Perfecto \n\nMarca: {$marcaFinal}\n\nAhora escribime el MODELO.");
         }
     }
 
@@ -2188,7 +2407,7 @@ if (($userState['step'] ?? '') === 'marca_sugerida') {
             'id_marca' => $marcaExacta['id_marca']
         ], 'ESPERANDO_MODELO', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message_and_save($from, "Perfecto 👍\n\nMarca: {$marcaFinal}\n\nAhora escribime el MODELO.");
+        twiml_message_and_save($from, "Perfecto \n\nMarca: {$marcaFinal}\n\nAhora escribime el MODELO.");
     }
 
     try {
@@ -2271,7 +2490,7 @@ if (($userState['step'] ?? '') === 'modelo') {
 
         twiml_message_and_save(
             $from,
-            "Excelente 👍\n\n"
+            "Excelente \n\n"
             . "Marca: {$marca}\n"
             . "Modelo: {$modeloFinal}\n\n"
             . "Ahora escribime el AÑO del vehículo. Ejemplo: 2021"
@@ -2357,7 +2576,7 @@ if (($userState['step'] ?? '') === 'modelo_sugerido') {
             'id_model' => $idModel
         ], 'ESPERANDO_ANIO', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message_and_save($from, "Excelente 👍\n\nMarca: {$marca}\nModelo: {$modeloFinal}\n\nAhora escribime el AÑO del vehículo. Ejemplo: 2021");
+        twiml_message_and_save($from, "Excelente \n\nMarca: {$marca}\nModelo: {$modeloFinal}\n\nAhora escribime el AÑO del vehículo. Ejemplo: 2021");
     }
 
     foreach ($opciones as $op) {
@@ -2373,7 +2592,7 @@ if (($userState['step'] ?? '') === 'modelo_sugerido') {
                 'id_model' => $idModel
             ], 'ESPERANDO_ANIO', 'BOT', $profileName !== '' ? $profileName : null);
 
-            twiml_message_and_save($from, "Excelente 👍\n\nMarca: {$marca}\nModelo: {$modeloFinal}\n\nAhora escribime el AÑO del vehículo. Ejemplo: 2021");
+            twiml_message_and_save($from, "Excelente \n\nMarca: {$marca}\nModelo: {$modeloFinal}\n\nAhora escribime el AÑO del vehículo. Ejemplo: 2021");
         }
     }
 
@@ -2429,7 +2648,7 @@ if (($userState['step'] ?? '') === 'anio') {
 
     twiml_message_and_save(
         $from,
-        "Perfecto 👍\n\n"
+        "Perfecto \n\n"
         . "Marca: {$marca}\n"
         . "Modelo: {$modelo}\n"
         . "Año: {$anio}\n\n"
@@ -2463,7 +2682,7 @@ if (($userState['step'] ?? '') === 'km') {
 
     twiml_message_and_save(
         $from,
-        "Perfecto 👍\n\n"
+        "Perfecto \n\n"
         . "Marca: {$marca}\n"
         . "Modelo: {$modelo}\n"
         . "Año: {$anio}\n"
@@ -2502,7 +2721,7 @@ if (($userState['step'] ?? '') === 'version') {
             'version' => ''
         ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message_and_save($from, "Perfecto 👍\n\nVersión: sin especificar\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
+        twiml_message_and_save($from, "Perfecto \n\nVersión: sin especificar\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
     }
 
     if ($idMarca <= 0 || $idModel <= 0) {
@@ -2518,7 +2737,7 @@ if (($userState['step'] ?? '') === 'version') {
             'version' => $versionIngresada
         ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message_and_save($from, "Perfecto 👍\n\nVersión: {$versionIngresada}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
+        twiml_message_and_save($from, "Perfecto \n\nVersión: {$versionIngresada}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
     }
 
     try {
@@ -2542,7 +2761,7 @@ if (($userState['step'] ?? '') === 'version') {
             'version' => $versionIngresada
         ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message_and_save($from, "Perfecto 👍\n\nVersión: {$versionIngresada}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
+        twiml_message_and_save($from, "Perfecto \n\nVersión: {$versionIngresada}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
     }
 
     if ($versionExacta !== null) {
@@ -2560,7 +2779,7 @@ if (($userState['step'] ?? '') === 'version') {
             'version' => $versionFinal
         ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message_and_save($from, "Perfecto 👍\n\nVersión: {$versionFinal}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
+        twiml_message_and_save($from, "Perfecto \n\nVersión: {$versionFinal}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
     }
 
     try {
@@ -2584,7 +2803,7 @@ if (($userState['step'] ?? '') === 'version') {
             'version' => $versionIngresada
         ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message_and_save($from, "Perfecto 👍\n\nVersión: {$versionIngresada}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
+        twiml_message_and_save($from, "Perfecto \n\nVersión: {$versionIngresada}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
     }
 
     if (!empty($sugerencias)) {
@@ -2651,7 +2870,7 @@ if (($userState['step'] ?? '') === 'version') {
         'version' => $versionIngresada
     ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-    twiml_message_and_save($from, "Perfecto 👍\n\nVersión: {$versionIngresada}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
+    twiml_message_and_save($from, "Perfecto \n\nVersión: {$versionIngresada}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
 }
 
 // =========================
@@ -2683,7 +2902,7 @@ if (($userState['step'] ?? '') === 'version_sugerida') {
             'version' => ''
         ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message_and_save($from, "Perfecto 👍\n\nVersión: sin especificar\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
+        twiml_message_and_save($from, "Perfecto \n\nVersión: sin especificar\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
     }
 
     if (in_array($respuestaNorm, ['seguir', 'continuar', 'omitir'], true)) {
@@ -2699,7 +2918,7 @@ if (($userState['step'] ?? '') === 'version_sugerida') {
             'version' => $versionInput
         ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message_and_save($from, "Perfecto 👍\n\nVersión: {$versionInput}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
+        twiml_message_and_save($from, "Perfecto \n\nVersión: {$versionInput}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
     }
 
     if (isset($opciones[$respuesta])) {
@@ -2718,7 +2937,7 @@ if (($userState['step'] ?? '') === 'version_sugerida') {
             'version' => $versionFinal
         ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message_and_save($from, "Perfecto 👍\n\nVersión: {$versionFinal}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
+        twiml_message_and_save($from, "Perfecto \n\nVersión: {$versionFinal}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
     }
 
     foreach ($opciones as $op) {
@@ -2738,7 +2957,7 @@ if (($userState['step'] ?? '') === 'version_sugerida') {
                 'version' => $versionFinal
             ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-            twiml_message_and_save($from, "Perfecto 👍\n\nVersión: {$versionFinal}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
+            twiml_message_and_save($from, "Perfecto \n\nVersión: {$versionFinal}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
         }
     }
 
@@ -2769,7 +2988,7 @@ if (($userState['step'] ?? '') === 'version_sugerida') {
             'version' => $versionFinal
         ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message_and_save($from, "Perfecto 👍\n\nVersión: {$versionFinal}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
+        twiml_message_and_save($from, "Perfecto \n\nVersión: {$versionFinal}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
     }
 
     try {
@@ -2848,7 +3067,7 @@ if (($userState['step'] ?? '') === 'version_sugerida') {
         'version' => $respuesta
     ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-    twiml_message_and_save($from, "Perfecto 👍\n\nVersión: {$respuesta}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
+    twiml_message_and_save($from, "Perfecto \n\nVersión: {$respuesta}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
 }
 
 // =========================
@@ -2882,7 +3101,7 @@ if (($userState['step'] ?? '') === 'ficha_oficial') {
 
     twiml_message_and_save(
         $from,
-        "Perfecto 👍\n\n"
+        "Perfecto \n\n"
         . "Ficha oficial: " . strtoupper($ficha) . "\n\n"
         . "Ahora indicame el TIPO DE VENTA:\n"
         . "1 = Venta contado\n"
@@ -2929,7 +3148,7 @@ if (($userState['step'] ?? '') === 'tipo_venta') {
 
     twiml_message_and_save(
         $from,
-        "Perfecto 👍\n\n"
+        "Perfecto \n\n"
         . "Tipo de venta: " . format_tipo_venta_label($tipoVenta) . "\n\n"
         . "Ahora escribime el VALOR PRETENDIDO.\n"
         . "Ejemplo: 20000"
@@ -3093,7 +3312,7 @@ if (($userState['step'] ?? '') === 'agenda_dia') {
 
     twiml_message_and_save(
         $from,
-        "Perfecto 👍\n\n"
+        "Perfecto \n\n"
         . "Día elegido: " . wa_formatear_fecha_chat($fechaElegida) . "\n\n"
         . "Estos son los horarios disponibles:\n"
         . implode("\n", $lineas)
@@ -3160,7 +3379,7 @@ if (($userState['step'] ?? '') === 'agenda_hora') {
 
         twiml_message_and_save(
             $from,
-            "Perfecto 👍\n\n"
+            "Perfecto \n\n"
             . "Volvemos a elegir el día.\n\n"
             . implode("\n", $lineas)
             . "\n\nRespondé con el número del día."
@@ -3193,7 +3412,7 @@ if (($userState['step'] ?? '') === 'agenda_hora') {
 
     twiml_message_and_save(
         $from,
-        "Perfecto 👍\n\n"
+        "Perfecto \n\n"
         . "Reserva solicitada:\n"
         . "Fecha: " . wa_formatear_fecha_chat((string)$nuevoEstado['agenda_fecha']) . "\n"
         . "Hora: " . substr($horaElegida, 0, 5) . "\n\n"
@@ -3245,7 +3464,7 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
 
         twiml_message_and_save(
             $from,
-            "Perfecto 👍\n\n"
+            "Perfecto \n\n"
             . "Volvemos a elegir el horario.\n\n"
             . implode("\n", $lineas)
             . "\n\nRespondé con el número del horario disponible."

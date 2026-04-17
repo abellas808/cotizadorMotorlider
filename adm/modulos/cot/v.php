@@ -1,7 +1,7 @@
 <?php
 
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
+error_reporting(E_ALL & ~E_DEPRECATED & ~E_NOTICE & ~E_WARNING);
+ini_set('display_errors', 0);
 
 if (!isset($sistema_iniciado)) exit();
 
@@ -66,6 +66,80 @@ if (($elemento['familia'] ?? '') == 'otro') {
 	$vehiculoTexto = (string)$elemento['auto'];
 } else {
 	$vehiculoTexto = trim((string)$elemento['auto'] . ' ' . strtoupper((string)$elemento['familia']));
+}
+
+
+$convMensajes = array();
+$convId = 0;
+
+if (isset($db)) {
+	$telefonoCot = trim((string)($elemento['telefono'] ?? ''));
+	$conv = $db->query_first('
+		SELECT id, telefono, nombre, email, id_cotizacion
+		FROM whatsapp_conversaciones
+		WHERE id_cotizacion = "' . intval($id) . '"
+		ORDER BY id DESC
+		LIMIT 1;
+	');
+
+	if ((!$conv || empty($conv['id'])) && $telefonoCot !== '') {
+		$conv = $db->query_first('
+			SELECT id, telefono, nombre, email, id_cotizacion
+			FROM whatsapp_conversaciones
+			WHERE telefono = "' . addslashes($telefonoCot) . '"
+			ORDER BY id DESC
+			LIMIT 1;
+		');
+	}
+
+	if ($conv && !empty($conv['id'])) {
+		$convId = intval($conv['id']);
+
+		$fechaInicioUltimoTramo = '';
+		$qInicio = $db->query_first('
+			SELECT fecha
+			FROM whatsapp_conversacion_mensajes
+			WHERE id_conversacion = "' . $convId . '"
+			  AND direccion = "ENTRANTE"
+			  AND emisor = "CLIENTE"
+			  AND LOWER(TRIM(mensaje)) = "cotizar"
+			ORDER BY fecha DESC, id DESC
+			LIMIT 1;
+		');
+
+		if ($qInicio && !empty($qInicio['fecha'])) {
+			$fechaInicioUltimoTramo = $qInicio['fecha'];
+		}
+
+		$sqlMensajes = '
+			SELECT id, telefono, direccion, emisor, mensaje, meta_json, sid_mensaje, fecha
+			FROM whatsapp_conversacion_mensajes
+			WHERE id_conversacion = "' . $convId . '"
+		';
+
+		if ($fechaInicioUltimoTramo !== '') {
+			$sqlMensajes .= ' AND fecha >= "' . addslashes($fechaInicioUltimoTramo) . '"';
+		}
+
+		$sqlMensajes .= ' ORDER BY fecha ASC, id ASC';
+
+		$qMensajes = $db->query($sqlMensajes);
+
+		if ($qMensajes) {
+			while ($rowMsg = $db->fetch_array($qMensajes)) {
+				$convMensajes[] = $rowMsg;
+			}
+		}
+	}
+}
+
+if (!function_exists('cot_v_hora_chat')) {
+	function cot_v_hora_chat($valor) {
+		if (!isset($valor) || trim((string)$valor) === '') return '';
+		$ts = strtotime($valor);
+		if ($ts === false) return trim((string)$valor);
+		return date('d/m/Y H:i', $ts);
+	}
 }
 
 ?>
@@ -189,6 +263,83 @@ if (($elemento['familia'] ?? '') == 'otro') {
 
 	@media (max-width: 900px) {
 		.cot-label { width: 150px; }
+	}
+
+
+	.cot-chat-card {
+		background: #fff;
+		border: 1px solid #ddd;
+		border-radius: 8px;
+		padding: 18px;
+		margin-top: 18px;
+	}
+
+	.cot-chat-box {
+		max-height: 520px;
+		overflow-y: auto;
+		background: #efeae2;
+		border: 1px solid #ddd;
+		border-radius: 8px;
+		padding: 16px;
+	}
+
+	.cot-chat-empty {
+		color: #666;
+		font-weight: bold;
+		padding: 12px;
+		background: #fff;
+		border-radius: 8px;
+	}
+
+	.cot-msg-row {
+		display: flex;
+		margin-bottom: 12px;
+	}
+
+	.cot-msg-row.in { justify-content: flex-start; }
+	.cot-msg-row.out { justify-content: flex-end; }
+
+	.cot-msg-bubble {
+		max-width: 72%;
+		padding: 10px 12px 8px 12px;
+		border-radius: 10px;
+		box-shadow: 0 1px 1px rgba(0,0,0,.08);
+		line-height: 1.35;
+		word-break: break-word;
+	}
+
+	.cot-msg-bubble.bot {
+		background: #fff;
+		border-top-left-radius: 2px;
+	}
+
+	.cot-msg-bubble.humano {
+		background: #d9fdd3;
+		border-top-right-radius: 2px;
+	}
+
+	.cot-msg-bubble.cliente {
+		background: #d9fdd3;
+		border-top-right-radius: 2px;
+	}
+
+	.cot-msg-meta {
+		font-size: 11px;
+		color: #666;
+		margin-bottom: 4px;
+		font-weight: bold;
+	}
+
+	.cot-msg-text {
+		white-space: pre-wrap;
+		color: #111;
+	}
+
+	.cot-msg-time {
+		font-size: 10px;
+		color: #777;
+		text-align: right;
+		margin-top: 6px;
 	}
 
 	@media (max-width: 700px) {
@@ -328,6 +479,45 @@ if (($elemento['familia'] ?? '') == 'otro') {
 			<div class="cot-item"><div class="cot-label">Valor Promedio de Mercado</div><div class="cot-value"><?php echo_s(cot_v_money($elemento['valor_promedio'])); ?></div></div>
 		</div>
 	</div>
+</div>
+
+
+
+<div class="cot-chat-card">
+	<h4>Conversación WhatsApp</h4>
+	<?php if (!empty($convMensajes)) { ?>
+		<div class="cot-chat-box" id="cot_chat_box">
+			<?php foreach ($convMensajes as $msg) { ?>
+				<?php
+				$direccion = strtoupper(trim((string)($msg['direccion'] ?? '')));
+				$emisor = strtoupper(trim((string)($msg['emisor'] ?? '')));
+				$rowClass = ($direccion === 'ENTRANTE') ? 'out' : 'in';
+				$bubbleClass = 'bot';
+				$emisorLabel = 'Bot';
+
+				if ($emisor === 'CLIENTE') {
+					$bubbleClass = 'cliente';
+					$emisorLabel = 'Cliente';
+				} elseif ($emisor === 'HUMANO') {
+					$bubbleClass = 'humano';
+					$emisorLabel = 'Asesor';
+				} elseif ($emisor === 'BOT') {
+					$bubbleClass = 'bot';
+					$emisorLabel = 'Bot';
+				}
+				?>
+				<div class="cot-msg-row <?php echo $rowClass; ?>">
+					<div class="cot-msg-bubble <?php echo $bubbleClass; ?>">
+						<div class="cot-msg-meta"><?php echo_s($emisorLabel); ?></div>
+						<div class="cot-msg-text"><?php echo nl2br(htmlspecialchars((string)($msg['mensaje'] ?? ''))); ?></div>
+						<div class="cot-msg-time"><?php echo_s(cot_v_hora_chat($msg['fecha'] ?? '')); ?></div>
+					</div>
+				</div>
+			<?php } ?>
+		</div>
+	<?php } else { ?>
+		<div class="cot-chat-empty">No hay conversación registrada para esta cotización.</div>
+	<?php } ?>
 </div>
 
 <script>
@@ -487,6 +677,14 @@ function enviarRespuestaWhatsapp() {
 		'&pretasacion_hasta=' + encodeURIComponent(pretasacion_hasta)
 	);
 }
+
+window.addEventListener('load', function () {
+	var chatBox = document.getElementById('cot_chat_box');
+	if (chatBox) {
+		chatBox.scrollTop = chatBox.scrollHeight;
+	}
+});
+
 </script>
 
 <?php require_once('sistema_post_contenido.php'); ?>

@@ -228,7 +228,8 @@ if (!empty($_GET['b'])) {
 }
 
 $fecha_desde = trim($_GET['fd'] ?? date('Y-m-01'));
-$fecha_hasta = trim($_GET['fh'] ?? date('Y-m-d'));
+$fecha_hasta = trim($_GET['fh'] ?? date('Y-m-d', strtotime('+30 days')));
+
 $estado_cot = trim($_GET['ecot'] ?? '');
 $estado_age = trim($_GET['eage'] ?? '');
 
