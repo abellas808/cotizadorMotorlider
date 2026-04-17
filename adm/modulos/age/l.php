@@ -6,30 +6,157 @@ date_default_timezone_set('America/Montevideo');
 global $db;
 
 // ===============================
+// HELPERS
+// ===============================
+if (!function_exists('age_pick_arr')) {
+    function age_pick_arr($row, $keys, $default = null) {
+        foreach ($keys as $k) {
+            if (isset($row[$k]) && $row[$k] !== '' && $row[$k] !== null) return $row[$k];
+        }
+        return $default;
+    }
+}
+
+if (!function_exists('age_find_schema_for_table')) {
+    function age_find_schema_for_table($db, $tableName) {
+        $t = $db->escape($tableName);
+        $q = $db->query("\n            SELECT TABLE_SCHEMA\n            FROM information_schema.TABLES\n            WHERE TABLE_NAME = '{$t}'\n            ORDER BY TABLE_SCHEMA\n            LIMIT 1\n        ");
+        $r = $q ? $db->fetch_array($q) : null;
+        return $r ? ($r['TABLE_SCHEMA'] ?? null) : null;
+    }
+}
+
+if (!function_exists('age_table_columns')) {
+    function age_table_columns($table) {
+        global $db;
+        static $cache = array();
+        if (isset($cache[$table])) return $cache[$table];
+        $cols = array();
+        $q = $db->query("SHOW COLUMNS FROM `" . addslashes($table) . "`");
+        if ($q) {
+            while ($r = $db->fetch_array($q)) {
+                if (isset($r['Field'])) $cols[$r['Field']] = true;
+            }
+        }
+        $cache[$table] = $cols;
+        return $cols;
+    }
+}
+
+if (!function_exists('age_sql_first_existing')) {
+    function age_sql_first_existing($aliasTabla, $table, $candidatas, $defaultSql = "''") {
+        $cols = age_table_columns($table);
+        foreach ($candidatas as $col) {
+            if (isset($cols[$col])) {
+                return $aliasTabla . '.`' . $col . '`';
+            }
+        }
+        return $defaultSql;
+    }
+}
+
+if (!function_exists('age_format_fecha')) {
+    function age_format_fecha($valor, $default = '-') {
+        if (!isset($valor) || trim((string)$valor) === '' || $valor === '0000-00-00' || $valor === '0000-00-00 00:00:00') return $default;
+        $ts = strtotime($valor);
+        if ($ts === false) return $default;
+        return strftime('%d/%m/%Y', $ts);
+    }
+}
+
+if (!function_exists('age_format_hora')) {
+    function age_format_hora($valor, $default = '-') {
+        if (!isset($valor) || trim((string)$valor) === '') return $default;
+        $valor = trim((string)$valor);
+        $ts = strtotime($valor);
+        if ($ts !== false) return date('H:i', $ts);
+        if (strlen($valor) >= 5) return substr($valor, 0, 5);
+        return $valor;
+    }
+}
+
+if (!function_exists('age_format_tasacion')) {
+    function age_format_tasacion($valor, $default = '-') {
+        if (!isset($valor) || trim((string)$valor) === '') return $default;
+        if (!is_numeric($valor)) return $valor;
+        return '$ ' . number_format((float)$valor, 0, ',', '.');
+    }
+}
+
+if (!function_exists('age_badge')) {
+    function age_badge($texto, $tipo = 'gris') {
+        $colores = array(
+            'gris'      => array('fg' => '#5f6368', 'bg' => '#eef0f2'),
+            'verde'     => array('fg' => '#155724', 'bg' => '#d4edda'),
+            'amarillo'  => array('fg' => '#856404', 'bg' => '#fff3cd'),
+            'rojo'      => array('fg' => '#721c24', 'bg' => '#f8d7da'),
+            'azul'      => array('fg' => '#0c5460', 'bg' => '#d1ecf1')
+        );
+        if (!isset($colores[$tipo])) $tipo = 'gris';
+        $c = $colores[$tipo];
+        return '<span title="' . htmlspecialchars($texto) . '" style="display:inline-block;padding:2px 6px;border-radius:9px;font-size:10px;font-weight:bold;line-height:1.15;color:' . $c['fg'] . ';background:' . $c['bg'] . ';white-space:nowrap;">' . htmlspecialchars($texto) . '</span>';
+    }
+}
+
+if (!function_exists('age_estado_agenda_badge')) {
+    function age_estado_agenda_badge($entrada) {
+        $tsAgenda = strtotime(($entrada['fecha'] ?? '') . ' ' . substr((string)($entrada['hora'] ?? ''), 0, 5));
+        $yaPaso = ($tsAgenda !== false && $tsAgenda < time());
+
+        if (!empty($entrada['cancelado'])) {
+            return age_badge('CANCELADA', 'rojo');
+        } elseif (!empty($entrada['finalizada']) || $yaPaso) {
+            return age_badge('FINALIZADA', 'verde');
+        }
+        return age_badge('ACTIVA', 'azul');
+    }
+}
+
+if (!function_exists('age_estado_cot_badge')) {
+    function age_estado_cot_badge($estado) {
+        $estado = trim((string)$estado);
+        $upper = strtoupper($estado);
+        if ($upper === 'FINALIZADA') return age_badge('FINALIZADA', 'verde');
+        if ($upper === 'PENDIENTE') return age_badge('PENDIENTE', 'amarillo');
+        if ($upper === 'CANCELADA') return age_badge('CANCELADA', 'rojo');
+        if ($estado === '') return age_badge('SIN COT.', 'gris');
+        return age_badge($estado, 'gris');
+    }
+}
+
+if (!function_exists('age_qs_base')) {
+    function age_qs_base($extra = array()) {
+        global $modulo, $busqueda, $fecha_desde, $fecha_hasta, $estado_cot, $estado_age, $orden_campo, $orden_dir, $inactivo;
+        $params = array('m' => $modulo['prefijo'] . '_l');
+        if ($busqueda !== '') $params['b'] = $busqueda;
+        if ($fecha_desde !== '') $params['fd'] = $fecha_desde;
+        if ($fecha_hasta !== '') $params['fh'] = $fecha_hasta;
+        if ($estado_cot !== '') $params['ecot'] = $estado_cot;
+        if ($estado_age !== '') $params['eage'] = $estado_age;
+        if (isset($inactivo) && $inactivo != 0) $params['e'] = $inactivo;
+        foreach ($extra as $k => $v) {
+            if ($v === null || $v === '') continue;
+            $params[$k] = $v;
+        }
+        return '?' . http_build_query($params);
+    }
+}
+
+if (!function_exists('age_sort_link')) {
+    function age_sort_link($campo, $label) {
+        global $orden_campo, $orden_dir, $od_chr;
+        if ($orden_campo == $campo) {
+            return '<a href="' . age_qs_base(array('o' => $campo, 'od' => $orden_dir == 0 ? 1 : 0)) . '"><strong>' . $label . ' ' . $od_chr . '</strong></a>';
+        }
+        return '<a href="' . age_qs_base(array('o' => $campo)) . '">' . $label . ' ▼</a>';
+    }
+}
+
+// ===============================
 // DATOS PARA POPUP DE COTIZACIÓN
 // ===============================
 $marcas = [];
 $modelosPorMarca = [];
-
-function age_pick_arr($row, $keys, $default = null) {
-    foreach ($keys as $k) {
-        if (isset($row[$k]) && $row[$k] !== '' && $row[$k] !== null) return $row[$k];
-    }
-    return $default;
-}
-
-function age_find_schema_for_table($db, $tableName) {
-    $t = $db->escape($tableName);
-    $q = $db->query("
-        SELECT TABLE_SCHEMA
-        FROM information_schema.TABLES
-        WHERE TABLE_NAME = '{$t}'
-        ORDER BY TABLE_SCHEMA
-        LIMIT 1
-    ");
-    $r = $q ? $db->fetch_array($q) : null;
-    return $r ? ($r['TABLE_SCHEMA'] ?? null) : null;
-}
 
 try {
     $schemaMarca  = age_find_schema_for_table($db, 'act_marcas');
@@ -69,19 +196,7 @@ try {
 // ===============================
 // AUTO FINALIZAR AGENDAS PASADAS
 // ===============================
-$db->query("
-    UPDATE agendas
-    SET
-        finalizada = 1,
-        detalle_estado = CASE
-            WHEN detalle_estado IS NULL OR TRIM(detalle_estado) = ''
-                THEN 'Finalizada automáticamente por fecha/hora'
-            ELSE detalle_estado
-        END
-    WHERE IFNULL(cancelado, 0) = 0
-      AND IFNULL(finalizada, 0) = 0
-      AND STR_TO_DATE(CONCAT(fecha, ' ', LEFT(hora, 5)), '%Y-%m-%d %H:%i') < NOW()
-");
+$db->query("\n    UPDATE agendas\n    SET\n        finalizada = 1,\n        detalle_estado = CASE\n            WHEN detalle_estado IS NULL OR TRIM(detalle_estado) = ''\n                THEN 'Finalizada automáticamente por fecha/hora'\n            ELSE detalle_estado\n        END\n    WHERE IFNULL(cancelado, 0) = 0\n      AND IFNULL(finalizada, 0) = 0\n      AND STR_TO_DATE(CONCAT(fecha, ' ', LEFT(hora, 5)), '%Y-%m-%d %H:%i') < NOW()\n");
 
 $pagina = intval($_GET['p'] ?? 0);
 if ($pagina <= 0) $pagina = 1;
@@ -96,16 +211,33 @@ if (!empty($_GET['b'])) {
     foreach ($busqueda_array as $term) {
         $term = trim($term);
         if ($term === '') continue;
+        $term = addslashes($term);
 
         $sql_b .= ' and (
-            nombre like "%' . $term . '%"
-            or ci like "%' . $term . '%"
-            or auto like "%' . $term . '%"
-            or email like "%' . $term . '%"
-            or hora like "%' . $term . '%"
-            or fecha like "%' . $term . '%"
+            a.nombre like "%' . $term . '%"
+            or a.ci like "%' . $term . '%"
+            or a.auto like "%' . $term . '%"
+            or a.hora like "%' . $term . '%"
+            or a.fecha like "%' . $term . '%"
+            or a.id_agenda like "%' . $term . '%"
+            or c.id_cotizaciones_generadas like "%' . $term . '%"
+            or c.auto like "%' . $term . '%"
+            or c.estado like "%' . $term . '%"
         )';
     }
+}
+
+$fecha_desde = trim($_GET['fd'] ?? date('Y-m-01'));
+$fecha_hasta = trim($_GET['fh'] ?? date('Y-m-d'));
+$estado_cot = trim($_GET['ecot'] ?? '');
+$estado_age = trim($_GET['eage'] ?? '');
+
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha_desde)) $fecha_desde = date('Y-m-01');
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha_hasta)) $fecha_hasta = date('Y-m-d');
+if ($fecha_desde > $fecha_hasta) {
+    $tmp = $fecha_desde;
+    $fecha_desde = $fecha_hasta;
+    $fecha_hasta = $tmp;
 }
 
 $orden_campo = intval($_GET['o'] ?? 0);
@@ -123,12 +255,19 @@ switch ($orden_dir) {
 }
 
 switch ($orden_campo) {
-    case 1: $sql_o = 'id_agenda'; break;
-    case 2: $sql_o = "STR_TO_DATE(LEFT(hora, 5), '%H:%i')"; break;
-    case 3: $sql_o = 'auto'; break;
-    case 4: $sql_o = 'nombre'; break;
-    case 5: $sql_o = 'ci'; break;
-    case 6: $sql_o = 'email'; break;
+    case 1: $sql_o = 'a.id_agenda'; break;
+    case 2: $sql_o = 'a.fecha'; break;
+    case 3: $sql_o = "STR_TO_DATE(LEFT(a.hora, 5), '%H:%i')"; break;
+    case 4: $sql_o = 'a.auto'; break;
+    case 5: $sql_o = 'a.nombre'; break;
+    case 6: $sql_o = 'a.cancelado'; break;
+    case 7: $sql_o = 'a.detalle_estado'; break;
+    case 8: $sql_o = 'c.id_cotizaciones_generadas'; break;
+    case 9: $sql_o = 'c.auto'; break;
+    case 10: $sql_o = 'pretasacion_desde_orden'; break;
+    case 11: $sql_o = 'pretasacion_hasta_orden'; break;
+    case 12: $sql_o = 'pretasacion_final_orden'; break;
+    case 13: $sql_o = 'c.estado'; break;
     default:
         $sql_o = '';
         $orden_campo = 0;
@@ -143,24 +282,66 @@ $inactivo = intval($_GET['e'] ?? 0);
 $return_url = '?m=' . $modulo['prefijo'] . '_l'
     . '&p=' . $pagina
     . ($busqueda != '' ? '&b=' . urlencode($busqueda) : '')
+    . '&fd=' . urlencode($fecha_desde)
+    . '&fh=' . urlencode($fecha_hasta)
+    . ($estado_cot != '' ? '&ecot=' . urlencode($estado_cot) : '')
+    . ($estado_age != '' ? '&eage=' . urlencode($estado_age) : '')
     . '&o=' . $orden_campo
     . '&od=' . $orden_dir
     . ($inactivo != 0 ? '&e=' . $inactivo : '');
 
 if ($orden_campo == 0) {
     $sql_order_by = "
-        STR_TO_DATE(fecha, '%Y-%m-%d') DESC,
-        STR_TO_DATE(LEFT(hora, 5), '%H:%i') ASC,
-        id_agenda DESC
+        STR_TO_DATE(a.fecha, '%Y-%m-%d') DESC,
+        STR_TO_DATE(LEFT(a.hora, 5), '%H:%i') ASC,
+        a.id_agenda DESC
     ";
 } else {
-    $sql_order_by = $sql_o . ' ' . $sql_od . ', id_agenda ' . $sql_od;
+    $sql_order_by = $sql_o . ' ' . $sql_od . ', a.id_agenda ' . $sql_od;
 }
 
+$expr_pre_desde = age_sql_first_existing('c', 'cotizaciones_generadas', array('tasacion_desde', 'valor_desde', 'precio_desde', 'valor_minimo', 'precio_minimo', 'tasacion_minima', 'tasacion_min', 'valor_ml_desde', 'pretasacion_desde'), '0');
+$expr_pre_hasta = age_sql_first_existing('c', 'cotizaciones_generadas', array('tasacion_hasta', 'valor_hasta', 'precio_hasta', 'valor_maximo', 'precio_maximo', 'tasacion_maxima', 'tasacion_max', 'valor_ml_hasta', 'pretasacion_hasta'), '0');
+$expr_pre_final = age_sql_first_existing('c', 'cotizaciones_generadas', array('tasacion_final', 'valor_final', 'precio_final', 'valor_publicado', 'valor_cotizado', 'cotizacion_final', 'promedio_ponderado', 'pretasacion_final'), '0');
+
+$sql_filtros = '';
+$sql_filtros .= " AND DATE(a.fecha) >= '" . addslashes($fecha_desde) . "'";
+$sql_filtros .= " AND DATE(a.fecha) <= '" . addslashes($fecha_hasta) . "'";
+if ($estado_cot !== '') {
+    $sql_filtros .= " AND c.estado = '" . addslashes($estado_cot) . "'";
+}
+if ($estado_age !== '') {
+    switch ($estado_age) {
+        case 'ACTIVA':
+            $sql_filtros .= " AND a.cancelado = 0 AND a.finalizada = 0";
+            break;
+        case 'FINALIZADA':
+            $sql_filtros .= " AND a.finalizada = 1";
+            break;
+        case 'CANCELADA':
+            $sql_filtros .= " AND a.cancelado = 1";
+            break;
+    }
+}
+
+$sql_from = '
+    FROM agendas a
+    LEFT JOIN cotizaciones_generadas c ON c.id_cotizaciones_generadas = a.id_cotizacion
+    WHERE 1=1 ' . $sql_filtros . $sql_b;
+
 $listado = $db->query(
-    'SELECT SQL_CALC_FOUND_ROWS *
-     FROM agendas
-     WHERE 1=1 ' . $sql_b . '
+    'SELECT SQL_CALC_FOUND_ROWS
+        a.*, 
+        c.id_cotizaciones_generadas AS cot_id,
+        c.auto AS cot_auto,
+        c.estado AS cot_estado,
+        ' . $expr_pre_desde . ' AS pretasacion_desde,
+        ' . $expr_pre_hasta . ' AS pretasacion_hasta,
+        ' . $expr_pre_final . ' AS pretasacion_final,
+        COALESCE(' . $expr_pre_desde . ', 0) AS pretasacion_desde_orden,
+        COALESCE(' . $expr_pre_hasta . ', 0) AS pretasacion_hasta_orden,
+        COALESCE(' . $expr_pre_final . ', 0) AS pretasacion_final_orden
+     ' . $sql_from . '
      ORDER BY ' . $sql_order_by . '
      LIMIT ' . (($pagina - 1) * $config['pagina_cant']) . ', ' . $config['pagina_cant'] . ';'
 );
@@ -175,7 +356,13 @@ if ($total_paginas <= 0) $total_paginas = 1;
 <?php require_once('sistema_pre_contenido.php'); ?>
 
 <style>
-    .age-bloque-calendario { margin-bottom: 20px; }
+    #contenido_cabezal { clear:both; display:block; position:relative; background:#fff; z-index:20; margin:0 0 16px 0; padding:0; }
+    #contenido_cabezal .titulo { clear:both; display:block; margin:0 0 12px 0; padding:0; position:relative; z-index:21; background:#fff; }
+    .age-toolbar-wrap { clear:both; display:block; position:relative; z-index:21; background:#fff; margin:0 0 14px 0; padding:0; }
+    .age-bloque-calendario { margin-top: 30px; margin-bottom: 20px; }
+    .age-filtros-bar { clear:both; display:flex; flex-wrap:wrap; gap:10px 12px; align-items:flex-end; margin:0 0 10px 0; padding:12px; background:#f9f9f9; border:1px solid #e5e5e5; border-radius:4px; position:relative; z-index:22; }
+    .age-filtro-item label { display:block; font-size:11px; color:#666; margin-bottom:2px; }
+    .age-filtro-item input, .age-filtro-item select { height:30px; padding:4px 6px; font-size:12px; min-width:120px; }
     .age-panel { border: 1px solid #ddd; background: #fff; padding: 15px; border-radius: 4px; min-height: 340px; }
     .age-panel h5 { margin-top: 0; margin-bottom: 12px; }
     .age-cal-toolbar { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
@@ -205,9 +392,6 @@ if ($total_paginas <= 0) $total_paginas = 1;
     .age-btn-desbloquear { background: #d9534f; color: #fff; border: 1px solid #d43f3a; }
     .age-row-cancelada { background: #f2dede !important; color: #a94442; }
     .age-row-finalizada { background: #eef3f7 !important; color: #5c6b77; }
-    .age-estado-finalizada { color: #5c6b77; font-weight: bold; }
-    .age-estado-activa { color: #468847; font-weight: bold; }
-    .age-estado-cancelada { color: #a94442; font-weight: bold; }
     .age-modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:9998; }
     .modal-grande { display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); width:900px; max-width:95%; max-height:90vh; overflow:auto; background:#fff; border:1px solid #ccc; border-radius:8px; padding:20px; z-index:9999; box-sizing:border-box; }
     .modal-content h3 { margin-top:0; margin-bottom:15px; }
@@ -220,24 +404,194 @@ if ($total_paginas <= 0) $total_paginas = 1;
     .age-box-ok { background:#f6fff5; border:1px solid #cfe6cc; border-radius:8px; padding:12px 14px; margin-top:12px; }
     .age-box-grid { display:flex; flex-wrap:wrap; gap:16px; margin-top:14px; }
     .age-box-col { flex:1 1 240px; background:#fff; border:1px solid #ddd; border-radius:8px; padding:12px; }
+
+    .age-grid-wrap { overflow-x: hidden; margin-top: 60px !important; clear: both; position: relative; z-index: 1; }
+    .age-grid-compact { width:100%; table-layout:fixed; font-size:10px; margin-bottom:0; }
+    .age-grid-compact th, .age-grid-compact td { padding:3px 4px !important; vertical-align:middle !important; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.1; }
+    .age-grid-compact thead tr.group-row th { font-size:11px; text-transform:uppercase; letter-spacing:.35px; padding-top:6px !important; padding-bottom:6px !important; border-bottom:1px solid #d8dde3; }
+    .age-grid-compact thead tr.group-row th.group-age { background:#eef5ff; color:#355b8c; }
+    .age-grid-compact thead tr.group-row th.group-cot { background:#eef8f1; color:#2f6d45; border-left:3px solid #d6e9dc; }
+    .age-grid-compact thead tr.cols-row th { font-size:10px; color:#666; background:#fafafa; }
+    .age-grid-compact thead tr.cols-row th a { color:#3d6f99; text-decoration:none; display:inline-block; width:100%; }
+    .age-grid-compact thead tr.cols-row th a:hover { text-decoration:underline; }
+    .age-grid-compact td.sep-cot, .age-grid-compact th.sep-cot { border-left:3px solid #dde6dd !important; }
+    .age-col-cod { width:48px; }
+    .age-col-fecha { width:76px; text-align:center; }
+    .age-col-hora { width:48px; text-align:center; }
+    .age-col-auto { width:120px; }
+    .age-col-nombre { width:96px; }
+    .age-col-estado { width:90px; text-align:center; }
+    .age-col-detalle { width:170px; }
+    .age-col-money { width:70px; text-align:right; }
+    .age-col-check { width:26px; text-align:center; }
     @media (max-width: 768px) { .age-modal-grid { grid-template-columns: 1fr; } }
 </style>
 
 <div id="contenido_cabezal">
-    <div class="pull-right">
+    <div class="pull-right" style="position:relative; z-index:25;">
         <input type="text" id="b" onkeypress="if (event.keyCode == 13) { buscarListado(); }" value="<?php echo_s($busqueda); ?>" maxlength="30" />
         <?php if ($busqueda != '') { ?>
-            <button type="button" class="btn btn-default btn-small btn_cerrar" onclick="window.location.href='?m=<?php echo $modulo['prefijo']; ?>_l<?php if ($orden_campo != 0) { echo '&o=' . $orden_campo; } ?>&od=<?php echo $orden_dir; ?><?php if ($inactivo != 0) { echo '&e=' . $inactivo; } ?>';">X</button>
+            <button type="button" class="btn btn-default btn-small btn_cerrar" onclick="window.location.href='?m=<?php echo $modulo['prefijo']; ?>_l&fd='+encodeURIComponent($('#fd').val())+'&fh='+encodeURIComponent($('#fh').val())+'&ecot='+encodeURIComponent($('#ecot').val())+'&eage='+encodeURIComponent($('#eage').val())+'<?php if ($orden_campo != 0) { echo '&o=' . $orden_campo; } ?>&od=<?php echo $orden_dir; ?><?php if ($inactivo != 0) { echo '&e=' . $inactivo; } ?>';">X</button>
         <?php } ?>
         <button type="button" class="btn btn-default btn-small" onclick="buscarListado();">Buscar</button>
     </div>
 
     <h4 class="titulo"><?php echo $modulo['nombre']; ?></h4>
-    <hr>
-    <hr class="nb">
+
+    <div class="age-toolbar-wrap">
+    <div class="age-filtros-bar">
+        <div class="age-filtro-item">
+            <label for="fd">Fecha desde</label>
+            <input type="date" id="fd" value="<?php echo_s($fecha_desde); ?>" />
+        </div>
+        <div class="age-filtro-item">
+            <label for="fh">Fecha hasta</label>
+            <input type="date" id="fh" value="<?php echo_s($fecha_hasta); ?>" />
+        </div>
+        <div class="age-filtro-item">
+            <label for="ecot">Estado cotización</label>
+            <select id="ecot">
+                <option value="">Todos</option>
+                <option value="PENDIENTE" <?php echo $estado_cot === 'PENDIENTE' ? 'selected' : ''; ?>>PENDIENTE</option>
+                <option value="FINALIZADA" <?php echo $estado_cot === 'FINALIZADA' ? 'selected' : ''; ?>>FINALIZADA</option>
+                <option value="CANCELADA" <?php echo $estado_cot === 'CANCELADA' ? 'selected' : ''; ?>>CANCELADA</option>
+            </select>
+        </div>
+        <div class="age-filtro-item">
+            <label for="eage">Estado agenda</label>
+            <select id="eage">
+                <option value="">Todos</option>
+                <option value="ACTIVA" <?php echo $estado_age === 'ACTIVA' ? 'selected' : ''; ?>>ACTIVA</option>
+                <option value="FINALIZADA" <?php echo $estado_age === 'FINALIZADA' ? 'selected' : ''; ?>>FINALIZADA</option>
+                <option value="CANCELADA" <?php echo $estado_age === 'CANCELADA' ? 'selected' : ''; ?>>CANCELADA</option>
+            </select>
+        </div>
+        <div class="age-filtro-item">
+            <button type="button" class="btn btn-default btn-small" onclick="buscarListado();">Aplicar</button>
+            <button type="button" class="btn btn-default btn-small" onclick="window.location.href='?m=<?php echo $modulo['prefijo']; ?>_l';">Limpiar</button>
+        </div>
+    </div>
+    </div>
 </div>
 
-<div class="sep_titulo"></div>
+<div class="sep_titulo" style="height:8px; clear:both;"></div>
+
+<div id="modal_agendar_bg" class="age-modal-bg"></div>
+<div id="modal_agenda_cotizador" class="modal-grande">
+    <div class="modal-content">
+        <h3>Agendar inspección</h3>
+        <div id="modal_cotizador_container"></div>
+    </div>
+</div>
+
+<?php if ($total > 0) { ?>
+<?php if ($_SESSION[$config['codigo_unico']]['login_permisos']['mod'] > 1) { ?>
+<form id="form_listado" action="?m=age_e" method="post">
+    <input type="hidden" name="redirect_to" value="<?php echo htmlspecialchars($return_url); ?>" />
+<?php } ?>
+
+<div class="age-grid-wrap">
+<table class="table table-hover age-grid-compact">
+    <thead>
+        <tr class="group-row">
+            <th colspan="7" class="group-age">Datos de la agenda</th>
+            <th colspan="5" class="group-cot sep-cot">Datos de la cotización</th>
+            <th colspan="1"></th>
+        </tr>
+        <tr class="cols-row">
+            <th class="age-col-cod"><?php echo age_sort_link(1, 'Codigo'); ?></th>
+            <th class="age-col-fecha"><?php echo age_sort_link(2, 'Fecha'); ?></th>
+            <th class="age-col-hora"><?php echo age_sort_link(3, 'Hora'); ?></th>
+            <th class="age-col-auto"><?php echo age_sort_link(4, 'Automovil'); ?></th>
+            <th class="age-col-nombre"><?php echo age_sort_link(5, 'Nombre'); ?></th>
+            <th class="age-col-estado"><?php echo age_sort_link(6, 'Estado'); ?></th>
+            <th class="age-col-detalle"><?php echo age_sort_link(7, 'Detalle'); ?></th>
+            <th class="age-col-cod sep-cot"><?php echo age_sort_link(8, 'Cod.'); ?></th>
+            <th class="age-col-auto"><?php echo age_sort_link(9, 'Auto'); ?></th>
+            <th class="age-col-money"><?php echo age_sort_link(10, 'Desde'); ?></th>
+            <th class="age-col-money"><?php echo age_sort_link(11, 'Hasta'); ?></th>
+            <th class="age-col-money"><?php echo age_sort_link(12, 'Final'); ?></th>
+            <th class="age-col-estado"><?php echo age_sort_link(13, 'Estado'); ?></th>
+            <th class="age-col-check"></th>
+        </tr>
+    </thead>
+    <tfoot>
+        <tr>
+            <td height="30" colspan="14" valign="bottom">
+                <div class="info_seleccionados" style="display:none;">
+                    <span id="cantidad_seleccionados"></span>
+                    <?php if ($_SESSION[$config['codigo_unico']]['login_permisos']['mod'] > 1) { ?>
+                        - <input type="button" class="btn btn-danger btn-small" value="Eliminar" onclick="eliminar();" />
+                    <?php } ?>
+                </div>
+
+                <div class="info_listados">Total: <strong><?php echo $total; ?></strong></div>
+
+                <?php if ($total_paginas > 1) { ?>
+                    <div class="paginas">
+                        <?php if ($pagina > 1) { ?>
+                            <a href="<?php echo age_qs_base(array('p' => $pagina - 1, 'o' => $orden_campo != 0 ? $orden_campo : null, 'od' => $orden_dir != 0 ? $orden_dir : null)); ?>">&lt; anterior</a>
+                        <?php } ?>
+
+                        <select id="select_pagina" class="input-mini">
+                            <?php for ($i = 1; $i <= $total_paginas; $i++) { ?>
+                                <option value="<?php echo $i; ?>" <?php if ($i == $pagina) echo 'selected="selected"'; ?>><?php echo $i; ?></option>
+                            <?php } ?>
+                        </select>
+
+                        / <?php echo $total_paginas; ?>
+
+                        <?php if ($pagina < $total_paginas) { ?>
+                            <a href="<?php echo age_qs_base(array('p' => $pagina + 1, 'o' => $orden_campo != 0 ? $orden_campo : null, 'od' => $orden_dir != 0 ? $orden_dir : null)); ?>">siguiente &gt;</a>
+                        <?php } ?>
+                    </div>
+                <?php } ?>
+            </td>
+        </tr>
+    </tfoot>
+    <tbody>
+        <?php while ($entrada = $db->fetch_array($listado)) { ?>
+            <?php
+            $tsAgenda = strtotime($entrada['fecha'] . ' ' . substr((string)$entrada['hora'], 0, 5));
+            $yaPaso = ($tsAgenda !== false && $tsAgenda < time());
+            $claseFila = '';
+            if (!empty($entrada['cancelado'])) $claseFila = 'age-row-cancelada';
+            elseif (!empty($entrada['finalizada']) || $yaPaso) $claseFila = 'age-row-finalizada';
+
+            $detalleAgenda = '';
+            if (!empty($entrada['cancelado'])) {
+                $detalleAgenda = trim((string)($entrada['motivo_cancelacion'] ?? ''));
+            } elseif (!empty($entrada['finalizada']) || $yaPaso) {
+                $detalleAgenda = trim((string)($entrada['detalle_estado'] ?? ''));
+                if ($detalleAgenda === '') $detalleAgenda = 'Finalizada automáticamente por fecha/hora';
+            }
+            ?>
+            <tr class="<?php echo $claseFila; ?>">
+                <td class="age-col-cod"><a href="?m=<?php echo $modulo['prefijo']; ?>_v&i=<?php echo $entrada['id_agenda']; ?>"><?php echo_s($entrada['id_agenda']); ?></a></td>
+                <td class="age-col-fecha"><?php echo_s(age_format_fecha($entrada['fecha'])); ?></td>
+                <td class="age-col-hora"><?php echo_s(age_format_hora($entrada['hora'])); ?></td>
+                <td class="age-col-auto" title="<?php echo htmlspecialchars((string)$entrada['auto']); ?>"><?php echo_s($entrada['auto']); ?></td>
+                <td class="age-col-nombre" title="<?php echo htmlspecialchars((string)$entrada['nombre']); ?>"><?php echo_s($entrada['nombre']); ?></td>
+                <td class="age-col-estado"><?php echo age_estado_agenda_badge($entrada); ?></td>
+                <td class="age-col-detalle" title="<?php echo htmlspecialchars($detalleAgenda); ?>"><?php echo_s($detalleAgenda); ?></td>
+                <td class="age-col-cod sep-cot">
+                    <?php if (intval($entrada['cot_id']) > 0) { ?>
+                        <a href="?m=cot_v&i=<?php echo intval($entrada['cot_id']); ?>"><?php echo intval($entrada['cot_id']); ?></a>
+                    <?php } else { echo '-'; } ?>
+                </td>
+                <td class="age-col-auto" title="<?php echo htmlspecialchars((string)($entrada['cot_auto'] ?? '')); ?>"><?php echo_s($entrada['cot_auto'] ?? '-'); ?></td>
+                <td class="age-col-money"><?php echo_s(age_format_tasacion($entrada['pretasacion_desde'] ?? '')); ?></td>
+                <td class="age-col-money"><?php echo_s(age_format_tasacion($entrada['pretasacion_hasta'] ?? '')); ?></td>
+                <td class="age-col-money" style="font-weight:bold;"><?php echo_s(age_format_tasacion($entrada['pretasacion_final'] ?? '')); ?></td>
+                <td class="age-col-estado"><?php echo age_estado_cot_badge($entrada['cot_estado'] ?? ''); ?></td>
+                <td class="age-col-check"><input name="e_sel[]" type="checkbox" value="<?php echo $entrada['id_agenda']; ?>" /></td>
+            </tr>
+        <?php } ?>
+    </tbody>
+</table>
+</div>
+
+<?php if ($_SESSION[$config['codigo_unico']]['login_permisos']['mod'] > 1) { ?></form><?php } ?>
 
 <div class="row age-bloque-calendario">
     <div class="span6">
@@ -260,102 +614,6 @@ if ($total_paginas <= 0) $total_paginas = 1;
     </div>
 </div>
 
-<div id="modal_agendar_bg" class="age-modal-bg"></div>
-<div id="modal_agenda_cotizador" class="modal-grande">
-    <div class="modal-content">
-        <h3>Agendar inspección</h3>
-        <div id="modal_cotizador_container"></div>
-    </div>
-</div>
-
-<?php if ($total > 0) { ?>
-<?php if ($_SESSION[$config['codigo_unico']]['login_permisos']['mod'] > 1) { ?>
-<form id="form_listado" action="?m=age_e" method="post">
-    <input type="hidden" name="redirect_to" value="<?php echo htmlspecialchars($return_url); ?>" />
-<?php } ?>
-
-<table class="table table-hover">
-    <thead>
-        <tr>
-            <th>Codigo</th>
-            <th>Fecha/Hora</th>
-            <th>Hora</th>
-            <th>Automovil</th>
-            <th>Nombre</th>
-            <th>Email</th>
-            <th>Estado</th>
-            <th>Detalle</th>
-            <th></th>
-        </tr>
-    </thead>
-    <tfoot>
-        <tr>
-            <td height="30" colspan="10" valign="bottom">
-                <div class="info_seleccionados" style="display:none;">
-                    <span id="cantidad_seleccionados"></span>
-                    <?php if ($_SESSION[$config['codigo_unico']]['login_permisos']['mod'] > 1) { ?>
-                        - <input type="button" class="btn btn-danger btn-small" value="Eliminar" onclick="eliminar();" />
-                    <?php } ?>
-                </div>
-
-                <div class="info_listados">Total: <strong><?php echo $total; ?></strong></div>
-
-                <?php if ($total_paginas > 1) { ?>
-                    <div class="paginas">
-                        <?php if ($pagina > 1) { ?>
-                            <a href="?m=<?php echo $modulo['prefijo']; ?>_l&p=<?php echo $pagina - 1; ?><?php if ($busqueda != '') echo '&b=' . urlencode($busqueda); ?><?php if ($orden_campo != 0) echo '&o=' . $orden_campo; ?>&od=<?php echo $orden_dir; ?><?php if ($inactivo != 0) echo '&e=' . $inactivo; ?>">&lt; anterior</a>
-                        <?php } ?>
-
-                        <select id="select_pagina" class="input-mini">
-                            <?php for ($i = 1; $i <= $total_paginas; $i++) { ?>
-                                <option value="<?php echo $i; ?>" <?php if ($i == $pagina) echo 'selected="selected"'; ?>><?php echo $i; ?></option>
-                            <?php } ?>
-                        </select>
-
-                        / <?php echo $total_paginas; ?>
-
-                        <?php if ($pagina < $total_paginas) { ?>
-                            <a href="?m=<?php echo $modulo['prefijo']; ?>_l&p=<?php echo $pagina + 1; ?><?php if ($busqueda != '') echo '&b=' . urlencode($busqueda); ?><?php if ($orden_campo != 0) echo '&o=' . $orden_campo; ?>&od=<?php echo $orden_dir; ?><?php if ($inactivo != 0) echo '&e=' . $inactivo; ?>">siguiente &gt;</a>
-                        <?php } ?>
-                    </div>
-                <?php } ?>
-            </td>
-        </tr>
-    </tfoot>
-    <tbody>
-        <?php while ($entrada = $db->fetch_array($listado)) { ?>
-            <?php $tsAgenda = strtotime($entrada['fecha'] . ' ' . substr($entrada['hora'], 0, 5)); $yaPaso = ($tsAgenda !== false && $tsAgenda < time()); ?>
-            <tr class="<?php if (!empty($entrada['cancelado'])) echo 'age-row-cancelada'; elseif (!empty($entrada['finalizada']) || $yaPaso) echo 'age-row-finalizada'; ?>">
-                <td><a href="?m=<?php echo $modulo['prefijo']; ?>_v&i=<?php echo $entrada['id_agenda']; ?>"><?php echo_s($entrada['id_agenda']); ?></a></td>
-                <td><?php echo_s(strftime('%d/%m/%Y', strtotime($entrada['fecha']))); ?></td>
-                <td><?php echo_s(substr($entrada['hora'], 0, 5)); ?></td>
-                <td><?php echo_s($entrada['auto']); ?></td>
-                <td><?php echo_s($entrada['nombre']); ?></td>
-                <td><?php echo_s($entrada['email']); ?></td>
-                <td>
-                    <?php if (!empty($entrada['cancelado'])) { ?><span class="age-estado-cancelada">CANCELADA</span>
-                    <?php } elseif (!empty($entrada['finalizada']) || $yaPaso) { ?><span class="age-estado-finalizada">FINALIZADA</span>
-                    <?php } else { ?><span class="age-estado-activa">ACTIVA</span><?php } ?>
-                </td>
-                <td>
-                    <?php
-                    if (!empty($entrada['cancelado'])) {
-                        echo_s($entrada['motivo_cancelacion'] ?? '');
-                    } elseif (!empty($entrada['finalizada']) || $yaPaso) {
-                        $detalle = trim((string)($entrada['detalle_estado'] ?? ''));
-                        echo_s($detalle !== '' ? $detalle : 'Finalizada automáticamente por fecha/hora');
-                    } else {
-                        echo '';
-                    }
-                    ?>
-                </td>
-                <td><input name="e_sel[]" type="checkbox" value="<?php echo $entrada['id_agenda']; ?>" /></td>
-            </tr>
-        <?php } ?>
-    </tbody>
-</table>
-
-<?php if ($_SESSION[$config['codigo_unico']]['login_permisos']['mod'] > 1) { ?></form><?php } ?>
 
 <script>
 const AGE_MARCAS = <?php echo json_encode($marcas, JSON_UNESCAPED_UNICODE); ?>;
@@ -378,15 +636,15 @@ function actualizarSeleccionados() {
 $('input[name="e_sel[]"]').on('click', actualizarSeleccionados);
 
 $('#select_pagina').on('change', function() {
-    window.location.href = '?m=<?php echo $modulo['prefijo']; ?>_l&p=' + $(this).val()
-        + '<?php if ($busqueda != '') echo '&b=' . urlencode($busqueda); ?>'
-        + '<?php if ($orden_campo != 0) echo '&o=' . $orden_campo; ?>'
-        + '&od=<?php echo $orden_dir; ?>'
-        + '<?php if ($inactivo != 0) echo '&e=' . $inactivo; ?>';
+    window.location.href = '<?php echo age_qs_base(array('p' => 'REEMPLAZAR', 'o' => $orden_campo != 0 ? $orden_campo : null, 'od' => $orden_dir != 0 ? $orden_dir : null)); ?>'.replace('REEMPLAZAR', $(this).val());
 });
 
 function buscarListado() {
     window.location.href = '?m=<?php echo $modulo['prefijo']; ?>_l'
+        + '&fd=' + encodeURIComponent($('#fd').val())
+        + '&fh=' + encodeURIComponent($('#fh').val())
+        + '&ecot=' + encodeURIComponent($('#ecot').val())
+        + '&eage=' + encodeURIComponent($('#eage').val())
         + '<?php if ($orden_campo != 0) echo '&o=' . $orden_campo; ?>'
         + '&od=<?php echo $orden_dir; ?>'
         + '<?php if ($inactivo != 0) echo '&e=' . $inactivo; ?>'
@@ -770,7 +1028,6 @@ function cotizarYAgendarPopup() {
     });
 }
 
-
 function guardarTasacionManual(idAgenda) {
     const pretasacionDesde = ($('#pretasacion_desde').val() || '').toString().trim();
     const pretasacionHasta = ($('#pretasacion_hasta').val() || '').toString().trim();
@@ -808,6 +1065,36 @@ $(function() {
     cargarCalendario();
     $('#modal_agendar_bg').on('click', cerrarModalCotizador);
 });
+
+function calcularEstadoCotizacion($row) {
+
+    $desde = isset($row['tasacion_desde']) ? $row['tasacion_desde'] : null;
+    $hasta = isset($row['tasacion_hasta']) ? $row['tasacion_hasta'] : null;
+    $final = isset($row['tasacion_final']) ? $row['tasacion_final'] : null;
+
+    // Detectar comparables (ajustar según tu campo real)
+    $tieneComparables = true;
+    if (isset($row['cantidad_comparables'])) {
+        $tieneComparables = intval($row['cantidad_comparables']) > 0;
+    }
+
+    // 1. No cotizó
+    if (!$tieneComparables) {
+        return 'NO_COTIZO';
+    }
+
+    // 2. Finalizada
+    if (!empty($final) && floatval($final) > 0) {
+        return 'FINALIZADA';
+    }
+
+    // 3. Preliminar
+    if (!empty($desde) && !empty($hasta)) {
+        return 'COTIZADO_PRELIMINAR';
+    }
+
+    return 'NO_COTIZO';
+}
 </script>
 
 <?php } else { ?>
