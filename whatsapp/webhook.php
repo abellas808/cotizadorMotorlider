@@ -547,6 +547,12 @@ function wa_finalizar_cotizacion_desde_estado(string $from, string $profileName,
             ?? $apiResult['cotizacion_id']
             ?? null;
 
+        $estadoCotizacion = wa_recalcular_estado_cotizacion($idCotizacion ? (int)$idCotizacion : 0);
+        if ($estadoCotizacion !== null) {
+            $estadoFinalData['estado_cotizacion'] = $estadoCotizacion['estado'] ?? null;
+            $estadoFinalData['detalle_estado_cotizacion'] = $estadoCotizacion['detalle_estado'] ?? null;
+        }
+
         wa_set_user_state(
             $from,
             $estadoFinalData,
@@ -1498,6 +1504,151 @@ function cotizar_api(string $brand, array $payload): array
 // =========================
 // MENSAJES
 // =========================
+
+
+function wa_tiene_valor_cotizacion($valor): bool
+{
+    if ($valor === null) return false;
+    if (is_string($valor)) {
+        $valor = trim($valor);
+        if ($valor === '') return false;
+        $valor = str_replace(['$', 'USD', 'usd', 'U$S', ' '], '', $valor);
+        $valor = str_replace('.', '', $valor);
+        $valor = str_replace(',', '.', $valor);
+    }
+    return is_numeric($valor) && (float)$valor > 0;
+}
+
+function wa_pick_first_value(array $row, array $keys)
+{
+    foreach ($keys as $key) {
+        if (array_key_exists($key, $row)) {
+            return $row[$key];
+        }
+    }
+    return null;
+}
+
+function wa_calcular_estado_cotizacion_row(array $row): array
+{
+    $pretDesde = wa_pick_first_value($row, ['pretasacion_desde', 'tasacion_desde', 'valor_desde']);
+    $pretHasta = wa_pick_first_value($row, ['pretasacion_hasta', 'tasacion_hasta', 'valor_hasta']);
+    $tasFinal  = wa_pick_first_value($row, ['tasacion_final', 'valor_final', 'precio_final', 'cotizacion_final']);
+
+    $comparables = false;
+    $comparablesKeys = [
+        'cantidad_comparables',
+        'comparables_count',
+        'total_comparables',
+        'valor_minimo',
+        'valor_maximo',
+        'valor_promedio',
+        'valor_minimo_autodata',
+        'valor_maximo_autodata',
+        'valor_promedio_autodata'
+    ];
+
+    foreach ($comparablesKeys as $key) {
+        if (!array_key_exists($key, $row)) {
+            continue;
+        }
+        if (in_array($key, ['cantidad_comparables', 'comparables_count', 'total_comparables'], true)) {
+            if ((int)$row[$key] > 0) {
+                $comparables = true;
+                break;
+            }
+        } elseif (wa_tiene_valor_cotizacion($row[$key])) {
+            $comparables = true;
+            break;
+        }
+    }
+
+    if (!$comparables) {
+        return [
+            'estado' => 'NO COTIZO',
+            'detalle_estado' => 'No se encontraron comparables para calcular la cotización.'
+        ];
+    }
+
+    if (wa_tiene_valor_cotizacion($tasFinal)) {
+        return [
+            'estado' => 'FINALIZADA',
+            'detalle_estado' => ''
+        ];
+    }
+
+    if (wa_tiene_valor_cotizacion($pretDesde) && wa_tiene_valor_cotizacion($pretHasta)) {
+        return [
+            'estado' => 'COTIZADO PRELIMINARMENTE',
+            'detalle_estado' => ''
+        ];
+    }
+
+    return [
+        'estado' => 'COTIZADO PRELIMINARMENTE',
+        'detalle_estado' => ''
+    ];
+}
+
+function wa_recalcular_estado_cotizacion(?int $idCotizacion): ?array
+{
+    $idCotizacion = (int)$idCotizacion;
+    if ($idCotizacion <= 0) {
+        return null;
+    }
+
+    $cn = wa_db();
+
+    $sqlSel = "SELECT * FROM cotizaciones_generadas WHERE id_cotizaciones_generadas = ? LIMIT 1";
+    $stSel = $cn->prepare($sqlSel);
+    if (!$stSel) {
+        wa_log('COT_STATUS_PREPARE_SELECT_ERROR', ['error' => $cn->error, 'id_cotizacion' => $idCotizacion]);
+        $cn->close();
+        return null;
+    }
+
+    $stSel->bind_param('i', $idCotizacion);
+    $stSel->execute();
+    $rs = $stSel->get_result();
+    $row = $rs ? $rs->fetch_assoc() : null;
+    if ($rs) {
+        $rs->free();
+    }
+    $stSel->close();
+
+    if (!$row) {
+        wa_log('COT_STATUS_NOT_FOUND', ['id_cotizacion' => $idCotizacion]);
+        $cn->close();
+        return null;
+    }
+
+    $calc = wa_calcular_estado_cotizacion_row($row);
+
+    $sqlUpd = "UPDATE cotizaciones_generadas
+               SET estado = ?, detalle_estado = ?
+               WHERE id_cotizaciones_generadas = ?";
+    $stUpd = $cn->prepare($sqlUpd);
+    if (!$stUpd) {
+        wa_log('COT_STATUS_PREPARE_UPDATE_ERROR', ['error' => $cn->error, 'id_cotizacion' => $idCotizacion, 'calc' => $calc]);
+        $cn->close();
+        return $calc;
+    }
+
+    $detalle = (string)($calc['detalle_estado'] ?? '');
+    $estado = (string)($calc['estado'] ?? '');
+    $stUpd->bind_param('ssi', $estado, $detalle, $idCotizacion);
+    $ok = $stUpd->execute();
+    if (!$ok) {
+        wa_log('COT_STATUS_UPDATE_ERROR', ['error' => $stUpd->error, 'id_cotizacion' => $idCotizacion, 'calc' => $calc]);
+    } else {
+        wa_log('COT_STATUS_UPDATED', ['id_cotizacion' => $idCotizacion, 'calc' => $calc]);
+    }
+    $stUpd->close();
+    $cn->close();
+
+    return $calc;
+}
+
 function wa_build_mensaje_post_email($idCotizacion = null): string
 {
     $msg = "Excelente! Recibimos correctamente sus datos.\n\n";
