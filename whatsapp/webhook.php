@@ -1853,9 +1853,9 @@ function wa_recalcular_estado_cotizacion(?int $idCotizacion): ?array
 
 function wa_build_mensaje_post_email($idCotizacion = null): string
 {
-    $msg = "Excelente! Recibimos correctamente sus datos.\n\n";
+    $msg = " ¡Datos recibidos con éxito! ✅\n\n";
  
-    $msg .= "Le estaremos enviando la cotización de su vehículo en unos minutos ⏱";
+    $msg .= "Estoy procesando la información...⏱ En unos minutos te enviaré la propuesta.";
 
     return $msg;
 }
@@ -2064,9 +2064,10 @@ if (in_array($bodyNorm, ['hola', 'hi', 'menu', 'inicio'], true)) {
 
     twiml_message_and_save(
         $from,
-        "¡Hola" . ($profileName !== '' ? " {$profileName}" : "") . "! "
-        . "Bienvenido al cotizador de vehículos de Motorlider.\n\n"
-        . "Escribí COTIZAR para comenzar."
+        "👋 ¡Hola! Soy Alan\n"
+        . "Cotizador virtual de Motorlider.\n"
+        . "Estoy aquí para ayudarte a cotizar tu vehículo de forma rápida y fácil.\n\n"
+        . "Para comenzar, por favor escribe: COTIZAR."
     );
 }
 
@@ -2097,8 +2098,9 @@ if ($bodyNorm === 'cotizar') {
 
     twiml_message_and_save(
         $from,
-        "Perfecto. Vamos a comenzar la cotización.\n\n"
-        . "Primer dato: escribime la MARCA del vehículo."
+        "¡Excelente! Vamos a tasar tu auto de forma rápida.\n"
+        . "Para empezar, decime la MARCA del vehículo.\n"
+        . "(Ej: Chevrolet, BYD, Volkswagen)"
     );
 }
 
@@ -2292,9 +2294,8 @@ if (($userState['step'] ?? '') === 'marca') {
 
         twiml_message_and_save(
             $from,
-            "Perfecto \n\n"
-            . "Marca: {$marcaFinal}\n\n"
-            . "Ahora escribime el MODELO."
+            "Anotado. ¿Qué MODELO es?\n"
+            . "(Ej: Onix, E2, Gol)"
         );
     }
 
@@ -2370,7 +2371,7 @@ if (($userState['step'] ?? '') === 'marca_sugerida') {
             'id_marca' => $idMarca
         ], 'ESPERANDO_MODELO', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message_and_save($from, "Perfecto \n\nMarca: {$marcaFinal}\n\nAhora escribime el MODELO.");
+        twiml_message_and_save($from, "Anotado. ¿Qué MODELO es? (Ej: Onix, E2, Gol)");
     }
 
     foreach ($opciones as $op) {
@@ -2384,7 +2385,7 @@ if (($userState['step'] ?? '') === 'marca_sugerida') {
                 'id_marca' => $idMarca
             ], 'ESPERANDO_MODELO', 'BOT', $profileName !== '' ? $profileName : null);
 
-            twiml_message_and_save($from, "Perfecto \n\nMarca: {$marcaFinal}\n\nAhora escribime el MODELO.");
+            twiml_message_and_save($from, "Anotado. ¿Qué MODELO es? (Ej: Onix, E2, Gol)");
         }
     }
 
@@ -2407,7 +2408,7 @@ if (($userState['step'] ?? '') === 'marca_sugerida') {
             'id_marca' => $marcaExacta['id_marca']
         ], 'ESPERANDO_MODELO', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message_and_save($from, "Perfecto \n\nMarca: {$marcaFinal}\n\nAhora escribime el MODELO.");
+        twiml_message_and_save($from, "Anotado. ¿Qué MODELO es? (Ej: Onix, E2, Gol)");
     }
 
     try {
@@ -2490,10 +2491,7 @@ if (($userState['step'] ?? '') === 'modelo') {
 
         twiml_message_and_save(
             $from,
-            "Excelente \n\n"
-            . "Marca: {$marca}\n"
-            . "Modelo: {$modeloFinal}\n\n"
-            . "Ahora escribime el AÑO del vehículo. Ejemplo: 2021"
+            "¿De qué AÑO es?"
         );
     }
 
@@ -2576,7 +2574,7 @@ if (($userState['step'] ?? '') === 'modelo_sugerido') {
             'id_model' => $idModel
         ], 'ESPERANDO_ANIO', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message_and_save($from, "Excelente \n\nMarca: {$marca}\nModelo: {$modeloFinal}\n\nAhora escribime el AÑO del vehículo. Ejemplo: 2021");
+        twiml_message_and_save($from, "¿De qué AÑO es?");
     }
 
     foreach ($opciones as $op) {
@@ -2592,7 +2590,7 @@ if (($userState['step'] ?? '') === 'modelo_sugerido') {
                 'id_model' => $idModel
             ], 'ESPERANDO_ANIO', 'BOT', $profileName !== '' ? $profileName : null);
 
-            twiml_message_and_save($from, "Excelente \n\nMarca: {$marca}\nModelo: {$modeloFinal}\n\nAhora escribime el AÑO del vehículo. Ejemplo: 2021");
+            twiml_message_and_save($from, "¿De qué AÑO es?");
         }
     }
 
@@ -2634,6 +2632,7 @@ if (($userState['step'] ?? '') === 'anio') {
 
     if ($anio === '' || strlen($anio) !== 4) {
         twiml_message_and_save($from, "El año no parece válido. Escribime un año de 4 dígitos. Ejemplo: 2021");
+        return;
     }
 
     wa_set_user_state($from, [
@@ -2648,11 +2647,7 @@ if (($userState['step'] ?? '') === 'anio') {
 
     twiml_message_and_save(
         $from,
-        "Perfecto \n\n"
-        . "Marca: {$marca}\n"
-        . "Modelo: {$modelo}\n"
-        . "Año: {$anio}\n\n"
-        . "Ahora escribime los KILÓMETROS. Ejemplo: 85000"
+        "Bien, ¿Cuántos Kilómetros tiene?"
     );
 }
 
@@ -2682,13 +2677,8 @@ if (($userState['step'] ?? '') === 'km') {
 
     twiml_message_and_save(
         $from,
-        "Perfecto \n\n"
-        . "Marca: {$marca}\n"
-        . "Modelo: {$modelo}\n"
-        . "Año: {$anio}\n"
-        . "Kilómetros: {$km}\n\n"
-        . "Ahora escribime la VERSIÓN.\n"
-        . "Ejemplo: Full, GLS, LTZ, GS"
+        "Perfecto. ¿Cuál es la Versión exacta?\n"
+        . "(Ej: GLS, LTZ, GS)"
     );
 }
 
@@ -3148,10 +3138,7 @@ if (($userState['step'] ?? '') === 'tipo_venta') {
 
     twiml_message_and_save(
         $from,
-        "Perfecto \n\n"
-        . "Tipo de venta: " . format_tipo_venta_label($tipoVenta) . "\n\n"
-        . "Ahora escribime el VALOR PRETENDIDO.\n"
-        . "Ejemplo: 20000"
+        "Por último, ¿Cuál es el valor que pretendes por tu vehículo?"
     );
 }
 
