@@ -2106,44 +2106,57 @@ function wa_filtrar_horas_agendables_con_antelacion(array $horasDisponibles, str
     }
 
     $hoy = date('Y-m-d');
+    $maniana = date('Y-m-d', strtotime('+1 day'));
     $bloquesMinimos = 6; // 6 bloques de 30 min = 3 horas
+    $ahoraMin = ((int)date('H') * 60) + (int)date('i');
 
-    // Día futuro: ocultar los primeros 6 bloques
-    if ($fechaElegida > $hoy) {
-        return array_slice($horasDisponibles, $bloquesMinimos);
-    }
+    // Horario automotora
+    $inicioLaboral = (9 * 60);           // 09:00
+    $corteDiaSiguiente = (15 * 60) + 30; // 15:30
 
-    // Día pasado: no ofrecer nada
+    // Fecha pasada
     if ($fechaElegida < $hoy) {
         return [];
     }
 
-    // Hoy: ocultar hasta cumplir 6 bloques desde el primer bloque futuro
-    $ahoraMin = ((int)date('H') * 60) + (int)date('i');
-    $indicePrimerBloqueFuturo = null;
+    // MISMO DÍA: permitir solo horarios con al menos 3 horas reales de anticipación
+    if ($fechaElegida === $hoy) {
+        $minimoPermitido = $ahoraMin + 180; // 3 horas reloj
 
-    foreach ($horasDisponibles as $idx => $item) {
-        $hora = (string)($item['hora'] ?? '');
-        if ($hora === '' && isset($item['hora_comienzo'])) {
-            $hora = (string)$item['hora_comienzo'];
-        }
-        if ($hora === '') {
-            continue;
+        $filtradas = [];
+
+        foreach ($horasDisponibles as $item) {
+            $hora = (string)($item['hora'] ?? '');
+            if ($hora === '' && isset($item['hora_comienzo'])) {
+                $hora = (string)$item['hora_comienzo'];
+            }
+            if ($hora === '') {
+                continue;
+            }
+
+            $horaMin = wa_agenda_hora_a_minutos($hora);
+
+            if ($horaMin >= $minimoPermitido) {
+                $filtradas[] = $item;
+            }
         }
 
-        $horaMin = wa_agenda_hora_a_minutos($hora);
-
-        if ($horaMin > $ahoraMin) {
-            $indicePrimerBloqueFuturo = $idx;
-            break;
-        }
+        return $filtradas;
     }
 
-    if ($indicePrimerBloqueFuturo === null) {
-        return [];
+    // MAÑANA:
+    // si consultan dentro del horario de la automotora (09:00 a 15:30), mostrar todo
+    if ($fechaElegida === $maniana) {
+        if ($ahoraMin >= $inicioLaboral && $ahoraMin <= $corteDiaSiguiente) {
+            return $horasDisponibles;
+        }
+
+        // si consultan después de 15:30 (o antes de abrir), ocultar los primeros 6 bloques
+        return array_slice($horasDisponibles, $bloquesMinimos);
     }
 
-    return array_slice($horasDisponibles, $indicePrimerBloqueFuturo + $bloquesMinimos);
+    // PASADO MAÑANA O MÁS ADELANTE: mostrar todo
+    return $horasDisponibles;
 }
 
 function wa_hora_agendable_permitida(string $fecha, string $hora, array $horasDisponibles): bool
@@ -3567,7 +3580,7 @@ if (($userState['step'] ?? '') === 'agenda_dia') {
 
     $horas = wa_filtrar_horas_agendables_con_antelacion($horas, $fechaElegida);
 
-    $max = min(8, count($horas));
+    $max = count($horas);
 
     for ($i = 0; $i < $max; $i++) {
         $nro = (string)($i + 1);
