@@ -2088,6 +2088,82 @@ function wa_preguntar_inicio_cotizar_interactiva(string $from): void
     twiml_message_and_save($from, $fallback);
 }
 
+function wa_agenda_hora_a_minutos(string $hora): int
+{
+    $hora = substr(trim($hora), 0, 5);
+    $partes = explode(':', $hora);
+    $h = isset($partes[0]) ? (int)$partes[0] : 0;
+    $m = isset($partes[1]) ? (int)$partes[1] : 0;
+
+    return ($h * 60) + $m;
+}
+
+function wa_filtrar_horas_agendables_con_antelacion(array $horasDisponibles, string $fechaElegida): array
+{
+    $horasDisponibles = array_values($horasDisponibles);
+    if (empty($horasDisponibles)) {
+        return [];
+    }
+
+    $hoy = date('Y-m-d');
+    $bloquesMinimos = 6; // 6 bloques de 30 min = 3 horas
+
+    // Día futuro: ocultar los primeros 6 bloques
+    if ($fechaElegida > $hoy) {
+        return array_slice($horasDisponibles, $bloquesMinimos);
+    }
+
+    // Día pasado: no ofrecer nada
+    if ($fechaElegida < $hoy) {
+        return [];
+    }
+
+    // Hoy: ocultar hasta cumplir 6 bloques desde el primer bloque futuro
+    $ahoraMin = ((int)date('H') * 60) + (int)date('i');
+    $indicePrimerBloqueFuturo = null;
+
+    foreach ($horasDisponibles as $idx => $item) {
+        $hora = (string)($item['hora'] ?? '');
+        if ($hora === '' && isset($item['hora_comienzo'])) {
+            $hora = (string)$item['hora_comienzo'];
+        }
+        if ($hora === '') {
+            continue;
+        }
+
+        $horaMin = wa_agenda_hora_a_minutos($hora);
+
+        if ($horaMin > $ahoraMin) {
+            $indicePrimerBloqueFuturo = $idx;
+            break;
+        }
+    }
+
+    if ($indicePrimerBloqueFuturo === null) {
+        return [];
+    }
+
+    return array_slice($horasDisponibles, $indicePrimerBloqueFuturo + $bloquesMinimos);
+}
+
+function wa_hora_agendable_permitida(string $fecha, string $hora, array $horasDisponibles): bool
+{
+    $filtradas = wa_filtrar_horas_agendables_con_antelacion($horasDisponibles, $fecha);
+
+    foreach ($filtradas as $item) {
+        $horaItem = (string)($item['hora'] ?? '');
+        if ($horaItem === '' && isset($item['hora_comienzo'])) {
+            $horaItem = (string)$item['hora_comienzo'];
+        }
+
+        if (substr($horaItem, 0, 5) === substr($hora, 0, 5)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 // =========================
 // MAIN
 // =========================
@@ -3488,11 +3564,18 @@ if (($userState['step'] ?? '') === 'agenda_dia') {
     $horasOpciones = [];
     $lineas = [];
     $horas = $respHorarios['schedules']['horas_disponibles'];
+
+    $horas = wa_filtrar_horas_agendables_con_antelacion($horas, $fechaElegida);
+
     $max = min(8, count($horas));
 
     for ($i = 0; $i < $max; $i++) {
         $nro = (string)($i + 1);
-        $hora = (string)$horas[$i]['hora'];
+        $hora = (string)($horas[$i]['hora'] ?? '');
+        if ($hora === '' && isset($horas[$i]['hora_comienzo'])) {
+            $hora = (string)$horas[$i]['hora_comienzo'];
+        }
+
         $horasOpciones[$nro] = [
             'hora' => $hora
         ];
@@ -3684,6 +3767,21 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
     $location = (int)($userState['agenda_location'] ?? wa_agenda_location_id());
     $fecha = (string)($userState['agenda_fecha'] ?? '');
     $hora = (string)($userState['agenda_hora'] ?? '');
+
+    $respHorariosValidacion = wa_obtener_horarios_agenda($location, $fecha);
+    $horasValidacion = [];
+
+    if (($respHorariosValidacion['codigo'] ?? 500) == 200 && !empty($respHorariosValidacion['schedules']['horas_disponibles'])) {
+        $horasValidacion = $respHorariosValidacion['schedules']['horas_disponibles'];
+    }
+
+    if (!wa_hora_agendable_permitida($fecha, $hora, $horasValidacion)) {
+        twiml_message_and_save(
+            $from,
+            "No pude confirmar la agenda en este momento.\n\n"
+            . "Probá nuevamente o un asesor lo estará coordinando."
+        );
+    }
 
     $conv = wa_get_conversation($from);
     $idCotizacion = (int)($conv['id_cotizacion'] ?? 0);
