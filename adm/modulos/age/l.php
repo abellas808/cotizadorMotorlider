@@ -301,9 +301,40 @@ if ($orden_campo == 0) {
     $sql_order_by = $sql_o . ' ' . $sql_od . ', a.id_agenda ' . $sql_od;
 }
 
-$expr_pre_desde = age_sql_first_existing('c', 'cotizaciones_generadas', array('tasacion_desde', 'valor_desde', 'precio_desde', 'valor_minimo', 'precio_minimo', 'tasacion_minima', 'tasacion_min', 'valor_ml_desde', 'pretasacion_desde'), '0');
-$expr_pre_hasta = age_sql_first_existing('c', 'cotizaciones_generadas', array('tasacion_hasta', 'valor_hasta', 'precio_hasta', 'valor_maximo', 'precio_maximo', 'tasacion_maxima', 'tasacion_max', 'valor_ml_hasta', 'pretasacion_hasta'), '0');
-$expr_pre_final = age_sql_first_existing('c', 'cotizaciones_generadas', array('tasacion_final', 'valor_final', 'precio_final', 'valor_publicado', 'valor_cotizado', 'cotizacion_final', 'promedio_ponderado', 'pretasacion_final'), '0');
+$expr_pre_desde = age_sql_first_existing(
+    'c',
+    'cotizaciones_generadas',
+    array(
+        'pretasacion_desde',
+        'pre_tasacion_desde',
+        'tasacion_desde'
+    ),
+    'NULL'
+);
+
+$expr_pre_hasta = age_sql_first_existing(
+    'c',
+    'cotizaciones_generadas',
+    array(
+        'pretasacion_hasta',
+        'pre_tasacion_hasta',
+        'tasacion_hasta'
+    ),
+    'NULL'
+);
+
+$expr_pre_final = age_sql_first_existing(
+    'c',
+    'cotizaciones_generadas',
+    array(
+        'tasacion_final',
+        'pretasacion_final',
+        'valor_final',
+        'precio_final',
+        'cotizacion_final'
+    ),
+    'NULL'
+);
 
 $sql_filtros = '';
 $sql_filtros .= " AND DATE(a.fecha) >= '" . addslashes($fecha_desde) . "'";
