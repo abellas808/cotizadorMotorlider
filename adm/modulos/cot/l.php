@@ -277,7 +277,7 @@ if ($pagina <= 0) $pagina = 1;
 // ***************************************************************************************************
 $busqueda = isset($_GET['b']) ? substr(trim($_GET['b']), 0, 50) : '';
 $fecha_desde = isset($_GET['fd']) ? trim($_GET['fd']) : date('Y-m-01');
-$fecha_hasta = isset($_GET['fh']) ? trim($_GET['fh']) : date('Y-m-d');
+$fecha_hasta = isset($_GET['fh']) ? trim($_GET['fh']) : date('Y-m-d', strtotime('+30 days'));
 $estado_cot = isset($_GET['ecot']) ? trim($_GET['ecot']) : '';
 $estado_age = isset($_GET['eage']) ? trim($_GET['eage']) : '';
 
@@ -383,8 +383,28 @@ switch ($orden_campo) {
 // ***************************************************************************************************
 // Consulta
 // ***************************************************************************************************
-$expr_tas_desde = cot_sql_first_existing('c', 'cotizaciones_generadas', array('tasacion_desde', 'valor_desde', 'precio_desde', 'valor_minimo', 'precio_minimo', 'tasacion_minima', 'tasacion_min', 'valor_ml_desde'), '0');
-$expr_tas_hasta = cot_sql_first_existing('c', 'cotizaciones_generadas', array('tasacion_hasta', 'valor_hasta', 'precio_hasta', 'valor_maximo', 'precio_maximo', 'tasacion_maxima', 'tasacion_max', 'valor_ml_hasta'), '0');
+$expr_tas_desde = cot_sql_first_existing(
+	'c',
+	'cotizaciones_generadas',
+	array(
+		'pretasacion_desde',
+		'pre_tasacion_desde',
+		'tasacion_desde'
+	),
+	'NULL'
+);
+
+$expr_tas_hasta = cot_sql_first_existing(
+	'c',
+	'cotizaciones_generadas',
+	array(
+		'pretasacion_hasta',
+		'pre_tasacion_hasta',
+		'tasacion_hasta'
+	),
+	'NULL'
+);
+
 $expr_tas_final = cot_sql_first_existing('c', 'cotizaciones_generadas', array('tasacion_final', 'valor_final', 'precio_final', 'valor_publicado', 'valor_cotizado', 'cotizacion_final', 'promedio_ponderado'), 'NULL');
 
 $sql_from = '
