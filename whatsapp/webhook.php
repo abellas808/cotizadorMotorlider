@@ -20,11 +20,15 @@ date_default_timezone_set('America/Montevideo');
 // =========================
 const TWILIO_AUTH_TOKEN = '58f767d26211d9d0c20ea687df00b4c3';
 const COTIZADOR_BASE_URL = 'https://carplay.uy/apicotizador/cotizadorPublico/';
-
+const TWILIO_TEMPLATE_INICIO_COTIZAR = 'HX664360f3502afb56b04a76eeff4a9678';
 const DB_HOST = 'localhost';
 const DB_NAME = 'marcos2022_api';
 const DB_USER = 'marcos2022_usr_api';
 const DB_PASS = '_eT4AjJ79~tX]*h)J5';
+const TWILIO_ACCOUNT_SID = 'AC4a648c5c55de9d9b1f1f6601b14d4c4d';
+const TWILIO_WHATSAPP_FROM = 'whatsapp:+59898057857';
+const TWILIO_TEMPLATE_FICHA_OFICIAL = 'HXa8b293be94173c49089eda878a8ea2d9';
+const TWILIO_TEMPLATE_TIPO_VENTA = 'HXfaf8c64eb73fcfe261c8b5710e737614';
 
 // =========================
 // PATHS
@@ -197,11 +201,11 @@ function normalize_tipo_venta(string $text): ?string
 {
     $v = body_to_lower(trim($text));
 
-    if (in_array($v, ['1', 'venta', 'venta contado', 'contado'], true)) {
+    if (in_array($v, ['1', 'venta', 'venta contado', 'venta al contado', 'contado'], true)) {
         return 'venta_contado';
     }
 
-    if (in_array($v, ['2', 'entrega', 'permuta', 'entrega como forma de pago'], true)) {
+    if (in_array($v, ['2', 'entrega', 'permuta', 'entrega forma pago', 'entrega como parte de pago'], true)) {
         return 'entrega_forma_pago';
     }
 
@@ -215,7 +219,7 @@ function format_tipo_venta_label(string $tipo): string
     }
 
     if ($tipo === 'entrega_forma_pago') {
-        return 'Entrega como forma de pago';
+        return 'Entrega forma pago';
     }
 
     return $tipo;
@@ -1860,6 +1864,230 @@ function wa_build_mensaje_post_email($idCotizacion = null): string
     return $msg;
 }
 
+function wa_enviar_template_ficha_oficial(string $to, string $textoFallback = ''): bool
+{
+    $url = 'https://api.twilio.com/2010-04-01/Accounts/' . TWILIO_ACCOUNT_SID . '/Messages.json';
+
+    $postFields = [
+        'From' => TWILIO_WHATSAPP_FROM,
+        'To' => $to,
+        'ContentSid' => TWILIO_TEMPLATE_FICHA_OFICIAL
+    ];
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => http_build_query($postFields),
+        CURLOPT_USERPWD => TWILIO_ACCOUNT_SID . ':' . TWILIO_AUTH_TOKEN,
+        CURLOPT_TIMEOUT => 60,
+        CURLOPT_CONNECTTIMEOUT => 15,
+        CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_SSL_VERIFYHOST => 2,
+    ]);
+
+    $raw = curl_exec($ch);
+    $err = curl_error($ch);
+    $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    wa_log('TWILIO_TEMPLATE_FICHA_OFICIAL_RESPONSE', [
+        'to' => $to,
+        'http_code' => $http,
+        'error' => $err,
+        'raw' => $raw
+    ]);
+
+    if ($err !== '' || $http < 200 || $http >= 300) {
+        return false;
+    }
+
+    try {
+        wa_save_last_bot_message(
+            $to,
+            $textoFallback !== '' ? $textoFallback : '¿Tiene el historial de servicios oficiales al día?',
+            [
+                'origen' => 'twilio_content_template',
+                'content_sid' => TWILIO_TEMPLATE_FICHA_OFICIAL,
+                'tipo' => 'ficha_oficial_interactivo'
+            ],
+            '',
+            'BOT'
+        );
+    } catch (Throwable $e) {
+        wa_log('TWILIO_TEMPLATE_FICHA_OFICIAL_HISTORY_ERROR', [
+            'to' => $to,
+            'error' => $e->getMessage()
+        ]);
+    }
+
+    return true;
+}
+
+function wa_preguntar_ficha_oficial_interactiva(string $from): void
+{
+    $fallback = "¿Tiene el historial de servicios oficiales al día?\nRespondé: SI o NO";
+
+    $ok = wa_enviar_template_ficha_oficial($from, $fallback);
+
+    if ($ok) {
+        twiml_empty();
+    }
+
+    twiml_message_and_save($from, $fallback);
+}
+
+function wa_enviar_template_tipo_venta(string $to, string $textoFallback = ''): bool
+{
+    $url = 'https://api.twilio.com/2010-04-01/Accounts/' . TWILIO_ACCOUNT_SID . '/Messages.json';
+
+    $postFields = [
+        'From' => TWILIO_WHATSAPP_FROM,
+        'To' => $to,
+        'ContentSid' => TWILIO_TEMPLATE_TIPO_VENTA
+    ];
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => http_build_query($postFields),
+        CURLOPT_USERPWD => TWILIO_ACCOUNT_SID . ':' . TWILIO_AUTH_TOKEN,
+        CURLOPT_TIMEOUT => 60,
+        CURLOPT_CONNECTTIMEOUT => 15,
+        CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_SSL_VERIFYHOST => 2,
+    ]);
+
+    $raw = curl_exec($ch);
+    $err = curl_error($ch);
+    $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    wa_log('TWILIO_TEMPLATE_TIPO_VENTA_RESPONSE', [
+        'to' => $to,
+        'http_code' => $http,
+        'error' => $err,
+        'raw' => $raw
+    ]);
+
+    if ($err !== '' || $http < 200 || $http >= 300) {
+        return false;
+    }
+
+    try {
+        wa_save_last_bot_message(
+            $to,
+            $textoFallback !== '' ? $textoFallback : "¿Qué tipo de operación buscás?\n1 = Venta contado\n2 = Entrega forma pago",
+            [
+                'origen' => 'twilio_content_template',
+                'content_sid' => TWILIO_TEMPLATE_TIPO_VENTA,
+                'tipo' => 'tipo_venta_interactivo'
+            ],
+            '',
+            'BOT'
+        );
+    } catch (Throwable $e) {
+        wa_log('TWILIO_TEMPLATE_TIPO_VENTA_HISTORY_ERROR', [
+            'to' => $to,
+            'error' => $e->getMessage()
+        ]);
+    }
+
+    return true;
+}
+
+function wa_preguntar_tipo_venta_interactiva(string $from): void
+{
+    $fallback = "Ya casi terminamos. ¿Qué tipo de operación buscás?\n\n"
+        . "1 = Venta al contado\n"
+        . "2 = Entrega como parte de pago";
+
+    $ok = wa_enviar_template_tipo_venta($from, $fallback);
+
+    if ($ok) {
+        twiml_empty();
+    }
+
+    twiml_message_and_save($from, $fallback);
+}
+
+function wa_enviar_template_inicio_cotizar(string $to, string $textoFallback = ''): bool
+{
+    $url = 'https://api.twilio.com/2010-04-01/Accounts/' . TWILIO_ACCOUNT_SID . '/Messages.json';
+
+    $postFields = [
+        'From' => TWILIO_WHATSAPP_FROM,
+        'To' => $to,
+        'ContentSid' => TWILIO_TEMPLATE_INICIO_COTIZAR
+    ];
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => http_build_query($postFields),
+        CURLOPT_USERPWD => TWILIO_ACCOUNT_SID . ':' . TWILIO_AUTH_TOKEN,
+        CURLOPT_TIMEOUT => 60,
+        CURLOPT_CONNECTTIMEOUT => 15,
+        CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_SSL_VERIFYHOST => 2,
+    ]);
+
+    $raw = curl_exec($ch);
+    $err = curl_error($ch);
+    $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    wa_log('TWILIO_TEMPLATE_INICIO_COTIZAR_RESPONSE', [
+        'to' => $to,
+        'http_code' => $http,
+        'error' => $err,
+        'raw' => $raw
+    ]);
+
+    if ($err !== '' || $http < 200 || $http >= 300) {
+        return false;
+    }
+
+    try {
+        wa_save_last_bot_message(
+            $to,
+            $textoFallback !== '' ? $textoFallback : "👋 ¡Hola! Soy Alan, cotizador virtual de Motorlider.\n\nTocá el botón para comenzar.",
+            [
+                'origen' => 'twilio_content_template',
+                'content_sid' => TWILIO_TEMPLATE_INICIO_COTIZAR,
+                'tipo' => 'inicio_cotizar_interactivo'
+            ],
+            '',
+            'BOT'
+        );
+    } catch (Throwable $e) {
+        wa_log('TWILIO_TEMPLATE_INICIO_COTIZAR_HISTORY_ERROR', [
+            'to' => $to,
+            'error' => $e->getMessage()
+        ]);
+    }
+
+    return true;
+}
+
+function wa_preguntar_inicio_cotizar_interactiva(string $from): void
+{
+    $fallback = "👋 ¡Hola! Soy Alan\n"
+        . "Cotizador virtual de Motorlider.\n"
+        . "Estoy aquí para ayudarte a cotizar tu vehículo de forma rápida y fácil.\n\n"
+        . "Respondé COTIZAR para comenzar.";
+
+    $ok = wa_enviar_template_inicio_cotizar($from, $fallback);
+
+    if ($ok) {
+        twiml_empty();
+    }
+
+    twiml_message_and_save($from, $fallback);
+}
+
 // =========================
 // MAIN
 // =========================
@@ -2062,13 +2290,7 @@ if (in_array($bodyNorm, ['hola', 'hi', 'menu', 'inicio'], true)) {
         $profileName !== '' ? $profileName : null
     );
 
-    twiml_message_and_save(
-        $from,
-        "👋 ¡Hola! Soy Alan\n"
-        . "Cotizador virtual de Motorlider.\n"
-        . "Estoy aquí para ayudarte a cotizar tu vehículo de forma rápida y fácil.\n\n"
-        . "Para comenzar, por favor escribe: COTIZAR."
-    );
+    wa_preguntar_inicio_cotizar_interactiva($from);
 }
 
 if (in_array($bodyNorm, ['cancelar', 'salir'], true)) {
@@ -2711,7 +2933,7 @@ if (($userState['step'] ?? '') === 'version') {
             'version' => ''
         ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message_and_save($from, "Perfecto \n\nVersión: sin especificar\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
+        wa_preguntar_ficha_oficial_interactiva($from);
     }
 
     if ($idMarca <= 0 || $idModel <= 0) {
@@ -2769,7 +2991,7 @@ if (($userState['step'] ?? '') === 'version') {
             'version' => $versionFinal
         ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message_and_save($from, "Perfecto \n\nVersión: {$versionFinal}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
+        wa_preguntar_ficha_oficial_interactiva($from);
     }
 
     try {
@@ -2892,7 +3114,7 @@ if (($userState['step'] ?? '') === 'version_sugerida') {
             'version' => ''
         ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message_and_save($from, "Perfecto \n\nVersión: sin especificar\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
+        wa_preguntar_ficha_oficial_interactiva($from);
     }
 
     if (in_array($respuestaNorm, ['seguir', 'continuar', 'omitir'], true)) {
@@ -2927,7 +3149,7 @@ if (($userState['step'] ?? '') === 'version_sugerida') {
             'version' => $versionFinal
         ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message_and_save($from, "Perfecto \n\nVersión: {$versionFinal}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
+        wa_preguntar_ficha_oficial_interactiva($from);
     }
 
     foreach ($opciones as $op) {
@@ -2947,7 +3169,7 @@ if (($userState['step'] ?? '') === 'version_sugerida') {
                 'version' => $versionFinal
             ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-            twiml_message_and_save($from, "Perfecto \n\nVersión: {$versionFinal}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
+            wa_preguntar_ficha_oficial_interactiva($from);
         }
     }
 
@@ -2978,7 +3200,7 @@ if (($userState['step'] ?? '') === 'version_sugerida') {
             'version' => $versionFinal
         ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message_and_save($from, "Perfecto \n\nVersión: {$versionFinal}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
+        wa_preguntar_ficha_oficial_interactiva($from);
     }
 
     try {
@@ -3089,14 +3311,7 @@ if (($userState['step'] ?? '') === 'ficha_oficial') {
         'ficha_oficial' => $ficha
     ], 'ESPERANDO_TIPO_VENTA', 'BOT', $profileName !== '' ? $profileName : null);
 
-    twiml_message_and_save(
-        $from,
-        "Perfecto \n\n"
-        . "Ficha oficial: " . strtoupper($ficha) . "\n\n"
-        . "Ahora indicame el TIPO DE VENTA:\n"
-        . "1 = Venta contado\n"
-        . "2 = Entrega como forma de pago"
-    );
+    wa_preguntar_tipo_venta_interactiva($from);
 }
 
 // =========================
@@ -3111,7 +3326,7 @@ if (($userState['step'] ?? '') === 'tipo_venta') {
             "No entendí el tipo de venta.\n\n"
             . "Respondé:\n"
             . "1 = Venta contado\n"
-            . "2 = Entrega como forma de pago"
+            . "2 = Entrega forma pago"
         );
     }
 
