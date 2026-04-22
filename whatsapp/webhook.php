@@ -576,10 +576,34 @@ function wa_finalizar_cotizacion_desde_estado(string $from, string $profileName,
             ?? $apiResult['cotizacion_id']
             ?? null;
 
-        $estadoCotizacion = wa_recalcular_estado_cotizacion($idCotizacion ? (int)$idCotizacion : 0);
-        if ($estadoCotizacion !== null) {
-            $estadoFinalData['estado_cotizacion'] = $estadoCotizacion['estado'] ?? null;
-            $estadoFinalData['detalle_estado_cotizacion'] = $estadoCotizacion['detalle_estado'] ?? null;
+        // --- NUEVA LÓGICA DE ESTADOS ---
+        if ($idCotizacion) {
+            $db = wa_db(); 
+            
+            // Buscamos cualquier indicio de valor positivo en la respuesta de la API
+            $promedio = $apiResult['promedio'] 
+                        ?? $apiResult['valor_promedio_motorlider'] 
+                        ?? $apiResult['valor_promedio'] 
+                        ?? $apiResult['promedio_mercado_6'] 
+                        ?? 0;
+            
+            // Si el promedio es mayor a 0, es un Estado 2 (Pendiente de enviar)
+            if (floatval($promedio) > 0) {
+                $nuevoEstado = 2; 
+                $mensajeBot = "¡Datos recibidos con éxito! ✅\n\nEstoy procesando la información...⏱ En unos minutos te enviaré la propuesta por aquí mismo.";
+            } else {
+                // Si realmente es 0, es Estado 1 (No cotizó)
+                $nuevoEstado = 1; 
+                $mensajeBot = "Recibí los datos correctamente ✅\n\nEstamos analizando tu vehículo de forma personalizada. En breve un asesor se comunicará contigo para darte el valor.";
+            }
+
+            // Actualizamos la tabla
+            $idCotInt = intval($idCotizacion);
+            $db->query("UPDATE cotizaciones_generadas SET estado = '$nuevoEstado' WHERE id_cotizaciones_generadas = $idCotInt");
+            
+            // NO cerramos $db->close() aquí para evitar el error de conexión que te comenté antes
+        } else {
+            $mensajeBot = wa_build_mensaje_post_email(null);
         }
 
         wa_set_user_state(
@@ -592,7 +616,7 @@ function wa_finalizar_cotizacion_desde_estado(string $from, string $profileName,
             $idCotizacion
         );
 
-        twiml_message_and_save($from, wa_build_mensaje_post_email($idCotizacion));
+        twiml_message_and_save($from, $mensajeBot);
         return;
     }
 

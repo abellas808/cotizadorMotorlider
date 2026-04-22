@@ -37,11 +37,16 @@ class CotizacionGenerada implements JsonSerializable
     public $detalle_estado;
     public $mail_enviado;
     public $fecha_mail;
+    public $cotizado_exitoso; // Variable agregada
+    public $estado_id; // Variable agregada
+
 
     public function __construct(array $parametros)
     {
         foreach ($parametros as $key => $val) {
-            $this->$key = $val;
+            if (property_exists($this, $key)) {
+                $this->$key = $val;
+            }
         }
     }
 
@@ -58,34 +63,27 @@ class CotizacionGenerada implements JsonSerializable
             true
         );
 
-        return new self($row);
+        return $row ? new self($row) : null;
     }
 
     public function save()
     {
-        // Tomo todas las props del objeto
         $parametros = get_object_vars($this);
 
-        // IMPORTANTÍSIMO: el ID es autoincremental, no se inserta ni se envía como parámetro
         unset($parametros['id_cotizaciones_generadas']);
 
-        // Normalizar nulls (tu tabla es NOT NULL en casi todo)
+        // Normalizar nulls
         foreach ($parametros as $k => $v) {
             if ($v === null) {
                 $parametros[$k] = '';
             }
         }
 
-        // Defaults mínimos útiles
         if (($parametros['fecha'] ?? '') === '') {
-            // fecha es DATE en tu tabla
             $parametros['fecha'] = date('Y-m-d');
         }
-        if (!isset($parametros['anio']) || $parametros['anio'] === '') {
-            $parametros['anio'] = 0;
-        }
-
-        // Armar placeholders SOLO de estos campos (que coinciden con el SQL)
+        
+        // Armar placeholders
         $parametros_sql = [];
         foreach ($parametros as $k => $v) {
             $parametros_sql[":" . $k] = $v;
@@ -120,10 +118,37 @@ class CotizacionGenerada implements JsonSerializable
             estado = :estado,
             detalle_estado = :detalle_estado,
             mail_enviado = :mail_enviado,
-            fecha_mail = :fecha_mail';
+            fecha_mail = :fecha_mail,
+            cotizado_exitoso = :cotizado_exitoso,
+            estado_id = :estado_id '; // Agregado al INSERT
 
         $id = Database::getInstance()->mysqlNonQuery($sql, $parametros_sql);
 
         return self::get($id);
+    }
+
+    /**
+     * Método para actualizar registros existentes (útil para el método actualizarEstadoCotizacion)
+     */
+    public function update()
+    {
+        if (!$this->id_cotizaciones_generadas) return false;
+
+        $parametros = get_object_vars($this);
+        $id = $this->id_cotizaciones_generadas;
+        unset($parametros['id_cotizaciones_generadas']);
+
+        $set_parts = [];
+        $parametros_sql = [':id' => $id];
+
+        foreach ($parametros as $k => $v) {
+            $set_parts[] = "$k = :$k";
+            $parametros_sql[":$k"] = ($v === null) ? '' : $v;
+        }
+
+        $sql = 'UPDATE marcos2022_api.cotizaciones_generadas SET ' . implode(', ', $set_parts) . ' 
+                WHERE id_cotizaciones_generadas = :id LIMIT 1';
+
+        return Database::getInstance()->mysqlNonQuery($sql, $parametros_sql);
     }
 }

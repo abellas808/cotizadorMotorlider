@@ -10,6 +10,39 @@ class CotizacionService
     private const DB_BATCH = 'marcos2022_api';
     private const DB_COTIZADOR = 'marcos2022_api_cotizador';
     private const MAX_COMPARABLES = 6;
+    // Dentro de la clase CotizacionService
+
+    // Dentro de la clase CotizacionService
+
+    // 1. Definimos los estados como constantes para evitar errores
+        // En CotizacionService.php
+    // Cambiamos los números por los strings que ya entiende tu sistema
+    public const ESTADO_NO_COTIZO  = 'NO_COTIZO'; 
+    public const ESTADO_PENDIENTE  = 'PENDIENTE'; 
+    public const ESTADO_PRELIMINAR = 'PRELIMINAR'; 
+    public const ESTADO_FINALIZADO = 'FINALIZADO';
+
+    public const ESTADO_NO_COTIZO_ID  = 1; 
+    public const ESTADO_PENDIENTE_ID  = 2; 
+    public const ESTADO_PRELIMINAR_ID = 3; 
+    public const ESTADO_FINALIZADO_ID = 4;
+
+    /**
+     * Método centralizado para cambiar estados
+     */
+    public function actualizarEstado($idCotizacion, $nuevoEstado) {
+        global $db;
+        $id = intval($idCotizacion);
+        $estado = intval($nuevoEstado);
+
+        return $db->query("
+            UPDATE cotizaciones_generadas 
+            SET estado = '$estado', 
+                fecha_mod = NOW() 
+            WHERE id_cotizaciones_generadas = '$id' 
+            LIMIT 1
+        ");
+    }
 
     private function logInterno(string $tag, array $payload = []): void
     {
@@ -315,8 +348,11 @@ class CotizacionService
             $cg_data['porcentajes_aplicados'] = json_encode([], JSON_UNESCAPED_UNICODE);
             $cg_data['cuenta'] = null;
 
-            $cg_data['estado'] = 'PENDIENTE';
+            $cg_data['estado'] = self::ESTADO_NO_COTIZO; // Guardará un 1
+            $cg_data['cotizado_exitoso'] = 0;
             $cg_data['detalle_estado'] = $detalleEstado;
+            $cg_data['estado_id'] = self::ESTADO_NO_COTIZO_ID; // Agregado
+
             $cg_data['mail_enviado'] = 0;
             $cg_data['fecha_mail'] = null;
 
@@ -344,41 +380,9 @@ class CotizacionService
             try {
                 $mail = new MailService();
 
-                // $mail->enviarConfirmacionCotizacion(
-                //     [
-                //         'nombre' => $cg_data['nombre'],
-                //         'email' => $cg_data['email'],
-                //         'telefono' => $cg_data['telefono'],
-                //         'nombre_auto' => $cg_data['auto'],
-                //         'brand' => $brandTxt,
-                //         'modelo' => $modeloTxt,
-                //         'anio' => $anioIn,
-                //         'km' => $kmIn,
-                //         'valor_pretendido' => $valorPretendidoClienteRedondeado
-                //     ],
-                //     [
-                //         'ok' => false,
-                //         'id_cotizacion' => $id,
-                //         'msg' => $msgInterno,
-                //         'msg_cliente' => $msgCliente,
-                //         'msg_interno' => $msgInterno,
-                //         'detalle_estado' => $detalleEstado,
-                //         'comparables' => 0,
-                //         'count' => 0,
-                //         'min' => 0,
-                //         'max' => 0,
-                //         'avg' => 0,
-                //         'valor_minimo_motorlider' => 0,
-                //         'valor_maximo_motorlider' => 0,
-                //         'valor_promedio_motorlider' => 0,
-                //         'vpretendido_aplicado' => false,
-                //         'valor_pretendido_cliente' => $valorPretendidoClienteRedondeado
-                //     ]
-                // );
-
                 $this->actualizarEstadoCotizacion(
                     (int)$id,
-                    'PENDIENTE',
+                    self::ESTADO_NO_COTIZO, // Aquí cambiamos 'PENDIENTE' por el ID 1
                     $detalleEstado,
                     1,
                     date('Y-m-d H:i:s')
@@ -391,7 +395,7 @@ class CotizacionService
             } catch (\Throwable $e) {
                 $this->actualizarEstadoCotizacion(
                     (int)$id,
-                    'PENDIENTE',
+                    self::ESTADO_NO_COTIZO, // Aquí también cambiamos 'PENDIENTE' por el ID 1
                     $detalleEstado,
                     0,
                     null
@@ -981,8 +985,11 @@ class CotizacionService
             $cg_data['porcentajes_aplicados'] = json_encode($motorliderCalc['porcentajes_aplicados'], JSON_UNESCAPED_UNICODE);
             $cg_data['cuenta'] = null;
 
-            $cg_data['estado'] = 'PENDIENTE';
-            $cg_data['detalle_estado'] = 'Cotización generada pendiente de envío de mail';
+            $cg_data['estado'] = self::ESTADO_PENDIENTE; // Guardará un 2   
+            $cg_data['cotizado_exitoso'] = 1;
+            $cg_data['detalle_estado'] = 'Cotización generada exitosamente';
+            $cg_data['estado_id'] = self::ESTADO_PENDIENTE_ID; // Agregado, guardará un 2
+
             $cg_data['mail_enviado'] = 0;
             $cg_data['fecha_mail'] = null;
 
@@ -1000,7 +1007,9 @@ class CotizacionService
         }
 
         if ($id) {
+            
             $okItems = 0;
+
             foreach ($itemsParaPersistir as $row) {
                 $row['cotizacion_id'] = $id;
                 $this->persistirItemCotizacion($row);
@@ -1028,10 +1037,11 @@ class CotizacionService
                     )
                 );
 
+                // REEMPLAZO: Usamos la constante que vale 2 en lugar del texto 'FINALIZADA'
                 $this->actualizarEstadoCotizacion(
                     (int)$id,
-                    'FINALIZADA',
-                    'Cotización generada y mail interno enviado',
+                    self::ESTADO_PENDIENTE, 
+                    'Cotización generada, listo para enciar pre tasaciones',
                     1,
                     date('Y-m-d H:i:s')
                 );
@@ -1041,10 +1051,11 @@ class CotizacionService
                     'email' => $cg_data['email'] ?? null
                 ]);
             } catch (\Throwable $e) {
+                // REEMPLAZO: Usamos la constante que vale 2 en lugar del texto 'PENDIENTE'
                 $this->actualizarEstadoCotizacion(
                     (int)$id,
-                    'PENDIENTE',
-                    'Cotización generada pero falló envío de mail interno: ' . $e->getMessage(),
+                    self::ESTADO_PENDIENTE, 
+                    'Cotización generada pero falló por algun motivo: ' . $e->getMessage(),
                     0,
                     null
                 );
