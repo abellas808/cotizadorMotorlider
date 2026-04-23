@@ -52,6 +52,10 @@ if ($idUsuario > 0) {
 	$sets[] = "id_usuario_cotizo = " . intval($idUsuario);
 }
 
+$sets[] = "estado = 'FINALIZADO'";
+$sets[] = "estado_id = 4";
+$sets[] = "fecha_mod = NOW()";
+
 if (empty($sets)) {
 	j([
 		'ok' => true,

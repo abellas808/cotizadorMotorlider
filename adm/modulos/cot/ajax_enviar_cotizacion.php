@@ -153,8 +153,10 @@ if (!$conv) {
 	j(['ok' => false, 'mensaje' => 'No se encontró conversación de WhatsApp asociada a la cotización.']);
 }
 
-if (($conv['estado'] ?? '') !== 'PENDIENTE_RESPUESTA_HUMANA') {
-	j(['ok' => false, 'mensaje' => 'La conversación no está en estado PENDIENTE_RESPUESTA_HUMANA.']);
+$estadoConv = trim((string)($conv['estado'] ?? ''));
+
+if ($estadoConv === '') {
+	j(['ok' => false, 'mensaje' => 'La conversación no tiene estado válido.']);
 }
 
 $telefono = trim((string)($conv['telefono'] ?? ''));
@@ -243,7 +245,11 @@ $db->query("
 		pretasacion_desde = " . floatval($pretasacion_desde) . ",
 		pretasacion_hasta = " . floatval($pretasacion_hasta) . ",
 		msg = '{$mensajeEsc}',
-		detalle_estado = 'Respuesta humana enviada por WhatsApp'
+		detalle_estado = 'Respuesta humana enviada por WhatsApp', 
+		estado = 'PRELIMINAR',
+		estado_id=3,
+		fecha_mod = NOW()
+
 	WHERE id_cotizaciones_generadas = '" . intval($id) . "'
 	LIMIT 1
 ");

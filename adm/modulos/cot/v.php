@@ -68,7 +68,6 @@ if (($elemento['familia'] ?? '') == 'otro') {
 	$vehiculoTexto = trim((string)$elemento['auto'] . ' ' . strtoupper((string)$elemento['familia']));
 }
 
-
 $convMensajes = array();
 $convId = 0;
 
@@ -261,10 +260,15 @@ if (!function_exists('cot_v_hora_chat')) {
 		font-weight: bold;
 	}
 
+	.btn[disabled],
+	button[disabled] {
+		opacity: .55;
+		cursor: not-allowed !important;
+	}
+
 	@media (max-width: 900px) {
 		.cot-label { width: 150px; }
 	}
-
 
 	.cot-chat-card {
 		background: #fff;
@@ -313,11 +317,7 @@ if (!function_exists('cot_v_hora_chat')) {
 		border-top-left-radius: 2px;
 	}
 
-	.cot-msg-bubble.humano {
-		background: #d9fdd3;
-		border-top-right-radius: 2px;
-	}
-
+	.cot-msg-bubble.humano,
 	.cot-msg-bubble.cliente {
 		background: #d9fdd3;
 		border-top-right-radius: 2px;
@@ -445,8 +445,11 @@ if (!function_exists('cot_v_hora_chat')) {
 			</div>
 
 			<div class="cot-edit-actions" style="margin-top:10px;">
-				<button type="button" class="btn btn-success" id="btn_enviar_whatsapp" onclick="enviarRespuestaWhatsapp();">
-					Enviar respuesta WhatsApp
+				<button type="button" class="btn btn-success" id="btn_enviar_pre_whatsapp" onclick="enviarRespuestaWhatsapp('pre');">
+					Enviar pre tasación
+				</button>
+				<button type="button" class="btn btn-success" id="btn_enviar_final_whatsapp" onclick="enviarRespuestaFinal('final');">
+					Enviar tasación final
 				</button>
 				<span class="cot-feedback" id="whatsapp_feedback"></span>
 			</div>
@@ -480,8 +483,6 @@ if (!function_exists('cot_v_hora_chat')) {
 		</div>
 	</div>
 </div>
-
-
 
 <div class="cot-chat-card">
 	<h4>Conversación WhatsApp</h4>
@@ -525,6 +526,27 @@ var pretasacionDesdeOriginal = document.getElementById('pretasacion_desde').valu
 var pretasacionHastaOriginal = document.getElementById('pretasacion_hasta').value;
 var tasacionFinalOriginal = document.getElementById('tasacion_final').value;
 
+function tieneValor(valor) {
+	return String(valor || '').trim() !== '';
+}
+
+function actualizarBotonesEnvio() {
+	var pretasacion_desde = document.getElementById('pretasacion_desde').value || '';
+	var pretasacion_hasta = document.getElementById('pretasacion_hasta').value || '';
+	var tasacion_final = document.getElementById('tasacion_final').value || '';
+
+	var btnPre = document.getElementById('btn_enviar_pre_whatsapp');
+	var btnFinal = document.getElementById('btn_enviar_final_whatsapp');
+
+	if (btnPre) {
+		btnPre.disabled = !(tieneValor(pretasacion_desde) && tieneValor(pretasacion_hasta));
+	}
+
+	if (btnFinal) {
+		btnFinal.disabled = !tieneValor(tasacion_final);
+	}
+}
+
 function habilitarEdicionTasacion() {
 	document.getElementById('pretasacion_desde').disabled = false;
 	document.getElementById('pretasacion_hasta').disabled = false;
@@ -535,6 +557,7 @@ function habilitarEdicionTasacion() {
 	document.getElementById('btn_cancelar_tasacion').style.display = 'inline-block';
 
 	document.getElementById('tasacion_feedback').innerHTML = '';
+	actualizarBotonesEnvio();
 }
 
 function cancelarEdicionTasacion() {
@@ -551,6 +574,7 @@ function cancelarEdicionTasacion() {
 	document.getElementById('btn_cancelar_tasacion').style.display = 'none';
 
 	document.getElementById('tasacion_feedback').innerHTML = '';
+	actualizarBotonesEnvio();
 }
 
 function guardarTasacionInterna() {
@@ -600,6 +624,14 @@ function guardarTasacionInterna() {
 
 				feedback.style.color = '#468847';
 				feedback.innerHTML = 'Tasación guardada correctamente.';
+				document.getElementById('pretasacion_desde').disabled = true;
+				document.getElementById('pretasacion_hasta').disabled = true;
+				document.getElementById('tasacion_final').disabled = true;
+				document.getElementById('btn_editar_tasacion').style.display = 'inline-block';
+				document.getElementById('btn_guardar_tasacion').style.display = 'none';
+				document.getElementById('btn_cancelar_tasacion').style.display = 'none';
+				actualizarBotonesEnvio();
+
 				setTimeout(function() {
 					window.location.reload();
 				}, 700);
@@ -621,21 +653,34 @@ function guardarTasacionInterna() {
 	);
 }
 
-function enviarRespuestaWhatsapp() {
+function enviarRespuestaWhatsapp(modoEnvio) {
 	var pretasacion_desde = document.getElementById('pretasacion_desde').value || '';
 	var pretasacion_hasta = document.getElementById('pretasacion_hasta').value || '';
+	var tasacion_final = document.getElementById('tasacion_final').value || '';
 	var feedback = document.getElementById('whatsapp_feedback');
-	var btn = document.getElementById('btn_enviar_whatsapp');
+	var btnPre = document.getElementById('btn_enviar_pre_whatsapp');
+	var btnFinal = document.getElementById('btn_enviar_final_whatsapp');
 
-	if (!pretasacion_desde.trim() || !pretasacion_hasta.trim()) {
-		feedback.style.color = '#b94a48';
-		feedback.innerHTML = 'Para enviar, completá pre tasación desde y hasta.';
-		return;
+	if (modoEnvio === 'pre') {
+		if (!pretasacion_desde.trim() || !pretasacion_hasta.trim()) {
+			feedback.style.color = '#b94a48';
+			feedback.innerHTML = 'Para enviar la pre tasación, completá desde y hasta.';
+			return;
+		}
 	}
 
-	btn.disabled = true;
+	if (modoEnvio === 'final') {
+		if (!tasacion_final.trim()) {
+			feedback.style.color = '#b94a48';
+			feedback.innerHTML = 'Para enviar la tasación final, completá la tasación final.';
+			return;
+		}
+	}
+
+	btnPre.disabled = true;
+	btnFinal.disabled = true;
 	feedback.style.color = '#666';
-	feedback.innerHTML = 'Enviando WhatsApp...';
+	feedback.innerHTML = (modoEnvio === 'final') ? 'Enviando tasación final por WhatsApp...' : 'Enviando pre tasación por WhatsApp...';
 
 	var xhr = new XMLHttpRequest();
 	xhr.open('POST', '/adm/modulos/cot/ajax_enviar_cotizacion.php', true);
@@ -644,7 +689,7 @@ function enviarRespuestaWhatsapp() {
 	xhr.onreadystatechange = function() {
 		if (xhr.readyState !== 4) return;
 
-		btn.disabled = false;
+		actualizarBotonesEnvio();
 
 		if (xhr.status !== 200) {
 			feedback.style.color = '#b94a48';
@@ -673,8 +718,82 @@ function enviarRespuestaWhatsapp() {
 
 	xhr.send(
 		'id=<?php echo intval($id); ?>' +
+		'&modo_envio=' + encodeURIComponent(modoEnvio) +
 		'&pretasacion_desde=' + encodeURIComponent(pretasacion_desde) +
-		'&pretasacion_hasta=' + encodeURIComponent(pretasacion_hasta)
+		'&pretasacion_hasta=' + encodeURIComponent(pretasacion_hasta) +
+		'&tasacion_final=' + encodeURIComponent(tasacion_final)
+	);
+}
+
+function enviarRespuestaFinal(modoEnvio) {
+	var pretasacion_desde = document.getElementById('pretasacion_desde').value || '';
+	var pretasacion_hasta = document.getElementById('pretasacion_hasta').value || '';
+	var tasacion_final = document.getElementById('tasacion_final').value || '';
+	var feedback = document.getElementById('whatsapp_feedback');
+	var btnPre = document.getElementById('btn_enviar_pre_whatsapp');
+	var btnFinal = document.getElementById('btn_enviar_final_whatsapp');
+
+	if (modoEnvio === 'pre') {
+		if (!pretasacion_desde.trim() || !pretasacion_hasta.trim()) {
+			feedback.style.color = '#b94a48';
+			feedback.innerHTML = 'Para enviar la pre tasación, completá desde y hasta.';
+			return;
+		}
+	}
+
+	if (modoEnvio === 'final') {
+		if (!tasacion_final.trim()) {
+			feedback.style.color = '#b94a48';
+			feedback.innerHTML = 'Para enviar la tasación final, completá la tasación final.';
+			return;
+		}
+	}
+
+	btnPre.disabled = true;
+	btnFinal.disabled = true;
+	feedback.style.color = '#666';
+	feedback.innerHTML = (modoEnvio === 'final') ? 'Enviando tasación final ...' : 'Enviando pre tasación por WhatsApp...';
+
+	var xhr = new XMLHttpRequest();
+	xhr.open('POST', '/adm/modulos/cot/ajax_guardar_tasacion_desde_v.php', true);
+	xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
+
+	xhr.onreadystatechange = function() {
+		if (xhr.readyState !== 4) return;
+
+		actualizarBotonesEnvio();
+
+		if (xhr.status !== 200) {
+			feedback.style.color = '#b94a48';
+			feedback.innerHTML = 'Error HTTP ' + xhr.status + '<br><small>' + xhr.responseText + '</small>';
+			return;
+		}
+
+		try {
+			var res = JSON.parse(xhr.responseText);
+
+			if (res.ok) {
+				feedback.style.color = '#468847';
+				feedback.innerHTML = res.mensaje ? res.mensaje : 'Respuesta enviada correctamente.';
+				setTimeout(function() {
+					window.location.reload();
+				}, 900);
+			} else {
+				feedback.style.color = '#b94a48';
+				feedback.innerHTML = res.mensaje ? res.mensaje : 'No se pudo enviar.';
+			}
+		} catch (e) {
+			feedback.style.color = '#b94a48';
+			feedback.innerHTML = 'Respuesta inválida del servidor:<br><small>' + xhr.responseText + '</small>';
+		}
+	};
+
+	xhr.send(
+		'id=<?php echo intval($id); ?>' +
+		'&modo_envio=' + encodeURIComponent(modoEnvio) +
+		'&pretasacion_desde=' + encodeURIComponent(pretasacion_desde) +
+		'&pretasacion_hasta=' + encodeURIComponent(pretasacion_hasta) +
+		'&tasacion_final=' + encodeURIComponent(tasacion_final)
 	);
 }
 
@@ -683,8 +802,18 @@ window.addEventListener('load', function () {
 	if (chatBox) {
 		chatBox.scrollTop = chatBox.scrollHeight;
 	}
-});
 
+	actualizarBotonesEnvio();
+
+	var campos = ['pretasacion_desde', 'pretasacion_hasta', 'tasacion_final'];
+	for (var i = 0; i < campos.length; i++) {
+		var el = document.getElementById(campos[i]);
+		if (el) {
+			el.addEventListener('input', actualizarBotonesEnvio);
+			el.addEventListener('change', actualizarBotonesEnvio);
+		}
+	}
+});
 </script>
 
 <?php require_once('sistema_post_contenido.php'); ?>
