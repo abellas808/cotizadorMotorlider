@@ -390,7 +390,12 @@ if (!function_exists('cot_v_hora_chat')) {
 			<div class="cot-item"><div class="cot-label">Vehículo</div><div class="cot-value"><?php echo_s(cot_v_text($vehiculoTexto)); ?></div></div>
 			<div class="cot-item"><div class="cot-label">Año</div><div class="cot-value"><?php echo_s(cot_v_text($elemento['anio'])); ?></div></div>
 			<div class="cot-item"><div class="cot-label">Kilómetros</div><div class="cot-value"><?php echo_s(is_numeric($elemento['kilometros'] ?? null) ? number_format((float)$elemento['kilometros'], 0, ',', '.') : '-'); ?></div></div>
-			<div class="cot-item"><div class="cot-label">Ficha en service oficial</div><div class="cot-value"><?php echo_s(cot_v_text($elemento['ficha_tecnica'])); ?></div></div>
+			<div class="cot-item">
+				<div class="cot-label">Ficha en service oficial</div>
+				<div class="cot-value">
+					<?= ((int)$elemento['ficha_tecnica'] === 1) ? 'Sí' : 'No'; ?>
+				</div>
+			</div>
 			<div class="cot-item"><div class="cot-label">Cantidad de Dueños</div><div class="cot-value"><?php echo_s(cot_v_text($elemento['duenios'])); ?></div></div>
 			<div class="cot-item"><div class="cot-label">Tipo de Venta</div><div class="cot-value"><?php echo (($elemento['tipo_venta'] ?? '') == 'Venta') ? 'Venta Contado' : 'Entrega como forma de pago'; ?></div></div>
 			<div class="cot-item"><div class="cot-label">Valor Pretendido</div><div class="cot-value"><?php echo_s(cot_v_money($elemento['precio_pretendido'])); ?></div></div>
