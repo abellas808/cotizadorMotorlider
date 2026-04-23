@@ -49,52 +49,6 @@ function obtener_parametro_sistema($grupo, $clave) {
 	return $row['valor'] ?? null;
 }
 
-function registrar_mensaje_historial_backend($idConversacion, $telefono, $mensaje, $sidMensaje = '', $meta = [])
-{
-	global $db;
-
-	$idConversacion = (int)$idConversacion;
-	$telefono = trim((string)$telefono);
-	$mensaje = trim((string)$mensaje);
-	$sidMensaje = trim((string)$sidMensaje);
-
-	if ($idConversacion <= 0 || $telefono === '' || $mensaje === '') {
-		return false;
-	}
-
-	$mensajeEsc = $db->escape($mensaje);
-	$telefonoEsc = $db->escape($telefono);
-	$sidEsc = $db->escape($sidMensaje);
-	$metaEsc = $db->escape(!empty($meta) ? json_encode($meta, JSON_UNESCAPED_UNICODE) : null);
-
-	$db->query("
-		INSERT INTO whatsapp_conversacion_mensajes
-		(
-			id_conversacion,
-			telefono,
-			direccion,
-			emisor,
-			mensaje,
-			meta_json,
-			sid_mensaje,
-			fecha
-		)
-		VALUES
-		(
-			'{$idConversacion}',
-			'{$telefonoEsc}',
-			'SALIENTE',
-			'BOT',
-			'{$mensajeEsc}',
-			" . ($metaEsc !== '' ? "'{$metaEsc}'" : "NULL") . ",
-			" . ($sidEsc !== '' ? "'{$sidEsc}'" : "NULL") . ",
-			NOW()
-		)
-	");
-	
-	return true;
-}
-
 function enviar_whatsapp_twilio($to, $body) {
 	$url = 'https://api.twilio.com/2010-04-01/Accounts/' . TWILIO_ACCOUNT_SID . '/Messages.json';
 
@@ -260,17 +214,6 @@ if (!$envio['ok']) {
 		'mensaje' => 'No se pudo enviar el WhatsApp: ' . ($envio['mensaje'] ?? 'Error desconocido.')
 	]);
 }
-
-registrar_mensaje_historial_backend(
-	(int)$conv['id'],
-	$telefono,
-	$mensaje,
-	(string)($envio['sid'] ?? ''),
-	[
-		'origen' => 'backend_pre_tasacion',
-		'id_cotizacion' => (int)$id
-	]
-);
 
 $humanoTomadoPor = '';
 if (!empty($usuario['nombre'])) {

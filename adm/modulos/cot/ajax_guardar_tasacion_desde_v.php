@@ -18,57 +18,9 @@ date_default_timezone_set('America/Montevideo');
 
 global $db;
 
-$modoEnvio = trim((string)($_POST['modo_envio'] ?? ''));
-
 function j($a) {
 	echo json_encode($a);
 	exit;
-}
-
-function registrar_mensaje_historial_backend($idConversacion, $telefono, $mensaje, $sidMensaje = '', $meta = [])
-{
-	global $db;
-
-	$idConversacion = (int)$idConversacion;
-	$telefono = trim((string)$telefono);
-	$mensaje = trim((string)$mensaje);
-	$sidMensaje = trim((string)$sidMensaje);
-
-	if ($idConversacion <= 0 || $telefono === '' || $mensaje === '') {
-		return false;
-	}
-
-	$mensajeEsc = $db->escape($mensaje);
-	$telefonoEsc = $db->escape($telefono);
-	$sidEsc = $db->escape($sidMensaje);
-	$metaEsc = $db->escape(!empty($meta) ? json_encode($meta, JSON_UNESCAPED_UNICODE) : null);
-
-	$db->query("
-		INSERT INTO whatsapp_conversacion_mensajes
-		(
-			id_conversacion,
-			telefono,
-			direccion,
-			emisor,
-			mensaje,
-			meta_json,
-			sid_mensaje,
-			fecha
-		)
-		VALUES
-		(
-			'{$idConversacion}',
-			'{$telefonoEsc}',
-			'SALIENTE',
-			'BOT',
-			'{$mensajeEsc}',
-			" . ($metaEsc !== '' ? "'{$metaEsc}'" : "NULL") . ",
-			" . ($sidEsc !== '' ? "'{$sidEsc}'" : "NULL") . ",
-			NOW()
-		)
-	");
-	
-	return true;
 }
 
 $id = intval($_POST['id'] ?? 0);
@@ -79,17 +31,6 @@ $tasacion_final = trim((string)($_POST['tasacion_final'] ?? ''));
 if ($id <= 0) {
 	j(['ok' => false, 'mensaje' => 'ID inválido.']);
 }
-
-registrar_mensaje_historial_backend(
-	(int)$conv['id'],
-	$telefono,
-	$mensaje,
-	(string)($envio['sid'] ?? ''),
-	[
-		'origen' => 'backend_tasacion_final',
-		'id_cotizacion' => (int)$id
-	]
-);
 
 $idUsuario = intval($_SESSION[$config['codigo_unico']]['login_usuario_id'] ?? 0);
 
