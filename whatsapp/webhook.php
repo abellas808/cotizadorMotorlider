@@ -552,7 +552,7 @@ function wa_finalizar_cotizacion_desde_estado(string $from, string $profileName,
             'anio' => $anio,
             'km' => $km,
             'ficha_tecnica' => ($ficha === 'si') ? 1 : 0,
-            'cantidad_duenios' => 1,
+            'cantidad_duenios' => intval($userState['duenios'] ?? 1),
             'valor_pretendido' => $valor,
             'venta_permuta' => ($tipoVenta === 'entrega_forma_pago') ? 1 : 0,
             'nombre_auto' => trim($marca . ' ' . $modelo . ' ' . $anio . ' ' . $version),
@@ -889,6 +889,7 @@ function wa_step_to_estado(string $step): string
         'resultado_enviado'          => 'PENDIENTE_RESPUESTA_HUMANA',
         'agendado'                   => 'AGENDADO',
         'cerrado'                    => 'CERRADO',
+        'duenios' => 'ESPERANDO_DUENIOS',
     ];
 
     return $map[$step] ?? 'INICIO';
@@ -3412,6 +3413,45 @@ if (($userState['step'] ?? '') === 'ficha_oficial') {
     $version = trim((string)($userState['version'] ?? ''));
 
     wa_set_user_state($from, [
+    'step' => 'duenios',
+    'marca' => $marca,
+    'id_marca' => $userState['id_marca'] ?? null,
+    'modelo' => $modelo,
+    'id_model' => $userState['id_model'] ?? null,
+    'id_version' => $userState['id_version'] ?? null,
+    'anio' => $anio,
+    'km' => $km,
+    'version' => $version,
+    'ficha_oficial' => $ficha
+], 'ESPERANDO_DUENIOS', 'BOT', $profileName !== '' ? $profileName : null);
+
+twiml_message_and_save(
+    $from,
+     "¿Cuántos dueños tuvo el vehículo?\n"
+    . "Ejemplo: 1, 2, 3..."
+);
+
+    wa_preguntar_tipo_venta_interactiva($from);
+}
+
+// =========================
+// PASO: CANTIDAD DE DUEÑOS
+// =========================
+if (($userState['step'] ?? '') === 'duenios') {
+    $duenios = preg_replace('/[^0-9]/', '', $body);
+
+    if ($duenios === '' || intval($duenios) <= 0) {
+        twiml_message_and_save($from, "Indicame una cantidad válida de dueños. Ejemplo: 1, 2 o 3");
+    }
+
+    $marca = trim((string)($userState['marca'] ?? ''));
+    $modelo = trim((string)($userState['modelo'] ?? ''));
+    $anio = trim((string)($userState['anio'] ?? ''));
+    $km = trim((string)($userState['km'] ?? ''));
+    $version = trim((string)($userState['version'] ?? ''));
+    $ficha = trim((string)($userState['ficha_oficial'] ?? ''));
+
+    wa_set_user_state($from, [
         'step' => 'tipo_venta',
         'marca' => $marca,
         'id_marca' => $userState['id_marca'] ?? null,
@@ -3421,7 +3461,8 @@ if (($userState['step'] ?? '') === 'ficha_oficial') {
         'anio' => $anio,
         'km' => $km,
         'version' => $version,
-        'ficha_oficial' => $ficha
+        'ficha_oficial' => $ficha,
+        'duenios' => intval($duenios)
     ], 'ESPERANDO_TIPO_VENTA', 'BOT', $profileName !== '' ? $profileName : null);
 
     wa_preguntar_tipo_venta_interactiva($from);
@@ -3461,7 +3502,8 @@ if (($userState['step'] ?? '') === 'tipo_venta') {
         'km' => $km,
         'version' => $version,
         'ficha_oficial' => $ficha,
-        'tipo_venta' => $tipoVenta
+        'duenios' => $userState['duenios'] ?? 1,
+        'tipo_venta' => $tipoVenta,
     ], 'ESPERANDO_VALOR_PRETENDIDO', 'BOT', $profileName !== '' ? $profileName : null);
 
     twiml_message_and_save(
@@ -3500,6 +3542,7 @@ if (($userState['step'] ?? '') === 'valor_pretendido') {
         'version' => $version,
         'ficha_oficial' => $ficha,
         'tipo_venta' => $tipoVenta,
+        'duenios' => $userState['duenios'] ?? 1,
         'valor_pretendido' => $valor
     ];
 
