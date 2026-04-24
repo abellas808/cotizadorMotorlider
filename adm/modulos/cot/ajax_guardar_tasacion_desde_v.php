@@ -84,6 +84,37 @@ if ($idUsuario > 0) {
 	");
 }
 
+$modoEnvio = trim((string)($_POST['modo_envio'] ?? ''));
+
+if ($modoEnvio === 'final') {
+
+	if ($tasacion_final === '' || floatval($tasacion_final) <= 0) {
+		j([
+			'ok' => false,
+			'mensaje' => 'Para finalizar, completá la tasación final.'
+		]);
+	}
+
+	$db->query("
+		UPDATE cotizaciones_generadas
+		SET
+			estado = 'FINALIZADO',
+			estado_id = 4,
+			detalle_estado = 'Tasación final enviada por WhatsApp',
+			fecha_mod = NOW()
+		WHERE id_cotizaciones_generadas = " . intval($id) . "
+		LIMIT 1
+	");
+
+	j([
+		'ok' => true,
+		'mensaje' => 'Tasación final enviada correctamente.',
+		'id_usuario_cotizo' => $idUsuario,
+		'usuario_nombre' => $usuario['nombre'] ?? '',
+		'usuario_email' => $usuario['email'] ?? ''
+	]);
+}
+
 j([
 	'ok' => true,
 	'mensaje' => 'Tasación guardada correctamente.',
