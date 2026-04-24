@@ -19,6 +19,9 @@ date_default_timezone_set('America/Montevideo');
 global $db;
 
 function j($a) {
+	if (ob_get_length()) {
+		ob_clean();
+	}
 	echo json_encode($a);
 	exit;
 }
@@ -52,17 +55,7 @@ if ($idUsuario > 0) {
 	$sets[] = "id_usuario_cotizo = " . intval($idUsuario);
 }
 
-$sets[] = "estado = 'FINALIZADO'";
-$sets[] = "estado_id = 4";
 $sets[] = "fecha_mod = NOW()";
-
-if (empty($sets)) {
-	j([
-		'ok' => true,
-		'mensaje' => 'No hubo cambios para guardar.',
-		'id_usuario_cotizo' => $idUsuario
-	]);
-}
 
 $sql = "
 	UPDATE cotizaciones_generadas
@@ -74,7 +67,11 @@ $sql = "
 $ok = $db->query($sql);
 
 if (!$ok) {
-	j(['ok' => false, 'mensaje' => 'No se pudo guardar la tasación.']);
+	j([
+		'ok' => false,
+		'mensaje' => 'No se pudo guardar la tasación.',
+		'sql' => $sql
+	]);
 }
 
 $usuario = null;
