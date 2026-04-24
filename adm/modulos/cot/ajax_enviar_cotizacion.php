@@ -102,6 +102,51 @@ function enviar_whatsapp_twilio($to, $body) {
 	];
 }
 
+function registrar_mensaje_whatsapp_backend($idConversacion, $telefono, $mensaje, $sidMensaje = '', $origen = 'backend')
+{
+	global $db;
+
+	$idConversacion = intval($idConversacion);
+	$telefono = trim((string)$telefono);
+	$mensaje = trim((string)$mensaje);
+	$sidMensaje = trim((string)$sidMensaje);
+
+	if ($idConversacion <= 0 || $telefono === '' || $mensaje === '') {
+		return false;
+	}
+
+	$meta = json_encode([
+		'origen' => $origen
+	], JSON_UNESCAPED_UNICODE);
+
+	$db->query("
+		INSERT INTO whatsapp_conversacion_mensajes
+		(
+			id_conversacion,
+			telefono,
+			direccion,
+			emisor,
+			mensaje,
+			meta_json,
+			sid_mensaje,
+			fecha
+		)
+		VALUES
+		(
+			'" . intval($idConversacion) . "',
+			'" . $db->escape($telefono) . "',
+			'SALIENTE',
+			'BOT',
+			'" . $db->escape($mensaje) . "',
+			'" . $db->escape($meta) . "',
+			" . ($sidMensaje !== '' ? "'" . $db->escape($sidMensaje) . "'" : "NULL") . ",
+			NOW()
+		)
+	");
+
+	return true;
+}
+
 $id = intval($_POST['id'] ?? 0);
 $pretasacion_desde = trim((string)($_POST['pretasacion_desde'] ?? ''));
 $pretasacion_hasta = trim((string)($_POST['pretasacion_hasta'] ?? ''));
@@ -214,6 +259,14 @@ if (!$envio['ok']) {
 		'mensaje' => 'No se pudo enviar el WhatsApp: ' . ($envio['mensaje'] ?? 'Error desconocido.')
 	]);
 }
+
+registrar_mensaje_whatsapp_backend(
+	(int)$conv['id'],
+	$telefono,
+	$mensaje,
+	(string)($envio['sid'] ?? ''),
+	'backend_pre_tasacion'
+);
 
 $humanoTomadoPor = '';
 if (!empty($usuario['nombre'])) {

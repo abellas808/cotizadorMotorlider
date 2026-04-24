@@ -26,6 +26,51 @@ function j($a) {
 	exit;
 }
 
+function registrar_mensaje_whatsapp_backend($idConversacion, $telefono, $mensaje, $sidMensaje = '', $origen = 'backend')
+{
+	global $db;
+
+	$idConversacion = intval($idConversacion);
+	$telefono = trim((string)$telefono);
+	$mensaje = trim((string)$mensaje);
+	$sidMensaje = trim((string)$sidMensaje);
+
+	if ($idConversacion <= 0 || $telefono === '' || $mensaje === '') {
+		return false;
+	}
+
+	$meta = json_encode([
+		'origen' => $origen
+	], JSON_UNESCAPED_UNICODE);
+
+	$db->query("
+		INSERT INTO whatsapp_conversacion_mensajes
+		(
+			id_conversacion,
+			telefono,
+			direccion,
+			emisor,
+			mensaje,
+			meta_json,
+			sid_mensaje,
+			fecha
+		)
+		VALUES
+		(
+			'" . intval($idConversacion) . "',
+			'" . $db->escape($telefono) . "',
+			'SALIENTE',
+			'BOT',
+			'" . $db->escape($mensaje) . "',
+			'" . $db->escape($meta) . "',
+			" . ($sidMensaje !== '' ? "'" . $db->escape($sidMensaje) . "'" : "NULL") . ",
+			NOW()
+		)
+	");
+
+	return true;
+}
+
 $id = intval($_POST['id'] ?? 0);
 $pretasacion_desde = trim((string)($_POST['pretasacion_desde'] ?? ''));
 $pretasacion_hasta = trim((string)($_POST['pretasacion_hasta'] ?? ''));
@@ -113,6 +158,14 @@ if ($modoEnvio === 'final') {
 		'usuario_nombre' => $usuario['nombre'] ?? '',
 		'usuario_email' => $usuario['email'] ?? ''
 	]);
+
+	registrar_mensaje_whatsapp_backend(
+		(int)$conv['id'],
+		$telefono,
+		$mensaje,
+		(string)($envio['sid'] ?? ''),
+		'backend_tasacion_final'
+	);
 }
 
 j([
