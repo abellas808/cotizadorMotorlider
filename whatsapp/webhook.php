@@ -2446,6 +2446,7 @@ if ($bodyNorm === 'cotizar') {
 // =========================
 if (in_array($currentEstado, ['PENDIENTE_RESPUESTA_HUMANA', 'HUMANO_EN_CONVERSACION'], true)) {
 
+    
     try {
         $agendaPendienteConfirmacion = wa_obtener_agenda_pendiente_confirmacion($from);
     } catch (Throwable $e) {
