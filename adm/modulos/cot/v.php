@@ -69,64 +69,57 @@ if (($elemento['familia'] ?? '') == 'otro') {
 }
 
 $convMensajes = array();
-$convId = 0;
 
 if (isset($db)) {
+
 	$telefonoCot = trim((string)($elemento['telefono'] ?? ''));
-	$conv = $db->query_first('
-		SELECT id, telefono, nombre, email, id_cotizacion
-		FROM whatsapp_conversaciones
-		WHERE id_cotizacion = "' . intval($id) . '"
-		ORDER BY id DESC
-		LIMIT 1;
-	');
 
-	if ((!$conv || empty($conv['id'])) && $telefonoCot !== '') {
-		$conv = $db->query_first('
-			SELECT id, telefono, nombre, email, id_cotizacion
-			FROM whatsapp_conversaciones
-			WHERE telefono = "' . addslashes($telefonoCot) . '"
-			ORDER BY id DESC
-			LIMIT 1;
-		');
-	}
+	if ($telefonoCot !== '') {
 
-	if ($conv && !empty($conv['id'])) {
-		$convId = intval($conv['id']);
+		$telefonosBuscar = array();
 
-		$fechaInicioUltimoTramo = '';
-		$qInicio = $db->query_first('
-			SELECT fecha
-			FROM whatsapp_conversacion_mensajes
-			WHERE id_conversacion = "' . $convId . '"
-			  AND direccion = "ENTRANTE"
-			  AND emisor = "CLIENTE"
-			  AND LOWER(TRIM(mensaje)) = "cotizar"
-			ORDER BY fecha DESC, id DESC
-			LIMIT 1;
-		');
+		// Teléfono tal cual viene en la cotización
+		$telefonosBuscar[] = $telefonoCot;
 
-		if ($qInicio && !empty($qInicio['fecha'])) {
-			$fechaInicioUltimoTramo = $qInicio['fecha'];
+		// Solo números
+		$soloNumeros = preg_replace('/[^0-9]/', '', $telefonoCot);
+
+		if ($soloNumeros !== '') {
+			$telefonosBuscar[] = $soloNumeros;
+			$telefonosBuscar[] = '+' . $soloNumeros;
+			$telefonosBuscar[] = 'whatsapp:+' . $soloNumeros;
+
+			// Si está guardado como 098..., armar formato Uruguay
+			if (strlen($soloNumeros) == 9 && substr($soloNumeros, 0, 1) == '0') {
+				$uy = '598' . substr($soloNumeros, 1);
+				$telefonosBuscar[] = $uy;
+				$telefonosBuscar[] = '+' . $uy;
+				$telefonosBuscar[] = 'whatsapp:+' . $uy;
+			}
 		}
 
-		$sqlMensajes = '
-			SELECT id, telefono, direccion, emisor, mensaje, meta_json, sid_mensaje, fecha
-			FROM whatsapp_conversacion_mensajes
-			WHERE id_conversacion = "' . $convId . '"
-		';
+		$telefonosBuscar = array_unique(array_filter($telefonosBuscar));
 
-		if ($fechaInicioUltimoTramo !== '') {
-			$sqlMensajes .= ' AND fecha >= "' . addslashes($fechaInicioUltimoTramo) . '"';
+		$whereTelefonos = array();
+		foreach ($telefonosBuscar as $tel) {
+			$whereTelefonos[] = 'telefono = "' . addslashes($tel) . '"';
 		}
 
-		$sqlMensajes .= ' ORDER BY fecha ASC, id ASC';
+		if (!empty($whereTelefonos)) {
 
-		$qMensajes = $db->query($sqlMensajes);
+			$sqlMensajes = '
+				SELECT id, id_conversacion, telefono, direccion, emisor, mensaje, meta_json, sid_mensaje, fecha
+				FROM whatsapp_conversacion_mensajes
+				WHERE (' . implode(' OR ', $whereTelefonos) . ')
+				ORDER BY fecha ASC, id ASC
+			';
 
-		if ($qMensajes) {
-			while ($rowMsg = $db->fetch_array($qMensajes)) {
-				$convMensajes[] = $rowMsg;
+			$qMensajes = $db->query($sqlMensajes);
+
+			if ($qMensajes) {
+				while ($rowMsg = $db->fetch_array($qMensajes)) {
+					$convMensajes[] = $rowMsg;
+				}
 			}
 		}
 	}

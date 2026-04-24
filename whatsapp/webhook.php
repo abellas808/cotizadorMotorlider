@@ -2203,6 +2203,82 @@ function wa_hora_agendable_permitida(string $fecha, string $hora, array $horasDi
     return false;
 }
 
+function wa_obtener_ultima_tasacion_final_mensaje(string $telefono): ?array
+{
+    $cn = wa_db();
+
+    $sql = "
+        SELECT id, id_conversacion, telefono, mensaje, meta_json, fecha
+        FROM whatsapp_conversacion_mensajes
+        WHERE telefono = ?
+          AND direccion = 'SALIENTE'
+          AND emisor = 'BOT'
+        ORDER BY id DESC
+        LIMIT 1
+    ";
+
+    $st = $cn->prepare($sql);
+    if (!$st) {
+        $cn->close();
+        return null;
+    }
+
+    $st->bind_param('s', $telefono);
+    $st->execute();
+
+    $rs = $st->get_result();
+    $row = $rs ? $rs->fetch_assoc() : null;
+
+    if ($rs) {
+        $rs->free();
+    }
+
+    $st->close();
+    $cn->close();
+
+    if (!$row) {
+        return null;
+    }
+
+    $meta = json_decode((string)($row['meta_json'] ?? ''), true);
+    if (!is_array($meta)) {
+        $meta = [];
+    }
+
+    $origen = (string)($meta['origen'] ?? '');
+
+    if ($origen !== 'backend_tasacion_final') {
+        return null;
+    }
+
+    return $row;
+}
+
+function wa_respuesta_tasacion_final_si(string $texto): bool
+{
+    $v = wa_normalizar_texto($texto);
+
+    return in_array($v, [
+        '1',
+        'si',
+        'si quiero avanzar',
+        'quiero avanzar'
+    ], true) || strpos($v, 'quiero avanzar') !== false;
+}
+
+function wa_respuesta_tasacion_final_no(string $texto): bool
+{
+    $v = wa_normalizar_texto($texto);
+
+    return in_array($v, [
+        '2',
+        'no',
+        'por ahora no',
+        'ahora no',
+        'no gracias'
+    ], true) || strpos($v, 'por ahora no') !== false;
+}
+
 // =========================
 // MAIN
 // =========================
@@ -2272,6 +2348,44 @@ $bodyNorm = wa_normalizar_texto($body);
 $userState = wa_get_user_data($from);
 $currentConv = wa_get_conversation($from);
 $currentEstado = (string)($currentConv['estado'] ?? 'INICIO');
+
+// =========================
+// RESPUESTA A TASACION FINAL
+// =========================
+$ultimaTasacionFinal = wa_obtener_ultima_tasacion_final_mensaje($from);
+
+if ($ultimaTasacionFinal !== null) {
+
+    if (wa_respuesta_tasacion_final_si($body)) {
+
+        twiml_message_and_save(
+            $from,
+            "Excelente! \n\n"
+            . "Un asesor de nuestro equipo se va a estar comunicando contigo desde el número 091 398 398 para coordinar los últimos detalles y concretar el negocio.\n\n"
+            . "¡Ha sido un gusto atenderte! ",
+            [
+                'origen' => 'webhook_bot',
+                'tipo' => 'respuesta_tasacion_final',
+                'respuesta' => 'SI'
+            ]
+        );
+    }
+
+    if (wa_respuesta_tasacion_final_no($body)) {
+
+        twiml_message_and_save(
+            $from,
+            "Entendido. 👍\n\n"
+            . "Muchas gracias por darnos la oportunidad de tasar tu vehículo. Si más adelante cambiás de opinión o querés evaluar otras opciones con nosotros, ¡este chat siempre estará disponible para ti!\n\n"
+            . "Que tengas un gran día. 👋",
+            [
+                'origen' => 'webhook_bot',
+                'tipo' => 'respuesta_tasacion_final',
+                'respuesta' => 'NO'
+            ]
+        );
+    }
+}
 
 // =========================
 // CONFIRMACION DE AGENDA PENDIENTE (GLOBAL)
