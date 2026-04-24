@@ -2375,9 +2375,9 @@ if ($ultimaTasacionFinal !== null) {
 
         twiml_message_and_save(
             $from,
-            "Entendido. 👍\n\n"
+            "Entendido. \n\n"
             . "Muchas gracias por darnos la oportunidad de tasar tu vehículo. Si más adelante cambiás de opinión o querés evaluar otras opciones con nosotros, ¡este chat siempre estará disponible para ti!\n\n"
-            . "Que tengas un gran día. 👋",
+            . "Que tengas un gran día. ",
             [
                 'origen' => 'webhook_bot',
                 'tipo' => 'respuesta_tasacion_final',
