@@ -874,6 +874,7 @@ function wa_step_to_estado(string $step): string
         'modelo_sugerido'            => 'ESPERANDO_MODELO',
         'anio'                       => 'ESPERANDO_ANIO',
         'km'                         => 'ESPERANDO_KM',
+        'version_opcion' => 'ESPERANDO_VERSION',
         'version'                    => 'ESPERANDO_VERSION',
         'version_sugerida'           => 'ESPERANDO_VERSION',
         'ficha_oficial'              => 'ESPERANDO_FICHA_OFICIAL',
@@ -3000,6 +3001,64 @@ if (($userState['step'] ?? '') === 'km') {
         twiml_message_and_save($from, "Los kilómetros no parecen válidos. Escribime solo números. Ejemplo: 85000");
     }
 
+    $idMarca = (int)($userState['id_marca'] ?? 0);
+    $idModel = (int)($userState['id_model'] ?? 0);
+
+    $versionesDisponibles = [];
+
+    if ($idMarca > 0 && $idModel > 0) {
+        try {
+            $versionesDisponibles = wa_obtener_versiones_catalogo($idMarca, $idModel);
+        } catch (Throwable $e) {
+            wa_log('VERSIONES_CATALOGO_ERROR_KM', [
+                'error' => $e->getMessage(),
+                'id_marca' => $idMarca,
+                'id_model' => $idModel
+            ]);
+            $versionesDisponibles = [];
+        }
+    }
+
+    if (!empty($versionesDisponibles)) {
+        $opcionesTexto = [];
+        $opcionesEstado = [];
+
+        $maxVersiones = min(10, count($versionesDisponibles));
+
+        for ($i = 0; $i < $maxVersiones; $i++) {
+            $nro = (string)($i + 1);
+            $versionRow = $versionesDisponibles[$i];
+
+            $opcionesTexto[] = $nro . ' = ' . $versionRow['nombre'];
+
+            $opcionesEstado[$nro] = [
+                'id_version' => (int)$versionRow['id_version'],
+                'nombre' => (string)$versionRow['nombre']
+            ];
+        }
+
+        wa_set_user_state($from, [
+            'step' => 'version_opcion',
+            'marca' => $marca,
+            'id_marca' => $userState['id_marca'] ?? null,
+            'modelo' => $modelo,
+            'id_model' => $userState['id_model'] ?? null,
+            'id_version' => $userState['id_version'] ?? null,
+            'anio' => $anio,
+            'km' => $km,
+            'version_opciones' => $opcionesEstado
+        ], 'ESPERANDO_VERSION', 'BOT', $profileName !== '' ? $profileName : null);
+
+        twiml_message_and_save(
+            $from,
+            "Encontré estas versiones para {$marca} {$modelo}:\n\n"
+            . implode("\n", $opcionesTexto)
+            . "\n\nRespondé con el número de la versión.\n"
+        );
+
+        return;
+    }
+
     wa_set_user_state($from, [
         'step' => 'version',
         'marca' => $marca,
@@ -3015,6 +3074,108 @@ if (($userState['step'] ?? '') === 'km') {
         $from,
         "Perfecto. ¿Cuál es la Versión exacta?\n"
         . "(Ej: GLS, LTZ, GS)"
+    );
+}
+
+// =========================
+// PASO: VERSION OPCION
+// =========================
+if (($userState['step'] ?? '') === 'version_opcion') {
+    $respuesta = trim($body);
+    $respuestaNorm = wa_normalizar_texto($respuesta);
+
+    $marca = trim((string)($userState['marca'] ?? ''));
+    $modelo = trim((string)($userState['modelo'] ?? ''));
+    $anio = trim((string)($userState['anio'] ?? ''));
+    $km = trim((string)($userState['km'] ?? ''));
+
+    $opciones = $userState['version_opciones'] ?? [];
+
+    if (wa_version_es_ninguna($respuesta)) {
+        wa_set_user_state($from, [
+            'step' => 'ficha_oficial',
+            'marca' => $marca,
+            'id_marca' => $userState['id_marca'] ?? null,
+            'modelo' => $modelo,
+            'id_model' => $userState['id_model'] ?? null,
+            'id_version' => null,
+            'anio' => $anio,
+            'km' => $km,
+            'version' => ''
+        ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
+
+        wa_preguntar_ficha_oficial_interactiva($from);
+    }
+
+    if (in_array($respuestaNorm, ['otra', 'otro', 'no aparece', 'escribir'], true)) {
+        wa_set_user_state($from, [
+            'step' => 'version',
+            'marca' => $marca,
+            'id_marca' => $userState['id_marca'] ?? null,
+            'modelo' => $modelo,
+            'id_model' => $userState['id_model'] ?? null,
+            'id_version' => $userState['id_version'] ?? null,
+            'anio' => $anio,
+            'km' => $km
+        ], 'ESPERANDO_VERSION', 'BOT', $profileName !== '' ? $profileName : null);
+
+        twiml_message_and_save(
+            $from,
+            "Perfecto. Escribime la versión exacta.\n"
+            . "(Ej: GLS, LTZ, GS)"
+        );
+    }
+
+    if (isset($opciones[$respuesta])) {
+        $versionFinal = (string)$opciones[$respuesta]['nombre'];
+        $idVersion = (int)$opciones[$respuesta]['id_version'];
+
+        wa_set_user_state($from, [
+            'step' => 'ficha_oficial',
+            'marca' => $marca,
+            'id_marca' => $userState['id_marca'] ?? null,
+            'modelo' => $modelo,
+            'id_model' => $userState['id_model'] ?? null,
+            'id_version' => $idVersion,
+            'anio' => $anio,
+            'km' => $km,
+            'version' => $versionFinal
+        ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
+
+        wa_preguntar_ficha_oficial_interactiva($from);
+    }
+
+    foreach ($opciones as $op) {
+        if (wa_normalizar_texto((string)$op['nombre']) === $respuestaNorm) {
+            $versionFinal = (string)$op['nombre'];
+            $idVersion = (int)$op['id_version'];
+
+            wa_set_user_state($from, [
+                'step' => 'ficha_oficial',
+                'marca' => $marca,
+                'id_marca' => $userState['id_marca'] ?? null,
+                'modelo' => $modelo,
+                'id_model' => $userState['id_model'] ?? null,
+                'id_version' => $idVersion,
+                'anio' => $anio,
+                'km' => $km,
+                'version' => $versionFinal
+            ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
+
+            wa_preguntar_ficha_oficial_interactiva($from);
+        }
+    }
+
+    $lineas = [];
+    foreach ($opciones as $nro => $op) {
+        $lineas[] = $nro . ' = ' . $op['nombre'];
+    }
+
+    twiml_message_and_save(
+        $from,
+        "No entendí la versión elegida.\n\n"
+        . "Respondé con el número de una opción:\n"
+        . implode("\n", $lineas)
     );
 }
 
