@@ -2279,6 +2279,80 @@ function wa_respuesta_tasacion_final_no(string $texto): bool
     ], true) || strpos($v, 'por ahora no') !== false;
 }
 
+function wa_registrar_carrito_abandonado(
+    int $idCotizacion,
+    int $idConversacion,
+    string $telefono,
+    string $mensajeCliente
+): void {
+
+    wa_log('CARRITO_INTENTO', [
+        'id_cotizacion' => $idCotizacion,
+        'id_conversacion' => $idConversacion,
+        'telefono' => $telefono,
+        'mensaje_cliente' => $mensajeCliente
+    ]);
+
+    $cn = wa_db();
+    $cn->set_charset("utf8mb4");
+
+    $sql = "
+        INSERT INTO carrito_abandonado
+        (
+            id_cotizacion,
+            id_conversacion,
+            telefono,
+            mensaje_cliente,
+            fecha_respuesta,
+            estado,
+            fecha_alta
+        )
+        VALUES
+        (?, ?, ?, ?, NOW(), 'PENDIENTE', NOW())
+    ";
+
+    $st = $cn->prepare($sql);
+
+    if (!$st) {
+        wa_log('CARRITO_PREPARE_ERROR', [
+            'error' => $cn->error,
+            'sql' => $sql
+        ]);
+
+        $cn->close();
+        return;
+    }
+
+    $st->bind_param(
+        'iiss',
+        $idCotizacion,
+        $idConversacion,
+        $telefono,
+        $mensajeCliente
+    );
+
+    if (!$st->execute()) {
+        wa_log('CARRITO_EXECUTE_ERROR', [
+            'error' => $st->error,
+            'errno' => $st->errno,
+            'id_cotizacion' => $idCotizacion,
+            'id_conversacion' => $idConversacion,
+            'telefono' => $telefono,
+            'mensaje_cliente' => $mensajeCliente
+        ]);
+    } else {
+        wa_log('CARRITO_INSERT_OK', [
+            'id_insertado' => $st->insert_id,
+            'id_cotizacion' => $idCotizacion,
+            'id_conversacion' => $idConversacion,
+            'telefono' => $telefono
+        ]);
+    }
+
+    $st->close();
+    $cn->close();
+}
+
 // =========================
 // MAIN
 // =========================
@@ -2371,20 +2445,28 @@ if ($ultimaTasacionFinal !== null) {
         );
     }
 
-    if (wa_respuesta_tasacion_final_no($body)) {
+    if (
+    wa_respuesta_tasacion_final_no($body) ||
+    $buttonPayload === 'tasacion_finalizar_no'
+) {
 
-        twiml_message_and_save(
-            $from,
-            "Entendido. \n\n"
-            . "Muchas gracias por darnos la oportunidad de tasar tu vehículo. Si más adelante cambiás de opinión o querés evaluar otras opciones con nosotros, ¡este chat siempre estará disponible para ti!\n\n"
-            . "Que tengas un gran día. ",
-            [
-                'origen' => 'webhook_bot',
-                'tipo' => 'respuesta_tasacion_final',
-                'respuesta' => 'NO'
-            ]
-        );
-    }
+    $idConversacion = intval($ultimaTasacionFinal['id_conversacion'] ?? 0);
+    $metaTasacion = $ultimaTasacionFinal['meta'] ?? [];
+    $idCotizacion = intval($metaTasacion['id_cotizacion'] ?? 0);
+
+    $mensajeRespuesta = "Entendido.\n\n"
+        . "Muchas gracias por darnos la oportunidad de tasar tu vehículo. Si más adelante cambiás de opinión o querés evaluar otras opciones con nosotros, ¡este chat siempre estará disponible para ti!\n\n"
+        . "Que tengas un gran día.";
+
+    wa_registrar_carrito_abandonado(
+        $idCotizacion,
+        $idConversacion,
+        $from,
+        $body
+    );
+
+    twiml_message_and_save( $from,$mensajeRespuesta);
+}
 }
 
 // =========================
