@@ -30,23 +30,58 @@ function j($a) {
 	exit;
 }
 
-function obtener_parametro_sistema($grupo, $clave) {
+function normalizar_telefono_whatsapp($telefono)
+{
+	$telefono = trim((string)$telefono);
+
+	if ($telefono === '') {
+		return '';
+	}
+
+	if (strpos($telefono, 'whatsapp:+') === 0) {
+		return $telefono;
+	}
+
+	$soloNumeros = preg_replace('/[^0-9]/', '', $telefono);
+
+	if ($soloNumeros === '') {
+		return '';
+	}
+
+	// Uruguay: 098995624 => whatsapp:+59898995624
+	if (strlen($soloNumeros) == 9 && substr($soloNumeros, 0, 1) == '0') {
+		return 'whatsapp:+598' . substr($soloNumeros, 1);
+	}
+
+	// Ya viene con 598...
+	if (strlen($soloNumeros) >= 11 && substr($soloNumeros, 0, 3) == '598') {
+		return 'whatsapp:+' . $soloNumeros;
+	}
+
+	return 'whatsapp:+' . $soloNumeros;
+}
+
+function obtener_id_conversacion_por_telefono($telefono)
+{
 	global $db;
 
-	$grupoEsc = $db->escape($grupo);
-	$claveEsc = $db->escape($clave);
+	$telefono = trim((string)$telefono);
+
+	if ($telefono === '') {
+		return 1;
+	}
 
 	$row = $db->query_first("
-		SELECT valor
-		FROM parametros_sistema
-		WHERE grupo = '{$grupoEsc}'
-		  AND clave = '{$claveEsc}'
-		  AND activo = 1
+		SELECT id_conversacion
+		FROM whatsapp_conversacion_mensajes
+		WHERE telefono = '" . $db->escape($telefono) . "'
 		ORDER BY id DESC
 		LIMIT 1
 	");
 
-	return $row['valor'] ?? null;
+	$idConversacion = intval($row['id_conversacion'] ?? 0);
+
+	return $idConversacion > 0 ? $idConversacion : 1;
 }
 
 function enviar_whatsapp_twilio($to, $body) {
@@ -102,7 +137,7 @@ function enviar_whatsapp_twilio($to, $body) {
 	];
 }
 
-function registrar_mensaje_whatsapp_backend($idConversacion, $telefono, $mensaje, $sidMensaje = '', $origen = 'backend')
+function registrar_mensaje_whatsapp_backend($idConversacion, $telefono, $mensaje, $sidMensaje = '', $origen = 'backend', $extraMeta = [])
 {
 	global $db;
 
@@ -115,9 +150,11 @@ function registrar_mensaje_whatsapp_backend($idConversacion, $telefono, $mensaje
 		return false;
 	}
 
-	$meta = json_encode([
+	$metaArray = array_merge([
 		'origen' => $origen
-	], JSON_UNESCAPED_UNICODE);
+	], $extraMeta);
+
+	$meta = json_encode($metaArray, JSON_UNESCAPED_UNICODE);
 
 	$db->query("
 		INSERT INTO whatsapp_conversacion_mensajes
@@ -147,6 +184,9 @@ function registrar_mensaje_whatsapp_backend($idConversacion, $telefono, $mensaje
 	return true;
 }
 
+// =========================
+// INPUT
+// =========================
 $id = intval($_POST['id'] ?? 0);
 $pretasacion_desde = trim((string)($_POST['pretasacion_desde'] ?? ''));
 $pretasacion_hasta = trim((string)($_POST['pretasacion_hasta'] ?? ''));
@@ -175,6 +215,9 @@ if ($idUsuario > 0) {
 	");
 }
 
+// =========================
+// COTIZACION
+// =========================
 $elemento = $db->query_first("
 	SELECT *
 	FROM cotizaciones_generadas
@@ -186,59 +229,50 @@ if (!$elemento) {
 	j(['ok' => false, 'mensaje' => 'Cotización no encontrada.']);
 }
 
-$conv = $db->query_first("
-	SELECT *
-	FROM whatsapp_conversaciones
-	WHERE id_cotizacion = '" . intval($id) . "'
-	ORDER BY id DESC
-	LIMIT 1
-");
+$telefono = normalizar_telefono_whatsapp($elemento['telefono'] ?? '');
 
-if (!$conv) {
-	j(['ok' => false, 'mensaje' => 'No se encontró conversación de WhatsApp asociada a la cotización.']);
-}
-
-$estadoConv = trim((string)($conv['estado'] ?? ''));
-
-if ($estadoConv === '') {
-	j(['ok' => false, 'mensaje' => 'La conversación no tiene estado válido.']);
-}
-
-$telefono = trim((string)($conv['telefono'] ?? ''));
 if ($telefono === '') {
-	j(['ok' => false, 'mensaje' => 'La conversación no tiene teléfono de WhatsApp.']);
+	j(['ok' => false, 'mensaje' => 'La cotización no tiene teléfono válido.']);
 }
 
-$datosJson = [];
-if (!empty($conv['datos_json'])) {
-	$tmp = json_decode((string)$conv['datos_json'], true);
-	if (is_array($tmp)) {
-		$datosJson = $tmp;
-	}
-}
-
-$tipoVenta = trim((string)($datosJson['tipo_venta'] ?? ''));
-if ($tipoVenta === '') {
-	j(['ok' => false, 'mensaje' => 'No se encontró tipo_venta en la conversación.']);
-}
+// =========================
+// TIPO DE PLANTILLA
+// =========================
+$tipoVenta = trim((string)($elemento['tipo_venta'] ?? ''));
 
 if ($tipoVenta === 'venta_contado') {
 	$clavePlantilla = 'respuesta_humana_venta_contado';
 } elseif ($tipoVenta === 'entrega_forma_pago') {
 	$clavePlantilla = 'respuesta_humana_forma_pago';
 } else {
-	j(['ok' => false, 'mensaje' => 'tipo_venta inválido: ' . $tipoVenta]);
+	$clavePlantilla = 'respuesta_humana_forma_pago';
 }
 
-$plantilla = obtener_parametro_sistema('whatsapp_cotizador', $clavePlantilla);
-if ($plantilla === null || trim($plantilla) === '') {
-	j(['ok' => false, 'mensaje' => 'No se encontró la plantilla en parametros_sistema.']);
+$plantillasWhatsapp = [
+	'respuesta_humana_venta_contado' =>
+		"{nombre_cliente}, estaríamos comprando su vehículo en un valor estimado entre USD {pre_tasacion_desde} y USD {pre_tasacion_hasta}.\n\n"
+		. "Para continuar, un asesor de nuestro equipo se comunicará contigo para revisar los detalles.",
+
+	'respuesta_humana_forma_pago' =>
+    "{nombre_cliente}, estaríamos comprando su vehículo al contado entre USD {pre_tasacion_desde} a USD {pre_tasacion_hasta} (nosotros asumimos los honorarios y gastos de escribano).\n\n"
+    . "Para definir el precio exacto y revisar el vehículo será necesaria la inspección mecánica. La misma es realizada en nuestro local ubicado en Av. de las Américas 7868 (Frente al Puente de las Américas), tiene una duración de 30 min y es sin costo.\n\n"
+    . "¿Le gustaría agendarse para la revisión?",
+	
+	'respuesta_cierre_no_agenda' =>
+		"Gracias por comunicarte con Motorlider. Quedamos a las órdenes para cuando quieras retomar la cotización."
+];
+
+$plantilla = $plantillasWhatsapp[$clavePlantilla] ?? '';
+
+if (trim($plantilla) === '') {
+	j(['ok' => false, 'mensaje' => 'No se encontró la plantilla configurada en código para la clave: ' . $clavePlantilla]);
 }
 
-$nombreCliente = trim((string)($conv['nombre'] ?? ''));
-if ($nombreCliente === '') {
-	$nombreCliente = trim((string)($elemento['nombre'] ?? ''));
-}
+// =========================
+// ARMAR MENSAJE
+// =========================
+$nombreCliente = trim((string)($elemento['nombre'] ?? ''));
+
 if ($nombreCliente === '') {
 	$nombreCliente = 'Estimado/a cliente';
 }
@@ -251,6 +285,9 @@ $mensaje = str_replace('{nombre_cliente}', $nombreCliente, $mensaje);
 $mensaje = str_replace('{pre_tasacion_desde}', $desdeFmt, $mensaje);
 $mensaje = str_replace('{pre_tasacion_hasta}', $hastaFmt, $mensaje);
 
+// =========================
+// ENVIAR WHATSAPP
+// =========================
 $envio = enviar_whatsapp_twilio($telefono, $mensaje);
 
 if (!$envio['ok']) {
@@ -260,14 +297,28 @@ if (!$envio['ok']) {
 	]);
 }
 
+// =========================
+// GUARDAR HISTORIAL WHATSAPP
+// =========================
+$idConversacion = obtener_id_conversacion_por_telefono($telefono);
+
 registrar_mensaje_whatsapp_backend(
-	(int)$conv['id'],
+	$idConversacion,
 	$telefono,
 	$mensaje,
 	(string)($envio['sid'] ?? ''),
-	'backend_pre_tasacion'
+	'backend_pre_tasacion',
+	[
+		'id_cotizacion' => intval($id),
+		'id_usuario' => intval($idUsuario),
+		'tipo_venta' => $tipoVenta,
+		'clave_plantilla' => $clavePlantilla
+	]
 );
 
+// =========================
+// UPDATE COTIZACION
+// =========================
 $humanoTomadoPor = '';
 if (!empty($usuario['nombre'])) {
 	$humanoTomadoPor = $usuario['nombre'];
@@ -280,29 +331,16 @@ $mensajeEsc = $db->escape($mensaje);
 $humanoEsc = $db->escape($humanoTomadoPor);
 
 $db->query("
-	UPDATE whatsapp_conversaciones
-	SET
-		estado = 'HUMANO_EN_CONVERSACION',
-		modo_atencion = 'HUMANO',
-		ultima_respuesta_bot = '{$mensajeEsc}',
-		humano_tomado_por = '{$humanoEsc}',
-		fecha_ultima_interaccion = NOW(),
-		fecha_mod = NOW()
-	WHERE id = '" . intval($conv['id']) . "'
-	LIMIT 1
-");
-
-$db->query("
 	UPDATE cotizaciones_generadas
 	SET
 		pretasacion_desde = " . floatval($pretasacion_desde) . ",
 		pretasacion_hasta = " . floatval($pretasacion_hasta) . ",
 		msg = '{$mensajeEsc}',
-		detalle_estado = 'Respuesta humana enviada por WhatsApp', 
+		detalle_estado = 'Respuesta humana enviada por WhatsApp',
 		estado = 'PRELIMINAR',
-		estado_id=3,
+		estado_id = 3,
+		id_usuario_cotizo = " . intval($idUsuario) . ",
 		fecha_mod = NOW()
-
 	WHERE id_cotizaciones_generadas = '" . intval($id) . "'
 	LIMIT 1
 ");
@@ -311,5 +349,6 @@ j([
 	'ok' => true,
 	'mensaje' => 'Respuesta enviada correctamente por WhatsApp.',
 	'whatsapp_sid' => $envio['sid'] ?? '',
-	'tipo_venta' => $tipoVenta
+	'tipo_venta' => $tipoVenta,
+	'id_conversacion' => $idConversacion
 ]);

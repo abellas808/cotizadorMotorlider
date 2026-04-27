@@ -822,7 +822,19 @@ $cant_cotizaciones = $db->query_first('SELECT COUNT(*) AS cant ' . $sql_from);
                         <td class="cot-col-anio"><?php echo_s($entrada['anio']); ?></td>
                         <td class="cot-col-km"><?php echo_s(cot_format_numero($entrada['kilometros'])); ?></td>
                         <td class="cot-col-nombre" title="<?php echo htmlspecialchars((string)$entrada['nombre']); ?>"><?php echo_s($entrada['nombre']); ?></td>
-                        <td class="cot-col-tel"><?php echo_s($entrada['telefono']); ?></td>
+                        <td class="cot-col-tel">
+                            <?php
+                            $telefono = trim((string)$entrada['telefono']);
+
+                            $telefono = preg_replace('/^whatsapp:\+/', '', $telefono);
+
+                            if (strpos($telefono, '598') === 0) {
+                                $telefono = '0' . substr($telefono, 3);
+                            }
+
+                            echo_s($telefono);
+                            ?>
+                        </td>
                         <td class="cot-col-money"><?php echo_s(cot_format_tasacion($tasDesde)); ?></td>
                         <td class="cot-col-money"><?php echo_s(cot_format_tasacion($tasHasta)); ?></td>
                         <td class="cot-col-money" style="font-weight:bold;"><?php echo_s(cot_format_tasacion($tasFinal)); ?></td>
