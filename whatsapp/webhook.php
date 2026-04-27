@@ -514,7 +514,7 @@ function wa_finalizar_cotizacion_desde_estado(string $from, string $profileName,
     $idModel = (int)($userState['id_model'] ?? 0);
     $idVersion = (int)($userState['id_version'] ?? 0);
 
-    $emailSistema = 'abella.motorlider@gmail.com';
+    $emailSistema = 'info@motorlider.com.uy';
 
     $estadoFinalData = [
         'step' => 'pendiente_humano',
@@ -555,7 +555,7 @@ function wa_finalizar_cotizacion_desde_estado(string $from, string $profileName,
             'cantidad_duenios' => intval($userState['duenios'] ?? 1),
             'valor_pretendido' => $valor,
             'venta_permuta' => ($tipoVenta === 'entrega_forma_pago') ? 1 : 0,
-            'nombre_auto' => trim($marca . ' ' . $modelo . ' ' . $anio . ' ' . $version),
+            'nombre_auto' => trim($marca . ' ' . $modelo . ' ' . $version),
             'nombre' => $profileName !== '' ? $profileName : 'Cliente WhatsApp',
             'email' => $emailSistema,
             'telefono' => $from
