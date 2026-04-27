@@ -14,6 +14,33 @@ $elemento = $db->query_first('
 	LIMIT 1;
 ');
 
+$histPreTasacion = $db->query_first("
+	SELECT *
+	FROM cotizaciones_usuarios_historial
+	WHERE id_cotizacion = " . intval($id) . "
+	  AND accion = 'ENVIO_PRE_TASACION'
+	ORDER BY fecha DESC, id DESC
+	LIMIT 1
+");
+
+$histTasacionFinal = $db->query_first("
+	SELECT *
+	FROM cotizaciones_usuarios_historial
+	WHERE id_cotizacion = " . intval($id) . "
+	  AND accion = 'ENVIO_TASACION_FINAL'
+	ORDER BY fecha DESC, id DESC
+	LIMIT 1
+");
+
+$histGuardarTasacion = $db->query_first("
+	SELECT *
+	FROM cotizaciones_usuarios_historial
+	WHERE id_cotizacion = " . intval($id) . "
+	  AND accion = 'GUARDAR_TASACION_INTERNA'
+	ORDER BY fecha DESC, id DESC
+	LIMIT 1
+");
+
 if (!$elemento) {
 	header('Location: ?m=' . $modulo['prefijo'] . '_l');
 	exit();
@@ -108,7 +135,18 @@ if (isset($db)) {
 		if (!empty($whereTelefonos)) {
 
 			$sqlMensajes = '
-				SELECT id, id_conversacion, telefono, direccion, emisor, mensaje, meta_json, sid_mensaje, fecha
+				SELECT 
+					id,
+					id_conversacion,
+					telefono,
+					direccion,
+					emisor,
+					id_usuario,
+					nombre_usuario,
+					mensaje,
+					meta_json,
+					sid_mensaje,
+					fecha
 				FROM whatsapp_conversacion_mensajes
 				WHERE (' . implode(' OR ', $whereTelefonos) . ')
 				ORDER BY fecha ASC, id ASC
@@ -436,6 +474,42 @@ if (!function_exists('cot_v_hora_chat')) {
 				<button type="button" class="btn btn-small btn-success" id="btn_guardar_tasacion" onclick="guardarTasacionInterna();" style="display:none;">
 					Guardar
 				</button>
+
+				<?php if (!empty($histGuardarTasacion['nombre_usuario'])) { ?>
+					<div style="margin-top:6px; color:#666;">
+						Último guardado:
+						<?php if (!empty($histGuardarTasacion['nombre_usuario'])) { ?>
+							<div style="margin-top:6px; color:#666;">
+								Último guardado:
+								<strong><?php echo_s($histGuardarTasacion['nombre_usuario']); ?></strong>
+
+								<?php if (!empty($histGuardarTasacion['fecha'])) { ?>
+									<small>
+										(<?php echo_s(date('d/m/Y H:i', strtotime($histGuardarTasacion['fecha']))); ?>)
+									</small>
+								<?php } ?>
+
+								<br>
+
+								<small>
+									Desde: <strong>USD <?php echo number_format((float)$histGuardarTasacion['monto_desde'], 0, ',', '.'); ?></strong>
+									-
+									Hasta: <strong>USD <?php echo number_format((float)$histGuardarTasacion['monto_hasta'], 0, ',', '.'); ?></strong>
+
+									<?php if (!empty($histGuardarTasacion['monto_final'])) { ?>
+										|
+										Final: <strong>USD <?php echo number_format((float)$histGuardarTasacion['monto_final'], 0, ',', '.'); ?></strong>
+									<?php } ?>
+								</small>
+							</div>
+						<?php } ?>
+						<?php if (!empty($histGuardarTasacion['fecha'])) { ?>
+							<small>
+								(<?php echo_s(date('d/m/Y H:i', strtotime($histGuardarTasacion['fecha']))); ?>)
+							</small>
+						<?php } ?>
+					</div>
+				<?php } ?>
 				<button type="button" class="btn btn-small" id="btn_cancelar_tasacion" onclick="cancelarEdicionTasacion();" style="display:none;">
 					Cancelar
 				</button>
@@ -443,14 +517,40 @@ if (!function_exists('cot_v_hora_chat')) {
 			</div>
 
 			<div class="cot-edit-actions" style="margin-top:10px;">
-				<button type="button" class="btn btn-success" id="btn_enviar_pre_whatsapp" onclick="enviarRespuestaWhatsapp('pre');">
-					Enviar pre tasación
-				</button>
-				<button type="button" class="btn btn-success" id="btn_enviar_final_whatsapp" onclick="enviarRespuestaFinal('final');">
-					Enviar tasación final
-				</button>
-				<span class="cot-feedback" id="whatsapp_feedback"></span>
-			</div>
+	<div style="margin-bottom:8px;">
+		<button type="button" class="btn btn-success" id="btn_enviar_pre_whatsapp" onclick="enviarRespuestaWhatsapp('pre');">
+			Enviar pre tasación
+		</button>
+
+		<?php if (!empty($histPreTasacion['nombre_usuario'])) { ?>
+			<span style="margin-left:8px; color:#666;">
+				Último envío:
+				<strong><?php echo_s($histPreTasacion['nombre_usuario']); ?></strong>
+				<?php if (!empty($histPreTasacion['fecha'])) { ?>
+					<small>(<?php echo_s(date('d/m/Y H:i', strtotime($histPreTasacion['fecha']))); ?>)</small>
+				<?php } ?>
+			</span>
+		<?php } ?>
+	</div>
+
+	<div style="margin-bottom:8px;">
+		<button type="button" class="btn btn-success" id="btn_enviar_final_whatsapp" onclick="enviarRespuestaFinal('final');">
+			Enviar tasación final
+		</button>
+
+		<?php if (!empty($histTasacionFinal['nombre_usuario'])) { ?>
+			<span style="margin-left:8px; color:#666;">
+				Último envío:
+				<strong><?php echo_s($histTasacionFinal['nombre_usuario']); ?></strong>
+				<?php if (!empty($histTasacionFinal['fecha'])) { ?>
+					<small>(<?php echo_s(date('d/m/Y H:i', strtotime($histTasacionFinal['fecha']))); ?>)</small>
+				<?php } ?>
+			</span>
+		<?php } ?>
+	</div>
+
+		<span class="cot-feedback" id="whatsapp_feedback"></span>
+	</div>
 
 			<?php if ($usuario_cotizo && !empty($usuario_cotizo['email'])): ?>
 			<div class="cot-item" style="margin-top:12px;">
@@ -497,12 +597,18 @@ if (!function_exists('cot_v_hora_chat')) {
 				if ($emisor === 'CLIENTE') {
 					$bubbleClass = 'cliente';
 					$emisorLabel = 'Cliente';
+
 				} elseif ($emisor === 'HUMANO') {
 					$bubbleClass = 'humano';
-					$emisorLabel = 'Asesor';
+
+					$nombreUsuario = trim((string)($msg['nombre_usuario'] ?? ''));
+					$emisorLabel = ($nombreUsuario !== '') ? $nombreUsuario : 'Asesor';
+
 				} elseif ($emisor === 'BOT') {
 					$bubbleClass = 'bot';
-					$emisorLabel = 'Bot';
+
+					$nombreUsuario = trim((string)($msg['nombre_usuario'] ?? ''));
+					$emisorLabel = ($nombreUsuario !== '') ? $nombreUsuario : 'Bot';
 				}
 				?>
 				<div class="cot-msg-row <?php echo $rowClass; ?>">

@@ -30,8 +30,16 @@ function j($a) {
 	exit;
 }
 
-function registrar_mensaje_whatsapp_backend($idConversacion, $telefono, $mensaje, $sidMensaje = '', $origen = 'backend')
-{
+function registrar_mensaje_whatsapp_backend(
+	$idConversacion,
+	$telefono,
+	$mensaje,
+	$sidMensaje = '',
+	$origen = 'backend',
+	$extraMeta = [],
+	$idUsuario = null,
+	$nombreUsuario = ''
+){
 	global $db;
 
 	$idConversacion = intval($idConversacion);
@@ -43,28 +51,21 @@ function registrar_mensaje_whatsapp_backend($idConversacion, $telefono, $mensaje
 		return false;
 	}
 
-	$meta = json_encode([
+	$meta = json_encode(array_merge([
 		'origen' => $origen
-	], JSON_UNESCAPED_UNICODE);
+	], $extraMeta), JSON_UNESCAPED_UNICODE);
 
 	$db->query("
 		INSERT INTO whatsapp_conversacion_mensajes
-		(
-			id_conversacion,
-			telefono,
-			direccion,
-			emisor,
-			mensaje,
-			meta_json,
-			sid_mensaje,
-			fecha
-		)
+		(id_conversacion, telefono, direccion, emisor, id_usuario, nombre_usuario, mensaje, meta_json, sid_mensaje, fecha)
 		VALUES
 		(
 			'" . intval($idConversacion) . "',
 			'" . $db->escape($telefono) . "',
 			'SALIENTE',
 			'BOT',
+			" . ($idUsuario !== null ? intval($idUsuario) : "NULL") . ",
+			'" . $db->escape($nombreUsuario) . "',
 			'" . $db->escape($mensaje) . "',
 			'" . $db->escape($meta) . "',
 			" . ($sidMensaje !== '' ? "'" . $db->escape($sidMensaje) . "'" : "NULL") . ",
@@ -169,6 +170,35 @@ $sql = "
 	WHERE id_cotizaciones_generadas = " . intval($id) . "
 	LIMIT 1
 ";
+
+$db->query("
+    INSERT INTO cotizaciones_usuarios_historial
+    (
+        id_cotizacion,
+        id_usuario,
+        nombre_usuario,
+        accion,
+        mensaje,
+        monto_desde,
+        monto_hasta,
+        monto_final,
+        sid_mensaje,
+        fecha
+    )
+    VALUES
+    (
+        " . intval($id) . ",
+        " . intval($idUsuario) . ",
+        '" . $db->escape((string)($usuario['nombre'] ?? '')) . "',
+        'GUARDAR_TASACION_INTERNA',
+        'Guardó tasación interna',
+        " . floatval($pretasacion_desde) . ",
+        " . floatval($pretasacion_hasta) . ",
+        " . floatval($tasacion_final) . ",
+        NULL,
+        NOW()
+    )
+");
 
 $ok = $db->query($sql);
 
@@ -278,8 +308,43 @@ if ($modoEnvio === 'final') {
 			$telefono,
 			$mensaje,
 			(string)($envio['sid'] ?? ''),
-			'backend_tasacion_final'
+			'backend_tasacion_final',
+			[
+				'id_cotizacion' => intval($id),
+				'tipo' => 'tasacion_final'
+			],
+			$idUsuario,
+			(string)($usuario['nombre'] ?? '')
 		);
+
+		$db->query("
+		INSERT INTO cotizaciones_usuarios_historial
+		(
+			id_cotizacion,
+			id_usuario,
+			nombre_usuario,
+			accion,
+			mensaje,
+			monto_desde,
+			monto_hasta,
+			monto_final,
+			sid_mensaje,
+			fecha
+		)
+		VALUES
+		(
+			" . intval($id) . ",
+			" . intval($idUsuario) . ",
+			'" . $db->escape((string)($usuario['nombre'] ?? '')) . "',
+			'ENVIO_TASACION_FINAL',
+			'" . $db->escape($mensaje) . "',
+			NULL,
+			NULL,
+			" . floatval($tasacion_final) . ",
+			'" . $db->escape((string)($envio['sid'] ?? '')) . "',
+			NOW()
+		)
+	");
 	}
 
 	// =========================

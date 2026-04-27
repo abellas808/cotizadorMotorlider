@@ -137,8 +137,16 @@ function enviar_whatsapp_twilio($to, $body) {
 	];
 }
 
-function registrar_mensaje_whatsapp_backend($idConversacion, $telefono, $mensaje, $sidMensaje = '', $origen = 'backend', $extraMeta = [])
-{
+function registrar_mensaje_whatsapp_backend(
+	$idConversacion,
+	$telefono,
+	$mensaje,
+	$sidMensaje = '',
+	$origen = 'backend',
+	$extraMeta = [],
+	$idUsuario = null,
+	$nombreUsuario = ''
+	)	{
 	global $db;
 
 	$idConversacion = intval($idConversacion);
@@ -158,22 +166,15 @@ function registrar_mensaje_whatsapp_backend($idConversacion, $telefono, $mensaje
 
 	$db->query("
 		INSERT INTO whatsapp_conversacion_mensajes
-		(
-			id_conversacion,
-			telefono,
-			direccion,
-			emisor,
-			mensaje,
-			meta_json,
-			sid_mensaje,
-			fecha
-		)
+		(id_conversacion, telefono, direccion, emisor, id_usuario, nombre_usuario, mensaje, meta_json, sid_mensaje, fecha)
 		VALUES
 		(
 			'" . intval($idConversacion) . "',
 			'" . $db->escape($telefono) . "',
 			'SALIENTE',
 			'BOT',
+			" . ($idUsuario !== null ? intval($idUsuario) : "NULL") . ",
+			'" . $db->escape($nombreUsuario) . "',
 			'" . $db->escape($mensaje) . "',
 			'" . $db->escape($meta) . "',
 			" . ($sidMensaje !== '' ? "'" . $db->escape($sidMensaje) . "'" : "NULL") . ",
@@ -313,8 +314,39 @@ registrar_mensaje_whatsapp_backend(
 		'id_usuario' => intval($idUsuario),
 		'tipo_venta' => $tipoVenta,
 		'clave_plantilla' => $clavePlantilla
-	]
+	],
+	$idUsuario,
+	(string)($usuario['nombre'] ?? '')
 );
+
+$db->query("
+	INSERT INTO cotizaciones_usuarios_historial
+	(
+		id_cotizacion,
+		id_usuario,
+		nombre_usuario,
+		accion,
+		mensaje,
+		monto_desde,
+		monto_hasta,
+		monto_final,
+		sid_mensaje,
+		fecha
+	)
+	VALUES
+	(
+		" . intval($id) . ",
+		" . intval($idUsuario) . ",
+		'" . $db->escape((string)($usuario['nombre'] ?? '')) . "',
+		'ENVIO_PRE_TASACION',
+		'" . $db->escape($mensaje) . "',
+		" . floatval($pretasacion_desde) . ",
+		" . floatval($pretasacion_hasta) . ",
+		NULL,
+		'" . $db->escape((string)($envio['sid'] ?? '')) . "',
+		NOW()
+	)
+");
 
 // =========================
 // UPDATE COTIZACION

@@ -451,16 +451,17 @@ if (!empty($elemento['cancelado'])) {
 					<div class="age-label">Pre tasación</div>
 					<div class="age-value age-value-big">
 						<?php
-							$desde = isset($cotizacion['precio_desde']) ? $cotizacion['precio_desde'] : null;
-							$hasta = isset($cotizacion['precio_hasta']) ? $cotizacion['precio_hasta'] : null;
-							echo_s(age_v_money($desde) . ' a ' . age_v_money($hasta));
+						$desde = isset($cotizacion['pretasacion_desde']) ? $cotizacion['pretasacion_desde'] : null;
+						$hasta = isset($cotizacion['pretasacion_hasta']) ? $cotizacion['pretasacion_hasta'] : null;
+
+						echo_s(age_v_money($desde) . ' a ' . age_v_money($hasta));
 						?>
 					</div>
 				</div>
 
 				<div class="age-item">
 					<div class="age-label">Tasación final</div>
-					<div class="age-value age-value-big"><?php echo_s(age_v_money(isset($cotizacion['precio_final']) ? $cotizacion['precio_final'] : null)); ?></div>
+					<div class="age-value age-value-big"><?php echo_s(age_v_money(isset($cotizacion['tasacion_final']) ? $cotizacion['tasacion_final'] : null)); ?></div>
 				</div>
 
 				<div class="age-item">
