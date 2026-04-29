@@ -45,9 +45,11 @@ class MailService
     private function enviarMailInterno(array $clienteData, array $resultado): void
     {
         $from      = getenv('COTIZADOR_MAIL_FROM') ?: 'no-reply@motorlider.com.uy';
-        $toInterno = trim((string)(getenv('COTIZADOR_MAIL_TEST_TO') ?: ''));
+        $toInternoRaw = trim((string)(getenv('COTIZADOR_MAIL_TEST_TO') ?: ''));
 
-        if ($toInterno === '') {
+        $toInternos = array_filter(array_map('trim', explode(',', $toInternoRaw)));
+
+        if (empty($toInternos)) {
             return;
         }
 
@@ -94,7 +96,11 @@ class MailService
         $headers  = "From: {$from}\r\n";
         $headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
 
-        @mail($toInterno, $subject, $body, $headers);
+        foreach ($toInternos as $toInterno) {
+            if (filter_var($toInterno, FILTER_VALIDATE_EMAIL)) {
+                @mail($toInterno, $subject, $body, $headers);
+            }
+        }
     }
 
     private function obtenerValorFinal(array $resultado): ?float

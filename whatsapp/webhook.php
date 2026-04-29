@@ -2412,6 +2412,66 @@ function wa_obtener_cotizacion_actual_para_agenda(string $telefono, array $userS
     return $row ? intval($row['id_cotizaciones_generadas']) : 0;
 }
 
+function wa_preguntar_modelo_con_lista(string $from, string $profileName, string $marcaFinal, int $idMarca): void
+{
+    try {
+        $modelosDisponibles = wa_obtener_modelos_catalogo_por_marca($idMarca);
+    } catch (Throwable $e) {
+        wa_log('MODELOS_CATALOGO_ERROR_MARCA', [
+            'error' => $e->getMessage(),
+            'id_marca' => $idMarca
+        ]);
+        $modelosDisponibles = [];
+    }
+
+    if (!empty($modelosDisponibles)) {
+        $opcionesTexto = [];
+        $opcionesEstado = [];
+
+        $maxModelos = min(15, count($modelosDisponibles));
+
+        for ($i = 0; $i < $maxModelos; $i++) {
+            $nro = (string)($i + 1);
+            $modeloRow = $modelosDisponibles[$i];
+
+            $opcionesTexto[] = $nro . ' = ' . $modeloRow['nombre'];
+
+            $opcionesEstado[$nro] = [
+                'id' => (int)$modeloRow['id'],
+                'id_marca' => (int)$modeloRow['id_marca'],
+                'id_model' => (int)$modeloRow['id_model'],
+                'nombre' => (string)$modeloRow['nombre']
+            ];
+        }
+
+        wa_set_user_state($from, [
+            'step' => 'modelo_sugerido',
+            'marca' => $marcaFinal,
+            'id_marca' => $idMarca,
+            'modelo_opciones' => $opcionesEstado
+        ], 'ESPERANDO_MODELO', 'BOT', $profileName !== '' ? $profileName : null);
+
+        twiml_message_and_save(
+            $from,
+            "Encontré estos modelos para {$marcaFinal}:\n\n"
+            . implode("\n", $opcionesTexto)
+            . "\n\nRespondé con el número del modelo."
+        );
+    }
+
+    wa_set_user_state($from, [
+        'step' => 'modelo',
+        'marca' => $marcaFinal,
+        'id_marca' => $idMarca
+    ], 'ESPERANDO_MODELO', 'BOT', $profileName !== '' ? $profileName : null);
+
+    twiml_message_and_save(
+        $from,
+        "Anotado. ¿Qué MODELO es?\n"
+        . "(Ej: Onix, E2, Gol)"
+    );
+}
+
 // =========================
 // MAIN
 // =========================
@@ -2877,18 +2937,11 @@ if (($userState['step'] ?? '') === 'marca') {
     }
 
     if ($marcaExacta !== null) {
-        $marcaFinal = $marcaExacta['nombre'];
-
-        wa_set_user_state($from, [
-            'step' => 'modelo',
-            'marca' => $marcaFinal,
-            'id_marca' => $marcaExacta['id_marca']
-        ], 'ESPERANDO_MODELO', 'BOT', $profileName !== '' ? $profileName : null);
-
-        twiml_message_and_save(
+        wa_preguntar_modelo_con_lista(
             $from,
-            "Anotado. ¿Qué MODELO es?\n"
-            . "(Ej: Onix, E2, Gol)"
+            $profileName,
+            (string)$marcaExacta['nombre'],
+            (int)$marcaExacta['id_marca']
         );
     }
 
@@ -2958,7 +3011,7 @@ if (($userState['step'] ?? '') === 'marca_sugerida') {
         $marcaFinal = $opciones[$respuesta]['nombre'];
         $idMarca = (int)$opciones[$respuesta]['id_marca'];
 
-        wa_set_user_state($from, [
+       wa_set_user_state ($from, [
             'step' => 'modelo',
             'marca' => $marcaFinal,
             'id_marca' => $idMarca
