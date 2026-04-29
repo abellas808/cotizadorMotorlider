@@ -4,12 +4,17 @@ if (!isset($sistema_iniciado)) exit();
 
 $id = intval($_GET['i']);
 
-$elemento = $db->query_first('
-	SELECT *
-	FROM agendas
-	WHERE id_agenda = "' . $id . '"
-	LIMIT 1;
-');
+$elemento = $db->query_first("
+    SELECT 
+        a.*,
+        c.kilometros AS cot_kilometros,
+        c.telefono AS cot_telefono
+    FROM agendas a
+    LEFT JOIN cotizaciones_generadas c 
+        ON c.id_cotizaciones_generadas = a.id_cotizacion
+    WHERE a.id_agenda = " . intval($id) . "
+    LIMIT 1
+");
 
 if (!$elemento) {
 	header('Location: ?m=' . $modulo['prefijo'] . '_l');
@@ -44,6 +49,20 @@ if ($cotizacion && !empty($cotizacion['id_usuario_cotizo'])) {
 		WHERE id = "' . intval($cotizacion['id_usuario_cotizo']) . '"
 		LIMIT 1;
 	');
+}
+
+function formatoTelefonoUy($telefono) {
+    $tel = trim((string)$telefono);
+
+    // sacar "whatsapp:"
+    $tel = str_replace('whatsapp:', '', $tel);
+
+    // convertir +598 a 0
+    if (strpos($tel, '+598') === 0) {
+        $tel = '0' . substr($tel, 4);
+    }
+
+    return $tel;
 }
 
 if (!function_exists('age_v_obtener_notificaciones')) {
@@ -500,10 +519,10 @@ if (!empty($elemento['cancelado'])) {
 
 			<div class="age-item"><div class="age-label">Nombre</div><div class="age-value"><?php echo_s(age_v_text(isset($cotizacion['nombre']) ? $cotizacion['nombre'] : '')); ?></div></div>
 			<div class="age-item"><div class="age-label">Email</div><div class="age-value"><?php echo_s(age_v_text(isset($cotizacion['email']) ? $cotizacion['email'] : '')); ?></div></div>
-			<div class="age-item"><div class="age-label">Teléfono</div><div class="age-value"><?php echo_s(age_v_text(isset($cotizacion['telefono']) ? $cotizacion['telefono'] : '')); ?></div></div>
+			<div class="age-item"><div class="age-label">Teléfono</div><div class="age-value"><?php echo_s(age_v_text(isset($cotizacion['telefono']) ? formatoTelefonoUy($cotizacion['telefono']) : '')); ?></div></div>
 			<div class="age-item"><div class="age-label">Vehículo</div><div class="age-value"><?php echo_s(age_v_text($vehiculoTexto)); ?></div></div>
 			<div class="age-item"><div class="age-label">Año</div><div class="age-value"><?php echo_s(age_v_text(isset($cotizacion['anio']) ? $cotizacion['anio'] : '')); ?></div></div>
-			<div class="age-item"><div class="age-label">Kilómetros</div><div class="age-value"><?php echo_s(age_v_text(isset($cotizacion['km']) ? number_format((float)$cotizacion['km'], 0, ',', '.') : '')); ?></div></div>
+			<div class="age-item"><div class="age-label">Kilómetros</div><div class="age-value"><?php echo_s(age_v_text(isset($cotizacion['kilometros']) ? number_format((float)$cotizacion['kilometros'], 0, ',', '.') : '')); ?></div></div>
 			<div class="age-item"><div class="age-label">Ficha en service oficial</div><div class="age-value"><?php echo_s(age_v_text(isset($cotizacion['ficha_tecnica']) ? $cotizacion['ficha_tecnica'] : '')); ?></div></div>
 		</div>
 	</div>

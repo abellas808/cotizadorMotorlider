@@ -97,6 +97,18 @@ if (($elemento['familia'] ?? '') == 'otro') {
 
 $convMensajes = array();
 
+function formatoTelefonoUy($telefono) {
+    $tel = trim((string)$telefono);
+    $tel = str_replace('whatsapp:', '', $tel);
+    $tel = preg_replace('/[^0-9]/', '', $tel);
+
+    if (substr($tel, 0, 3) === '598') {
+        $tel = '0' . substr($tel, 3);
+    }
+
+    return $tel;
+}
+
 if (isset($db)) {
 
 	$telefonoCot = trim((string)($elemento['telefono'] ?? ''));
@@ -417,7 +429,7 @@ if (!function_exists('cot_v_hora_chat')) {
 
 			<div class="cot-item"><div class="cot-label">Nombre</div><div class="cot-value"><?php echo_s($elemento['nombre']); ?></div></div>
 			<div class="cot-item"><div class="cot-label">Email</div><div class="cot-value"><?php echo_s($elemento['email']); ?></div></div>
-			<div class="cot-item"><div class="cot-label">Teléfono</div><div class="cot-value"><?php echo_s($elemento['telefono']); ?></div></div>
+			<div class="cot-item"><div class="cot-label">Teléfono</div><div class="cot-value"><?php echo_s(formatoTelefonoUy($elemento['telefono'] ?? '')); ?></div></div>
 			<div class="cot-item"><div class="cot-label">Vehículo</div><div class="cot-value"><?php echo_s(cot_v_text($vehiculoTexto)); ?></div></div>
 			<div class="cot-item"><div class="cot-label">Año</div><div class="cot-value"><?php echo_s(cot_v_text($elemento['anio'])); ?></div></div>
 			<div class="cot-item"><div class="cot-label">Kilómetros</div><div class="cot-value"><?php echo_s(is_numeric($elemento['kilometros'] ?? null) ? number_format((float)$elemento['kilometros'], 0, ',', '.') : '-'); ?></div></div>
