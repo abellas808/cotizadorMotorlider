@@ -1049,14 +1049,77 @@ function cotizarYAgendarPopup() {
         });
     })
     .fail(function(xhr) {
-        let msg = 'No se pudo cotizar.';
+        let msg = 'No se pudo cotizar. Se intentará crear la agenda con la cotización generada.';
+
         if (xhr && xhr.responseText) {
             try {
                 const j = JSON.parse(xhr.responseText);
-                if (j && (j.mensaje || j.msg)) msg = j.mensaje || j.msg;
+                if (j && (j.mensaje || j.msg)) {
+                    msg = (j.mensaje || j.msg) + ' Se intentará crear la agenda con la cotización generada.';
+                }
             } catch(e) {}
         }
-        $('#cotiza_estado_popup').css('color', '#a94442').text(msg);
+
+        $('#cotiza_estado_popup')
+            .css('color', '#468847')
+            .text(msg);
+
+        guardarAgendaManualDesdePopup(0);
+    });
+}
+
+function guardarAgendaManualDesdePopup(idCotizacion) {
+    const marcaTxt  = ($('#cotiza_marca option:selected').text() || '').toString().trim();
+    const modeloTxt = ($('#cotiza_modelo option:selected').text() || '').toString().trim();
+    const version   = ($('#cotiza_version').val() || '').toString().trim();
+
+    const data = {
+        id_cotizacion: idCotizacion || 0,
+        fecha_reserva: agendaFechaSeleccionada,
+        horario_reserva: agendaHoraSeleccionada,
+        suc: 1,
+
+        nombre: ($('#cotiza_nombre').val() || '').toString().trim(),
+        email: ($('#cotiza_email').val() || '').toString().trim(),
+        telefono: ($('#cotiza_telefono').val() || '').toString().trim(),
+
+        marca: marcaTxt,
+        modelo: modeloTxt,
+        anio: ($('#cotiza_anio').val() || '').toString().trim(),
+        familia: version,
+        version: version,
+        auto: (marcaTxt + ' ' + modeloTxt + ' ' + ($('#cotiza_anio').val() || '') + ' ' + version).replace(/\s+/g, ' ').trim()
+    };
+
+    $.ajax({
+        url: '/adm/modulos/age/ajax_guardar_agenda_manual.php',
+        type: 'POST',
+        dataType: 'json',
+        data: data,
+        success: function(res) {
+            if (res && res.ok) {
+                $('#cotiza_estado_popup')
+                    .css('color', '#468847')
+                    .text('Agenda manual creada correctamente.');
+
+                $('#cotiza_resultado_popup').html(
+                    '<div class="age-box-ok"><strong>Agenda generada.</strong> Código agenda: '
+                    + $('<div>').text(res.id_agenda || '').html()
+                    + ' | Sin cotización asociada</div>'
+                );
+
+                seleccionarDia(fechaSeleccionada);
+            } else {
+                $('#cotiza_estado_popup')
+                    .css('color', '#a94442')
+                    .text((res && res.mensaje) ? res.mensaje : 'No se pudo crear la agenda manual.');
+            }
+        },
+        error: function(xhr) {
+            $('#cotiza_estado_popup')
+                .css('color', '#a94442')
+                .html('Error creando agenda manual:<br><small>' + xhr.responseText + '</small>');
+        }
     });
 }
 
