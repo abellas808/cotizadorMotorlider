@@ -2353,6 +2353,65 @@ function wa_registrar_carrito_abandonado(
     $cn->close();
 }
 
+function wa_obtener_cotizacion_actual_para_agenda(string $telefono, array $userState, int $idConvCotizacion): int
+{
+    $cn = wa_db();
+
+    $marca = trim((string)($userState['marca'] ?? ''));
+    $modelo = trim((string)($userState['modelo'] ?? ''));
+    $anio = trim((string)($userState['anio'] ?? ''));
+
+    // Primero valido si el id guardado en conversación corresponde al auto actual
+    if ($idConvCotizacion > 0) {
+        $sql = "
+            SELECT id_cotizaciones_generadas
+            FROM cotizaciones_generadas
+            WHERE id_cotizaciones_generadas = ?
+              AND telefono = ?
+              AND anio = ?
+              AND auto LIKE ?
+            LIMIT 1
+        ";
+
+        $autoLike = '%' . $modelo . '%';
+
+        $st = $cn->prepare($sql);
+        $st->bind_param('isis', $idConvCotizacion, $telefono, $anio, $autoLike);
+        $st->execute();
+        $rs = $st->get_result();
+        $row = $rs ? $rs->fetch_assoc() : null;
+        $st->close();
+
+        if ($row) {
+            $cn->close();
+            return $idConvCotizacion;
+        }
+    }
+
+    // Si no corresponde, busco la última cotización real de ese teléfono + auto actual
+    $sql = "
+        SELECT id_cotizaciones_generadas
+        FROM cotizaciones_generadas
+        WHERE telefono = ?
+          AND anio = ?
+          AND auto LIKE ?
+        ORDER BY id_cotizaciones_generadas DESC
+        LIMIT 1
+    ";
+
+    $autoLike = '%' . $modelo . '%';
+
+    $st = $cn->prepare($sql);
+    $st->bind_param('sis', $telefono, $anio, $autoLike);
+    $st->execute();
+    $rs = $st->get_result();
+    $row = $rs ? $rs->fetch_assoc() : null;
+    $st->close();
+    $cn->close();
+
+    return $row ? intval($row['id_cotizaciones_generadas']) : 0;
+}
+
 // =========================
 // MAIN
 // =========================
@@ -4222,7 +4281,24 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
     }
 
     $conv = wa_get_conversation($from);
-    $idCotizacion = (int)($conv['id_cotizacion'] ?? 0);
+
+    $idCotizacion = wa_obtener_cotizacion_actual_para_agenda(
+        $from,
+        $userState,
+        (int)($conv['id_cotizacion'] ?? 0)
+    );
+
+    wa_log('AGENDA_ID_COTIZACION_RESUELTO', [
+        'telefono' => $from,
+        'id_cotizacion_conv' => (int)($conv['id_cotizacion'] ?? 0),
+        'id_cotizacion_final' => $idCotizacion,
+        'auto_user_state' => [
+            'marca' => $userState['marca'] ?? '',
+            'modelo' => $userState['modelo'] ?? '',
+            'anio' => $userState['anio'] ?? '',
+            'version' => $userState['version'] ?? ''
+        ]
+    ]);
 
     $payload = [
         'location' => $location,
