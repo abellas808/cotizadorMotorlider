@@ -84,6 +84,53 @@ function obtener_id_conversacion_por_telefono($telefono)
 	return $idConversacion > 0 ? $idConversacion : 1;
 }
 
+function actualizar_conversacion_post_pre_tasacion($telefono, $idCotizacion)
+{
+	global $db;
+
+	$telefono = trim((string)$telefono);
+	$idCotizacion = intval($idCotizacion);
+
+	if ($telefono === '' || $idCotizacion <= 0) {
+		return false;
+	}
+
+	$row = $db->query_first("
+		SELECT datos_json
+		FROM whatsapp_conversaciones
+		WHERE telefono = '" . $db->escape($telefono) . "'
+		ORDER BY id DESC
+		LIMIT 1
+	");
+
+	$datos = [];
+
+	if (!empty($row['datos_json'])) {
+		$tmp = json_decode((string)$row['datos_json'], true);
+		if (is_array($tmp)) {
+			$datos = $tmp;
+		}
+	}
+
+	$datos['step'] = 'resultado_enviado';
+
+	$db->query("
+		UPDATE whatsapp_conversaciones
+		SET
+			estado = 'PENDIENTE_RESPUESTA_HUMANA',
+			modo_atencion = 'BOT',
+			datos_json = '" . $db->escape(json_encode($datos, JSON_UNESCAPED_UNICODE)) . "',
+			id_cotizacion = '" . intval($idCotizacion) . "',
+			fecha_ultima_interaccion = NOW(),
+			fecha_mod = NOW()
+		WHERE telefono = '" . $db->escape($telefono) . "'
+		ORDER BY id DESC
+		LIMIT 1
+	");
+
+	return true;
+}
+
 function enviar_whatsapp_twilio($to, $body) {
 	$url = 'https://api.twilio.com/2010-04-01/Accounts/' . TWILIO_ACCOUNT_SID . '/Messages.json';
 
@@ -185,6 +232,7 @@ function registrar_mensaje_whatsapp_backend(
 	return true;
 }
 
+
 // =========================
 // INPUT
 // =========================
@@ -255,7 +303,7 @@ $plantillasWhatsapp = [
 		. "Para continuar, un asesor de nuestro equipo se comunicará contigo para revisar los detalles.",
 
 	'respuesta_humana_forma_pago' =>
-    "{nombre_cliente}, estaríamos comprando su vehículo al contado entre *USD {pre_tasacion_desde}* a *USD {pre_tasacion_hasta}* (nosotros asumimos los honorarios y gastos de escribanos)"
+    "{nombre_cliente}, estaríamos comprando su vehículo al contado entre *USD {pre_tasacion_desde}* a *USD {pre_tasacion_hasta}* (nosotros asumimos los honorarios y gastos de escribanos).\n\n"
     . "Para definir el precio exacto y revisar el vehículo será necesaria la inspección mecánica. La misma es realizada en nuestro local ubicado en Av. de las Américas 7868 (Frente al Puente de las Américas), tiene una duración de 30 min y es sin costo.\n\n"
     . "¿Le gustaría agendarse para la revisión?",
 	
@@ -318,6 +366,8 @@ registrar_mensaje_whatsapp_backend(
 	$idUsuario,
 	(string)($usuario['nombre'] ?? '')
 );
+
+actualizar_conversacion_post_pre_tasacion($telefono, $id);
 
 $db->query("
 	INSERT INTO cotizaciones_usuarios_historial

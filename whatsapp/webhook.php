@@ -29,6 +29,7 @@ const TWILIO_ACCOUNT_SID = 'AC4a648c5c55de9d9b1f1f6601b14d4c4d';
 const TWILIO_WHATSAPP_FROM = 'whatsapp:+59898057857';
 const TWILIO_TEMPLATE_FICHA_OFICIAL = 'HX119384cc1a71182dcee9535564b16f15';
 const TWILIO_TEMPLATE_TIPO_VENTA = 'HXfaf8c64eb73fcfe261c8b5710e737614';
+const TWILIO_TEMPLATE_CONFIRMAR_AGENDA  = 'HX6ae99ac3d943643937c2b0c3c376f2e6';
 
 // =========================
 // PATHS
@@ -2949,6 +2950,7 @@ if (in_array($currentEstado, ['PENDIENTE_RESPUESTA_HUMANA', 'HUMANO_EN_CONVERSAC
 // refrescar por si algún comando global cambió estado
 $userState = wa_get_user_data($from);
 
+
 // =========================
 // PASO: MARCA
 // =========================
@@ -4275,15 +4277,18 @@ if (($userState['step'] ?? '') === 'agenda_hora') {
         $profileName !== '' ? $profileName : null
     );
 
-    twiml_message_and_save(
+    $fechaFormateada = wa_formatear_fecha_chat((string)$nuevoEstado['agenda_fecha']);
+    $horaFormateada  = substr($horaElegida, 0, 5);
+
+    $ok = enviar_template_confirmacion(
         $from,
-        "Perfecto \n\n"
-        . "Reserva solicitada:\n"
-        . "Fecha: " . wa_formatear_fecha_chat((string)$nuevoEstado['agenda_fecha']) . "\n"
-        . "Hora: " . substr($horaElegida, 0, 5) . "\n\n"
-        . "Respondé CONFIRMAR para agendar.\n"
-        . "O escribí ATRAS / CANCELAR."
+        $fechaFormateada,
+        $horaFormateada
     );
+
+    if ($ok) {
+        twiml_empty();
+    }
 }
 
 // =========================
@@ -4491,6 +4496,37 @@ function wa_marcar_cotizacion_comunicarse_cliente(int $idCotizacion): bool
     $cn->close();
 
     return $ok;
+}
+
+function enviar_template_confirmacion($to, $fecha, $hora) {
+
+	$url = 'https://api.twilio.com/2010-04-01/Accounts/' . TWILIO_ACCOUNT_SID . '/Messages.json';
+
+	$variables = json_encode([
+		"1" => $fecha,
+		"2" => $hora
+	]);
+
+	$postFields = http_build_query([
+		'From' => TWILIO_WHATSAPP_FROM,
+		'To' => $to,
+		'ContentSid' => TWILIO_TEMPLATE_CONFIRMAR_AGENDA,
+		'ContentVariables' => $variables
+	]);
+
+	$ch = curl_init($url);
+	curl_setopt_array($ch, [
+		CURLOPT_RETURNTRANSFER => true,
+		CURLOPT_POST => true,
+		CURLOPT_POSTFIELDS => $postFields,
+		CURLOPT_USERPWD => TWILIO_ACCOUNT_SID . ':' . TWILIO_AUTH_TOKEN,
+		CURLOPT_HTTPAUTH => CURLAUTH_BASIC,
+	]);
+
+	$response = curl_exec($ch);
+	curl_close($ch);
+
+	return $response;
 }
 
 // =========================
