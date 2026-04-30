@@ -251,11 +251,11 @@ if ($tipoVenta === 'venta_contado') {
 
 $plantillasWhatsapp = [
 	'respuesta_humana_venta_contado' =>
-		"{nombre_cliente}, estaríamos comprando su vehículo en un valor estimado entre USD {pre_tasacion_desde} y USD {pre_tasacion_hasta}.\n\n"
+		"{nombre_cliente}, estaríamos comprando su vehículo en un valor estimado entre *USD {pre_tasacion_desde}* y *USD {pre_tasacion_hasta}*.\n\n"
 		. "Para continuar, un asesor de nuestro equipo se comunicará contigo para revisar los detalles.",
 
 	'respuesta_humana_forma_pago' =>
-    "{nombre_cliente}, estaríamos comprando su vehículo al contado entre USD {pre_tasacion_desde} a USD {pre_tasacion_hasta} (nosotros asumimos los honorarios y gastos de escribano).\n\n"
+    "{nombre_cliente}, estaríamos comprando su vehículo al contado entre *USD {pre_tasacion_desde}* a *USD {pre_tasacion_hasta}* (nosotros asumimos los honorarios y gastos de escribanos)"
     . "Para definir el precio exacto y revisar el vehículo será necesaria la inspección mecánica. La misma es realizada en nuestro local ubicado en Av. de las Américas 7868 (Frente al Puente de las Américas), tiene una duración de 30 min y es sin costo.\n\n"
     . "¿Le gustaría agendarse para la revisión?",
 	

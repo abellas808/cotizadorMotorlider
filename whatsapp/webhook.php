@@ -20,14 +20,14 @@ date_default_timezone_set('America/Montevideo');
 // =========================
 const TWILIO_AUTH_TOKEN = '58f767d26211d9d0c20ea687df00b4c3';
 const COTIZADOR_BASE_URL = 'https://carplay.uy/apicotizador/cotizadorPublico/';
-const TWILIO_TEMPLATE_INICIO_COTIZAR = 'HX664360f3502afb56b04a76eeff4a9678';
+const TWILIO_TEMPLATE_INICIO_COTIZAR = 'HXe82609254670d3ddc6712e0c44601431';
 const DB_HOST = 'localhost';
 const DB_NAME = 'marcos2022_api';
 const DB_USER = 'marcos2022_usr_api';
 const DB_PASS = '_eT4AjJ79~tX]*h)J5';
 const TWILIO_ACCOUNT_SID = 'AC4a648c5c55de9d9b1f1f6601b14d4c4d';
 const TWILIO_WHATSAPP_FROM = 'whatsapp:+59898057857';
-const TWILIO_TEMPLATE_FICHA_OFICIAL = 'HXa8b293be94173c49089eda878a8ea2d9';
+const TWILIO_TEMPLATE_FICHA_OFICIAL = 'HX119384cc1a71182dcee9535564b16f15';
 const TWILIO_TEMPLATE_TIPO_VENTA = 'HXfaf8c64eb73fcfe261c8b5710e737614';
 
 // =========================
@@ -1931,7 +1931,7 @@ function wa_enviar_template_ficha_oficial(string $to, string $textoFallback = ''
     try {
         wa_save_last_bot_message(
             $to,
-            $textoFallback !== '' ? $textoFallback : '¿Tiene el historial de servicios oficiales al día?',
+            $textoFallback !== '' ? $textoFallback : '¿Tiene ficha oficial? (Todos los servicios han sido realizados en tiempo y forma en taller oficial de la marca)',
             [
                 'origen' => 'twilio_content_template',
                 'content_sid' => TWILIO_TEMPLATE_FICHA_OFICIAL,
@@ -1952,7 +1952,9 @@ function wa_enviar_template_ficha_oficial(string $to, string $textoFallback = ''
 
 function wa_preguntar_ficha_oficial_interactiva(string $from): void
 {
-    $fallback = "¿Tiene el historial de servicios oficiales al día?\nRespondé: SI o NO";
+    $fallback = "¿Tiene ficha oficial?\n\n"
+    . "(Todos los servicios han sido realizados en tiempo y forma en taller oficial de la marca)\n\n"
+    . "Respondé: SI o NO";
 
     $ok = wa_enviar_template_ficha_oficial($from, $fallback);
 
@@ -2079,7 +2081,7 @@ function wa_enviar_template_inicio_cotizar(string $to, string $textoFallback = '
     try {
         wa_save_last_bot_message(
             $to,
-            $textoFallback !== '' ? $textoFallback : "👋 ¡Hola! Soy Alan, cotizador virtual de Motorlider.\n\nTocá el botón para comenzar.",
+            $textoFallback !== '' ? $textoFallback : "👋 ¡Hola! Soy *Alan*, cotizador virtual de Motorlider.\n\nTocá el botón para comenzar.",
             [
                 'origen' => 'twilio_content_template',
                 'content_sid' => TWILIO_TEMPLATE_INICIO_COTIZAR,
@@ -2100,7 +2102,7 @@ function wa_enviar_template_inicio_cotizar(string $to, string $textoFallback = '
 
 function wa_preguntar_inicio_cotizar_interactiva(string $from): void
 {
-    $fallback = "👋 ¡Hola! Soy Alan\n"
+    $fallback = "👋 ¡Hola! Soy *Alan*\n"
         . "Cotizador virtual de Motorlider.\n"
         . "Estoy aquí para ayudarte a cotizar tu vehículo de forma rápida y fácil.\n\n"
         . "Respondé COTIZAR para comenzar.";
