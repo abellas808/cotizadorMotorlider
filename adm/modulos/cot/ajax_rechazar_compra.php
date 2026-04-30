@@ -252,11 +252,15 @@ if ($vehiculo !== '') {
 	$mensaje .= " " . $vehiculo;
 }
 
-$mensaje .= ".\n\n";
-$mensaje .= "En esta oportunidad no vamos a avanzar con la compra del auto.\n\n";
-$mensaje .= "De todas formas agradecemos mucho que hayas considerado a Motorlider.\n\n";
-$mensaje .= "Saludos,\nMotorlider";
+$tipoVenta = strtolower(trim((string)($elemento['tipo_venta'] ?? '')));
 
+if (strpos($tipoVenta, 'venta') !== false) {
+    $mensaje = "Lamentablemente en este momento no estamos en condiciones de comprar su vehículo ya que tenemos el segmento completo.\n\n"
+        . "Quedamos a las órdenes!";
+} else {
+    $mensaje = "Lamentablemente en este momento no estamos en condiciones de tomar su vehículo ya que tenemos el segmento completo.\n\n"
+        . "Quedamos a las órdenes!";
+}
 // =========================
 // ENVIAR WHATSAPP
 // =========================

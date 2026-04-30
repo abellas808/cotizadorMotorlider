@@ -74,13 +74,9 @@ class MailService
         $body .= "Valor pretendido: " . ($clienteData['valor_pretendido'] ?? '') . "\n\n";
 
         $body .= "RESULTADO\n";
-        $body .= "OK: " . (!empty($resultado['ok']) ? 'SI' : 'NO') . "\n";
-        $body .= "Mensaje: " . ($resultado['msg'] ?? '') . "\n";
-        $body .= "Comparables: " . ($resultado['comparables'] ?? $resultado['count'] ?? 0) . "\n";
         $body .= "Min: " . ($resultado['min'] ?? '') . "\n";
         $body .= "Max: " . ($resultado['max'] ?? '') . "\n";
         $body .= "Prom: " . ($resultado['avg'] ?? '') . "\n";
-        $body .= "Median: " . ($resultado['median'] ?? '') . "\n";
         $body .= "Valor final enviado al cliente: " . ($valorFinal !== null ? $this->formatNumber($valorFinal) : '') . "\n";
 
         if (!empty($resultado['valor_minimo_motorlider'])) {
