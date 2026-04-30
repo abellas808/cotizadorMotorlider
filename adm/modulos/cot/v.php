@@ -74,6 +74,27 @@ if (!function_exists('cot_v_input_money')) {
 	}
 }
 
+if (!function_exists('cot_v_estado_cotizacion_texto')) {
+	function cot_v_estado_cotizacion_texto($elemento) {
+		$estado_id = isset($elemento['estado_id']) ? intval($elemento['estado_id']) : 1;
+
+		switch ($estado_id) {
+			case 1:
+				return 'NO COTIZÓ';
+			case 2:
+				return 'PENDIENTE';
+			case 3:
+				return 'COT. PRELIMINAR';
+			case 4:
+				return 'FINALIZADO';
+			case 5:
+				return 'RECHAZADO';
+			default:
+				return 'NO COTIZÓ';
+		}
+	}
+}
+
 if (!function_exists('cot_v_text')) {
 	function cot_v_text($valor, $fallback = '-') {
 		$valor = trim((string)$valor);
@@ -416,10 +437,16 @@ if (!function_exists('cot_v_hora_chat')) {
 
 			<div class="cot-item"><div class="cot-label">Código</div><div class="cot-value"><?php echo_s($elemento['id_cotizaciones_generadas']); ?></div></div>
 			<div class="cot-item"><div class="cot-label">Fecha</div><div class="cot-value"><?php echo_s($fechaFormateada); ?></div></div>
+			
+			<?php
+			$estadoCotizacionTexto = cot_v_estado_cotizacion_texto($elemento);
+			$estadoCotizacionId = isset($elemento['estado_id']) ? intval($elemento['estado_id']) : 1;
+			?>
+
 			<div class="cot-item">
 				<div class="cot-label">Estado</div>
-				<div class="cot-value <?php echo (($elemento['estado'] ?? '') == 'PENDIENTE') ? 'estado-pendiente' : 'estado-finalizada'; ?>">
-					<?php echo_s($elemento['estado']); ?>
+				<div class="cot-value <?php echo ($estadoCotizacionId == 2) ? 'estado-pendiente' : 'estado-finalizada'; ?>">
+					<?php echo_s($estadoCotizacionTexto); ?>
 				</div>
 			</div>
 
@@ -529,50 +556,56 @@ if (!function_exists('cot_v_hora_chat')) {
 			</div>
 
 			<div class="cot-edit-actions" style="margin-top:10px;">
-	<div style="margin-bottom:8px;">
-		<button type="button" class="btn btn-success" id="btn_enviar_pre_whatsapp" onclick="enviarRespuestaWhatsapp('pre');">
-			Enviar pre tasación
-		</button>
+				<div style="margin-bottom:8px;">
+					<button type="button" class="btn btn-success" id="btn_enviar_pre_whatsapp" onclick="enviarRespuestaWhatsapp('pre');">
+						Enviar pre tasación
+					</button>
 
-		<?php if (!empty($histPreTasacion['nombre_usuario'])) { ?>
-			<span style="margin-left:8px; color:#666;">
-				Último envío:
-				<strong><?php echo_s($histPreTasacion['nombre_usuario']); ?></strong>
-				<?php if (!empty($histPreTasacion['fecha'])) { ?>
-					<small>(<?php echo_s(date('d/m/Y H:i', strtotime($histPreTasacion['fecha']))); ?>)</small>
-				<?php } ?>
-			</span>
-		<?php } ?>
-	</div>
+					<?php if (!empty($histPreTasacion['nombre_usuario'])) { ?>
+						<span style="margin-left:8px; color:#666;">
+							Último envío:
+							<strong><?php echo_s($histPreTasacion['nombre_usuario']); ?></strong>
+							<?php if (!empty($histPreTasacion['fecha'])) { ?>
+								<small>(<?php echo_s(date('d/m/Y H:i', strtotime($histPreTasacion['fecha']))); ?>)</small>
+							<?php } ?>
+						</span>
+					<?php } ?>
+				</div>
 
-	<div style="margin-bottom:8px;">
-		<button type="button" class="btn btn-success" id="btn_enviar_final_whatsapp" onclick="enviarRespuestaFinal('final');">
-			Enviar tasación final
-		</button>
+				<div style="margin-bottom:8px;">
+					<button type="button" class="btn btn-success" id="btn_enviar_final_whatsapp" onclick="enviarRespuestaFinal('final');">
+						Enviar tasación final
+					</button>
 
-		<?php if (!empty($histTasacionFinal['nombre_usuario'])) { ?>
-			<span style="margin-left:8px; color:#666;">
-				Último envío:
-				<strong><?php echo_s($histTasacionFinal['nombre_usuario']); ?></strong>
-				<?php if (!empty($histTasacionFinal['fecha'])) { ?>
-					<small>(<?php echo_s(date('d/m/Y H:i', strtotime($histTasacionFinal['fecha']))); ?>)</small>
-				<?php } ?>
-			</span>
-		<?php } ?>
-	</div>
+					<?php if (!empty($histTasacionFinal['nombre_usuario'])) { ?>
+						<span style="margin-left:8px; color:#666;">
+							Último envío:
+							<strong><?php echo_s($histTasacionFinal['nombre_usuario']); ?></strong>
+							<?php if (!empty($histTasacionFinal['fecha'])) { ?>
+								<small>(<?php echo_s(date('d/m/Y H:i', strtotime($histTasacionFinal['fecha']))); ?>)</small>
+							<?php } ?>
+						</span>
+					<?php } ?>
+				</div>
 
-		<span class="cot-feedback" id="whatsapp_feedback"></span>
-	</div>
+				<div style="margin-bottom:8px;">
+					<button type="button" class="btn btn-danger" id="btn_rechazar_compra" onclick="rechazarCompra();">
+						Rechazar compra
+					</button>
+				</div>
 
-			<?php if ($usuario_cotizo && !empty($usuario_cotizo['email'])): ?>
-			<div class="cot-item" style="margin-top:12px;">
-				<div class="cot-label">Email usuario</div>
-				<div class="cot-value" id="usuario_cotizo_email"><?php echo_s($usuario_cotizo['email']); ?></div>
+				<span class="cot-feedback" id="whatsapp_feedback"></span>
 			</div>
-			<?php endif; ?>
+
+				<?php if ($usuario_cotizo && !empty($usuario_cotizo['email'])): ?>
+				<div class="cot-item" style="margin-top:12px;">
+					<div class="cot-label">Email usuario</div>
+					<div class="cot-value" id="usuario_cotizo_email"><?php echo_s($usuario_cotizo['email']); ?></div>
+				</div>
+				<?php endif; ?>
+			</div>
 		</div>
 	</div>
-</div>
 
 <div class="cot-grid-2-sm">
 	<div class="cot-col">
@@ -911,6 +944,57 @@ function enviarRespuestaFinal(modoEnvio) {
 		'&pretasacion_hasta=' + encodeURIComponent(pretasacion_hasta) +
 		'&tasacion_final=' + encodeURIComponent(tasacion_final)
 	);
+}
+
+function rechazarCompra() {
+	var feedback = document.getElementById('whatsapp_feedback');
+	var btn = document.getElementById('btn_rechazar_compra');
+
+	if (!confirm('¿Confirmás que querés rechazar la compra y enviar el mensaje al cliente?')) {
+		return;
+	}
+
+	btn.disabled = true;
+	feedback.style.color = '#666';
+	feedback.innerHTML = 'Enviando mensaje de rechazo...';
+
+	var xhr = new XMLHttpRequest();
+	xhr.open('POST', '/adm/modulos/cot/ajax_rechazar_compra.php', true);
+	xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
+
+	xhr.onreadystatechange = function() {
+		if (xhr.readyState !== 4) return;
+
+		if (xhr.status !== 200) {
+			btn.disabled = false;
+			feedback.style.color = '#b94a48';
+			feedback.innerHTML = 'Error HTTP ' + xhr.status + '<br><small>' + xhr.responseText + '</small>';
+			return;
+		}
+
+		try {
+			var res = JSON.parse(xhr.responseText);
+
+			if (res.ok) {
+				feedback.style.color = '#468847';
+				feedback.innerHTML = res.mensaje ? res.mensaje : 'Compra rechazada correctamente.';
+
+				setTimeout(function() {
+					window.location.reload();
+				}, 900);
+			} else {
+				btn.disabled = false;
+				feedback.style.color = '#b94a48';
+				feedback.innerHTML = res.mensaje ? res.mensaje : 'No se pudo rechazar la compra.';
+			}
+		} catch (e) {
+			btn.disabled = false;
+			feedback.style.color = '#b94a48';
+			feedback.innerHTML = 'Respuesta inválida del servidor:<br><small>' + xhr.responseText + '</small>';
+		}
+	};
+
+	xhr.send('id=<?php echo intval($id); ?>');
 }
 
 window.addEventListener('load', function () {
