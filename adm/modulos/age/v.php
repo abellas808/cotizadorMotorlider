@@ -126,8 +126,16 @@ if (!function_exists('age_v_money')) {
 }
 
 if (!function_exists('age_v_text')) {
-	function age_v_text($valor, $fallback = '-') {
+	function age_v_text($valor, $fallback = '-', $campo = '') {
+
 		$valor = trim((string)$valor);
+
+		// 👉 caso específico ficha técnica
+		if ($campo === 'ficha_tecnica') {
+			if ($valor === '1') return 'Sí';
+			if ($valor === '2' || $valor === '0') return 'No';
+		}
+
 		return $valor !== '' ? $valor : $fallback;
 	}
 }
@@ -523,8 +531,13 @@ if (!empty($elemento['cancelado'])) {
 			<div class="age-item"><div class="age-label">Vehículo</div><div class="age-value"><?php echo_s(age_v_text($vehiculoTexto)); ?></div></div>
 			<div class="age-item"><div class="age-label">Año</div><div class="age-value"><?php echo_s(age_v_text(isset($cotizacion['anio']) ? $cotizacion['anio'] : '')); ?></div></div>
 			<div class="age-item"><div class="age-label">Kilómetros</div><div class="age-value"><?php echo_s(age_v_text(isset($cotizacion['kilometros']) ? number_format((float)$cotizacion['kilometros'], 0, ',', '.') : '')); ?></div></div>
-			<div class="age-item"><div class="age-label">Ficha en service oficial</div><div class="age-value"><?php echo_s(age_v_text(isset($cotizacion['ficha_tecnica']) ? $cotizacion['ficha_tecnica'] : '')); ?></div></div>
+			<div class="age-item">
+			<div class="age-label">Ficha en service oficial</div>
+			<div class="age-value">
+				<?php echo_s(age_v_text(isset($cotizacion['ficha_tecnica']) ? $cotizacion['ficha_tecnica'] : '', '-', 'ficha_tecnica')); ?>
+			</div>
 		</div>
+	</div>
 	</div>
 
 	<div class="age-col">
