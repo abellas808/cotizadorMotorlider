@@ -89,6 +89,8 @@ if (!function_exists('cot_v_estado_cotizacion_texto')) {
 				return 'FINALIZADO';
 			case 5:
 				return 'RECHAZADO';
+			case 6:
+				return 'COMUNICARSE CON CLIENTE';
 			default:
 				return 'NO COTIZÓ';
 		}

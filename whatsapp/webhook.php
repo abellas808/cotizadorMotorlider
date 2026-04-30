@@ -2549,7 +2549,34 @@ $ultimaTasacionFinal = wa_obtener_ultima_tasacion_final_mensaje($from);
 
 if ($ultimaTasacionFinal !== null) {
 
-    if (wa_respuesta_tasacion_final_si($body)) {
+    if (
+        wa_respuesta_tasacion_final_si($body) ||
+        $buttonPayload === 'tasacion_finalizar_si'
+    ) {
+        $idConvCotizacion = intval($currentConv['id_cotizacion'] ?? 0);
+
+        $idCotizacion = wa_obtener_cotizacion_actual_para_agenda(
+            $from,
+            $userState,
+            $idConvCotizacion
+        );
+
+        wa_log('TASACION_FINAL_SI_DETECTADO', [
+            'telefono' => $from,
+            'id_conv_cotizacion' => $idConvCotizacion,
+            'id_cotizacion' => $idCotizacion,
+            'body' => $body,
+            'button_payload' => $buttonPayload
+        ]);
+
+        if ($idCotizacion > 0) {
+            wa_marcar_cotizacion_comunicarse_cliente($idCotizacion);
+        } else {
+            wa_log('TASACION_FINAL_SI_SIN_COTIZACION', [
+                'telefono' => $from,
+                'user_state' => $userState
+            ]);
+        }
 
         twiml_message_and_save(
             $from,
@@ -2559,7 +2586,8 @@ if ($ultimaTasacionFinal !== null) {
             [
                 'origen' => 'webhook_bot',
                 'tipo' => 'respuesta_tasacion_final',
-                'respuesta' => 'SI'
+                'respuesta' => 'SI',
+                'id_cotizacion' => $idCotizacion
             ]
         );
     }
@@ -4341,6 +4369,10 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
         (int)($conv['id_cotizacion'] ?? 0)
     );
 
+    if ($idCotizacion > 0) {
+        wa_marcar_cotizacion_comunicarse_cliente($idCotizacion);
+    }
+
     wa_log('AGENDA_ID_COTIZACION_RESUELTO', [
         'telefono' => $from,
         'id_cotizacion_conv' => (int)($conv['id_cotizacion'] ?? 0),
@@ -4403,6 +4435,60 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
         . "Hora: " . substr($hora, 0, 5) . "\n\n"
         . "Te esperamos en Av. de las Américas 7868."
     );
+}
+
+function wa_marcar_cotizacion_comunicarse_cliente(int $idCotizacion): bool
+{
+    if ($idCotizacion <= 0) {
+        return false;
+    }
+
+    $cn = wa_db();
+
+    $estadoId = 6;
+    $estado = 'COMUNICARSE CON CLIENTE';
+    $detalle = 'Pasó por FINALIZADO, el cliente decidió avanzar con la tasación final.';
+
+    $sql = "
+        UPDATE cotizaciones_generadas
+        SET estado_id = ?,
+            estado = ?,
+            detalle_estado = ?,
+            fecha_mod = NOW()
+        WHERE id_cotizaciones_generadas = ?
+    ";
+
+    $st = $cn->prepare($sql);
+
+    if (!$st) {
+        wa_log('COMUNICARSE_CLIENTE_PREPARE_ERROR', [
+            'id_cotizacion' => $idCotizacion,
+            'error' => $cn->error
+        ]);
+        $cn->close();
+        return false;
+    }
+
+    $st->bind_param('issi', $estadoId, $estado, $detalle, $idCotizacion);
+    $ok = $st->execute();
+
+    if (!$ok) {
+        wa_log('COMUNICARSE_CLIENTE_UPDATE_ERROR', [
+            'id_cotizacion' => $idCotizacion,
+            'error' => $st->error
+        ]);
+    } else {
+        wa_log('COMUNICARSE_CLIENTE_UPDATE_OK', [
+            'id_cotizacion' => $idCotizacion,
+            'estado_id' => $estadoId,
+            'estado' => $estado
+        ]);
+    }
+
+    $st->close();
+    $cn->close();
+
+    return $ok;
 }
 
 // =========================

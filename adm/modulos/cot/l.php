@@ -86,6 +86,10 @@ if (!function_exists('cot_estado_cotizacion_badge')) {
                 return cot_badge('COT. PRELIMINAR', 'naranja');
             case 4:
                 return cot_badge('FINALIZADO', 'verde');
+            case 5:
+                return cot_badge('RECHAZADO', 'verde');
+            case 6:
+                return cot_badge('COMUNICARSE CON CLIENTE', 'verde');
             default:
                 return cot_badge('NO COTIZÓ', 'gris');
         }
