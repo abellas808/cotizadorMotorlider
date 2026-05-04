@@ -184,6 +184,62 @@ function enviar_whatsapp_twilio($to, $body) {
 	];
 }
 
+function enviar_template_pretasacion_twilio($to, $bodyTexto) {
+	$url = 'https://api.twilio.com/2010-04-01/Accounts/' . TWILIO_ACCOUNT_SID . '/Messages.json';
+
+	$postFields = http_build_query([
+		'From' => TWILIO_WHATSAPP_FROM,
+		'To'   => $to,
+		'ContentSid' => 'HXbe5b0b76b87ec973927c8483f4586f72',
+		'ContentVariables' => json_encode([
+			'1' => $bodyTexto
+		], JSON_UNESCAPED_UNICODE)
+	]);
+
+	$ch = curl_init($url);
+	curl_setopt_array($ch, [
+		CURLOPT_RETURNTRANSFER => true,
+		CURLOPT_POST => true,
+		CURLOPT_POSTFIELDS => $postFields,
+		CURLOPT_USERPWD => TWILIO_ACCOUNT_SID . ':' . TWILIO_AUTH_TOKEN,
+		CURLOPT_HTTPAUTH => CURLAUTH_BASIC,
+		CURLOPT_TIMEOUT => 45,
+		CURLOPT_CONNECTTIMEOUT => 15,
+	]);
+
+	$response = curl_exec($ch);
+	$error = curl_error($ch);
+	$httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+	curl_close($ch);
+
+	if ($error !== '') {
+		return [
+			'ok' => false,
+			'mensaje' => 'Error cURL Twilio Template: ' . $error,
+			'http_code' => $httpCode,
+			'raw' => $response
+		];
+	}
+
+	$decoded = json_decode((string)$response, true);
+
+	if ($httpCode < 200 || $httpCode >= 300) {
+		return [
+			'ok' => false,
+			'mensaje' => $decoded['message'] ?? ('Twilio devolvió HTTP ' . $httpCode),
+			'http_code' => $httpCode,
+			'raw' => $response
+		];
+	}
+
+	return [
+		'ok' => true,
+		'sid' => $decoded['sid'] ?? '',
+		'status' => $decoded['status'] ?? '',
+		'raw' => $response
+	];
+}
+
 function registrar_mensaje_whatsapp_backend(
 	$idConversacion,
 	$telefono,
@@ -337,7 +393,7 @@ $mensaje = str_replace('{pre_tasacion_hasta}', $hastaFmt, $mensaje);
 // =========================
 // ENVIAR WHATSAPP
 // =========================
-$envio = enviar_whatsapp_twilio($telefono, $mensaje);
+$envio = enviar_template_pretasacion_twilio($telefono, $mensaje);
 
 if (!$envio['ok']) {
 	j([

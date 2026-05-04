@@ -1889,31 +1889,92 @@ function obtenerContenidoURLConCurl($url) {
 		LogCron("INSERT OK agenda_id=".$ins->insert_id);
 
 		// =========================
-		// 6. MAIL (NO ROMPE FLUJO)
+		// 6. MAIL AGENDA INTERNO (NO ROMPE FLUJO)
 		// =========================
+
 		try {
+		// 	$destinatarios = [
+		// 		'aramos@motorlider.com.uy',
+		// 		'lara.motorlider@gmail.com',
+		// 		'kevin.fernandez@motorlider.com.uy',
+		// 		'sebastian.motorlider@gmail.com',
+		// 		'fernandomotorlideruy@gmail.com',
+		// 		'info@motorlider.com.uy',
+		// 		'abella.motorlider@gmail.com'
+		// 	];
+		$destinatarios = [
+			'abella.motorlider@gmail.com'
+		];
+			// Si querés mantener también el mail de la sucursal
+			if (!empty($suc_email)) {
+				$destinatarios[] = $suc_email;
+			}
+
+			// Evitar duplicados
+			$destinatarios = array_unique(array_filter($destinatarios));
+
+			$fechaFormateada = date('d/m/Y', strtotime($fecha));
+			$horaFormateada = substr($hora, 0, 5);
+
+			$vehiculoAsunto = trim($marca . ' ' . $modelo);
+
+			if ($vehiculoAsunto === '') {
+				$vehiculoAsunto = $auto;
+			}
+
+			$asunto = "AGENDA | " . $fechaFormateada . " " . $horaFormateada . " | " . $nombre . " | " . $vehiculoAsunto;
+
+			$telefonoLimpio = str_replace('whatsapp:', '', $telefono);
+
+			$body =
+			"<h3>AGENDA CONFIRMADA</h3><br>"
+
+			. "<strong>CLIENTE</strong><br>"
+			. "Nombre: {$nombre}<br>"
+			. "Email: {$email}<br>"
+			. "Teléfono: {$telefonoLimpio}<br><br>"
+
+			. "<strong>VEHÍCULO</strong><br>"
+			. "Auto: {$auto}<br>"
+			. "Marca: {$marca}<br>"
+			. "Modelo: {$modelo}<br>"
+			. "Año: {$anio}<br>"
+			. "KM: {$km}<br>"
+			. "Valor pretendido: {$valor_pretendido}<br><br>"
+
+			. "<strong>RESULTADO</strong><br>"
+			. "OK: " . ($ok ? 'SI' : 'NO') . "<br>"
+			. "Min: {$min}<br>"
+			. "Max: {$max}<br>"
+			. "Prom: {$prom}<br>"
+			. "Valor mínimo Motorlider: {$valor_min_motorlider}<br>"
+			. "Valor máximo Motorlider: {$valor_max_motorlider}<br>"
+			. "Valor promedio Motorlider: {$valor_prom_motorlider}<br>";
+
 			$mail = new PHPMailer(true);
 			$mail->isHTML(true);
 			$mail->From = "noresponder@motorliderweb.com.uy";
 			$mail->FromName = "MOTORLIDER";
-			$mail->AddAddress($email, $nombre);
-			$mail->Subject = "Reserva de Agenda MOTORLIDER";
-			$mail->Body =
-				"Tu agenda fue confirmada.<br><br>" .
-				"<strong>Fecha:</strong> " . date('d/m/Y', strtotime($fecha)) . "<br>" .
-				"<strong>Hora:</strong> " . $hora . "<br>" .
-				"<strong>Sucursal:</strong> " . $suc_name . "<br>" .
-				"<strong>Dirección:</strong> " . $suc_direccion . "<br>" .
-				"<strong>Vehículo:</strong> " . $auto . "<br>" .
-				(!empty($suc_email) ? "<strong>Email sucursal:</strong> " . $suc_email . "<br>" : "") .
-				(!empty($suc_telefono) ? "<strong>Teléfono sucursal:</strong> " . $suc_telefono . "<br>" : "");
+
+			foreach ($destinatarios as $destino) {
+				$mail->AddAddress($destino);
+			}
+
+			$mail->Subject = $asunto;
+			$mail->Body = $body;
 
 			$mail->send();
+
+			LogCron("MAIL AGENDA DESTINATARIOS: " . implode(',', $destinatarios));
+			LogCron("MAIL AGENDA ERRORINFO: " . $mail->ErrorInfo);
+			LogCron("MAIL AGENDA ERROR: " . $mail->Error);
+
+			LogCron("MAIL AGENDA OK asunto: " . $asunto);
 			$msg = "Agenda confirmada y email enviado.";
 		} catch (Exception $e) {
-			LogCron("MAIL ERROR: ".$e->getMessage());
+			LogCron("MAIL AGENDA ERROR: " . $e->getMessage());
 			$msg = "Agenda confirmada (sin email).";
-		}
+		}						
 
 		// =========================
 		// 7. RESPUESTA FINAL
@@ -3005,7 +3066,7 @@ function obtenerContenidoURLConCurl($url) {
 
 ------- START availability -------");
 
-		$sucursal = $_POST['location'] ?? $_GET['location'];
+		$sucursal = $_REQUEST['location'] ?? 1;
 
 		if(!isset($sucursal) || $sucursal === ''){
 			return array("codigo"=>500, "mensaje"=> "Falta location.","error"=>500);

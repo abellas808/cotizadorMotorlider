@@ -1277,6 +1277,53 @@ function wa_ws_post(string $peticion, array $data): array
     return $decoded;
 }
 
+function wa_ws_get(string $peticion, array $data = []): array
+{
+    $data['peticion'] = $peticion;
+
+    $url = 'https://carplay.uy/ws/index.php?' . http_build_query($data);
+
+    wa_log('WS_GET_REQUEST', [
+        'peticion' => $peticion,
+        'url' => $url,
+        'data' => $data
+    ]);
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 60,
+        CURLOPT_CONNECTTIMEOUT => 15,
+        CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_SSL_VERIFYHOST => 2,
+    ]);
+
+    $raw = curl_exec($ch);
+    $err = curl_error($ch);
+    $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    $decoded = json_decode((string)$raw, true);
+
+    wa_log('WS_GET_RESPONSE', [
+        'peticion' => $peticion,
+        'http' => $http,
+        'error' => $err,
+        'raw' => $raw,
+        'decoded' => $decoded
+    ]);
+
+    if ($err !== '' || !is_array($decoded)) {
+        return [
+            'codigo' => 500,
+            'mensaje' => 'Respuesta inválida del sistema de agenda',
+            'error' => 500
+        ];
+    }
+
+    return $decoded;
+}
+
 function wa_agenda_location_id(): int
 {
     return 1;
@@ -1307,7 +1354,7 @@ function wa_formatear_fecha_chat(string $fechaYmd): string
 
 function wa_obtener_disponibilidad_agenda(int $location): array
 {
-    return wa_ws_post('availability', [
+    return wa_ws_get('availability', [
         'location' => $location
     ]);
 }
@@ -2785,6 +2832,95 @@ if ($bodyNorm === 'cotizar') {
         . "Para empezar, decime la MARCA del vehículo.\n"
         . "(Ej: Chevrolet, BYD, Volkswagen)"
     );
+}
+
+$buttonPayload = trim((string)($_POST['ButtonPayload'] ?? ''));
+
+if (
+    ($buttonPayload === 'tasacion_finalizar_si' || $buttonPayload === 'tasacion_finalizar_no')
+) {
+    $userState = wa_get_user_data($from);
+
+    wa_log('PRETASACION_BUTTON_DETECTED', [
+        'from' => $from,
+        'button_payload' => $buttonPayload,
+        'body' => $body,
+        'user_state' => $userState
+    ]);
+
+    if ($buttonPayload === 'tasacion_finalizar_si') {
+        $location = wa_agenda_location_id();
+        $respDisponibilidad = wa_obtener_disponibilidad_agenda($location);
+
+        if (
+            ($respDisponibilidad['codigo'] ?? 500) != 200 ||
+            empty($respDisponibilidad['availability']) ||
+            !is_array($respDisponibilidad['availability'])
+        ) {
+            twiml_message_and_save(
+                $from,
+                "En este momento no encontré días disponibles para agenda.\n\n"
+                . "Un asesor lo estará coordinando a la brevedad."
+            );
+        }
+
+        $opciones = [];
+        $lineas = [];
+        $fechas = $respDisponibilidad['availability'];
+        $max = min(7, count($fechas));
+
+        for ($i = 0; $i < $max; $i++) {
+            $nro = (string)($i + 1);
+            $fecha = (string)$fechas[$i]['fecha'];
+
+            $opciones[$nro] = [
+                'fecha' => $fecha
+            ];
+
+            $lineas[] = $nro . " = " . wa_formatear_fecha_chat($fecha);
+        }
+
+        $nuevoEstado = $userState;
+        $nuevoEstado['step'] = 'agenda_dia';
+        $nuevoEstado['sub_step'] = 'seleccionando_dia';
+        $nuevoEstado['agenda_location'] = $location;
+        $nuevoEstado['agenda_dias_opciones'] = $opciones;
+
+        unset(
+            $nuevoEstado['agenda_fecha'],
+            $nuevoEstado['agenda_hora'],
+            $nuevoEstado['agenda_horas_opciones']
+        );
+
+        wa_set_user_state(
+            $from,
+            $nuevoEstado,
+            'ESPERANDO_FECHA',
+            'BOT',
+            $profileName !== '' ? $profileName : null
+        );
+
+        twiml_message_and_save(
+            $from,
+            "Perfecto, elijamos un día para la revisión:\n\n"
+            . implode("\n", $lineas)
+            . "\n\nRespondé con el número del día.\n"
+            . "También podés escribir CANCELAR."
+        );
+    }
+
+    if ($buttonPayload === 'tasacion_finalizar_no') {
+        $userState['step'] = 'cerrado';
+        $userState['sub_step'] = 'no_agenda';
+
+        wa_set_user_state($from, $userState, 'CERRADO', 'BOT', $profileName);
+
+        twiml_message_and_save(
+            $from,
+            "Perfecto, gracias por avisarnos.\n\n"
+            . "Quedamos a las órdenes por si querés retomarlo más adelante."
+        );
+    }
 }
 
 // =========================
@@ -4353,6 +4489,18 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
     $fecha = (string)($userState['agenda_fecha'] ?? '');
     $hora = (string)($userState['agenda_hora'] ?? '');
 
+    $contextoPrevio = wa_obtener_contexto_completo_por_telefono($from);
+
+    if (!empty($contextoPrevio['agenda_id_agenda'])) {
+        twiml_message_and_save(
+            $from,
+            "¡Agenda confirmada! ✅\n\n"
+            . "Fecha: " . wa_formatear_fecha_chat($fecha) . "\n"
+            . "Hora: " . substr($hora, 0, 5) . "\n\n"
+            . "Te esperamos en Av. de las Américas 7868."
+        );
+    }
+
     $respHorariosValidacion = wa_obtener_horarios_agenda($location, $fecha);
     $horasValidacion = [];
 
@@ -4376,6 +4524,26 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
         (int)($conv['id_cotizacion'] ?? 0)
     );
 
+    $contexto = wa_obtener_contexto_completo_por_telefono($from);
+
+    wa_log('AGENDA_CONTEXTO_RESUMEN', [
+        'telefono' => $from,
+        'id_cotizacion' => $contexto['id_cotizaciones_generadas'] ?? null,
+        'marca' => $contexto['marca'] ?? null,
+        'modelo' => $contexto['familia'] ?? null,
+        'anio' => $contexto['anio'] ?? null,
+        'auto' => $contexto['auto'] ?? null,
+        'agenda_id' => $contexto['agenda_id_agenda'] ?? null,
+        'agenda_fecha' => $contexto['agenda_fecha'] ?? null,
+        'agenda_hora' => $contexto['agenda_hora'] ?? null
+    ]);
+
+    $idCotizacion = (int)($contexto['id_cotizaciones_generadas'] ?? 0);
+    $marca = (string)($contexto['marca'] ?? '');
+    $modelo = (string)($contexto['familia'] ?? '');
+    $anio = (string)($contexto['anio'] ?? '');
+    $auto = (string)($contexto['auto'] ?? '');
+
     if ($idCotizacion > 0) {
         wa_marcar_cotizacion_comunicarse_cliente($idCotizacion);
     }
@@ -4396,23 +4564,25 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
         'location' => $location,
         'date' => $fecha,
         'hora' => $hora,
-        'modelo' => (string)($userState['id_model'] ?? ''),
-        'marca' => (string)($userState['id_marca'] ?? ''),
-        'anio' => (string)($userState['anio'] ?? ''),
-        'familia' => (string)($userState['version'] ?? ''),
-        'auto' => trim(
-            (string)($userState['marca'] ?? '') . ' ' .
-            (string)($userState['modelo'] ?? '') . ' ' .
-            (string)($userState['anio'] ?? '') . ' ' .
-            (string)($userState['version'] ?? '')
-        ),
+        'modelo' => $modelo,
+        'marca' => $marca,
+        'anio' => $anio,
+        'familia' => $modelo,
+        'auto' => $auto,
         'nombre' => (string)($conv['nombre'] ?? ($profileName !== '' ? $profileName : 'Cliente WhatsApp')),
         'email' => (string)($conv['email'] ?? ''),
         'telefono' => $from,
         'id_cotizacion' => $idCotizacion
     ];
 
+    wa_log('AGENDA_PAYLOAD_FINAL', [
+        'payload' => $payload,
+        'userState' => $userState
+    ]);
+
     $respAgenda = wa_agendar_inspeccion($payload);
+
+    error_log(date('Ymd H:i:s') . "  >> POST scheduleInspection: " . print_r($_POST, true) . PHP_EOL, 3, $log_file);
 
     if (($respAgenda['codigo'] ?? 500) != 200) {
         twiml_message_and_save(
@@ -4420,6 +4590,8 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
             "No pude confirmar la agenda en este momento.\n\n"
             . "Probá nuevamente o un asesor lo estará coordinando."
         );
+
+         return;
     }
 
     $nuevoEstado = $userState;
@@ -4442,6 +4614,60 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
         . "Hora: " . substr($hora, 0, 5) . "\n\n"
         . "Te esperamos en Av. de las Américas 7868."
     );
+
+    return;
+}
+
+$userState = wa_get_user_data($from);
+$step = $userState['step'] ?? '';
+$subStep = $userState['sub_step'] ?? '';
+
+$payload = $_POST['ButtonPayload'] ?? '';
+$body = strtolower(trim($_POST['Body'] ?? ''));
+
+// =========================
+// RESPUESTA PRE TASACION
+// =========================
+if ($step === 'resultado_enviado' && $subStep === 'esperando_agenda') {
+
+    // 👉 SI (botón o texto)
+    if (
+        $payload === 'tasacion_finalizar_si' ||
+        in_array($body, ['si', 'sí', '1', 'ok'])
+    ) {
+        wa_set_user_state($from, [
+            'step' => 'agenda_dia'
+        ]);
+
+        // llamar a availability
+        $availability = wa_obtener_disponibilidad_agenda(wa_agenda_location_id());
+
+        if (empty($availability)) {
+            twiml_message_and_save($from,
+                "En este momento no encontré días disponibles para agenda.\n\n"
+                . "Un asesor lo estará coordinando a la brevedad."
+            );
+        }
+
+        // seguir flujo agenda...
+        return;
+    }
+
+    // 👉 NO
+    if (
+        $payload === 'tasacion_finalizar_no' ||
+        in_array($body, ['no', '2', 'por ahora no'])
+    ) {
+        wa_set_user_state($from, [
+            'step' => 'cerrado'
+        ]);
+
+        twiml_message_and_save($from,
+            "Perfecto, cuando quieras retomar estamos a las órdenes 👍"
+        );
+
+        return;
+    }
 }
 
 function wa_marcar_cotizacion_comunicarse_cliente(int $idCotizacion): bool
@@ -4528,6 +4754,92 @@ function enviar_template_confirmacion($to, $fecha, $hora) {
 
 	return $response;
 }
+
+function wa_obtener_contexto_completo_por_telefono(string $telefono): ?array
+{
+    $cn = wa_db();
+
+    $sql = "
+        SELECT
+            cg.*,
+
+            a.id_agenda AS agenda_id_agenda,
+            a.id_sucursal AS agenda_id_sucursal,
+            a.fecha AS agenda_fecha,
+            a.hora AS agenda_hora,
+            a.modelo AS agenda_modelo,
+            a.marca AS agenda_marca,
+            a.anio AS agenda_anio,
+            a.familia AS agenda_familia,
+            a.auto AS agenda_auto,
+            a.nombre AS agenda_nombre,
+            a.ci AS agenda_ci,
+            a.email AS agenda_email,
+            a.telefono AS agenda_telefono,
+            a.rand_string AS agenda_rand_string,
+            a.direccion AS agenda_direccion,
+            a.inspeccion_domiciliaria AS agenda_inspeccion_domiciliaria,
+            a.id_cotizacion AS agenda_id_cotizacion,
+            a.cancelado AS agenda_cancelado,
+            a.finalizada AS agenda_finalizada,
+            a.fecha_finalizacion AS agenda_fecha_finalizacion,
+            a.detalle_estado AS agenda_detalle_estado,
+            a.motivo_cancelacion AS agenda_motivo_cancelacion,
+            a.fecha_cancelacion AS agenda_fecha_cancelacion,
+            a.fecha_creacion AS agenda_fecha_creacion,
+            a.confirmacion_asistencia AS agenda_confirmacion_asistencia,
+            a.fecha_confirmacion_asistencia AS agenda_fecha_confirmacion_asistencia
+
+        FROM cotizaciones_generadas cg
+
+        LEFT JOIN agendas a
+            ON a.id_agenda = (
+                SELECT ag.id_agenda
+                FROM agendas ag
+                WHERE ag.id_cotizacion = cg.id_cotizaciones_generadas
+                ORDER BY ag.id_agenda DESC
+                LIMIT 1
+            )
+
+        WHERE cg.telefono = ?
+        ORDER BY cg.id_cotizaciones_generadas DESC
+        LIMIT 1
+    ";
+
+    $st = $cn->prepare($sql);
+
+    if (!$st) {
+        wa_log('CONTEXTO_COMPLETO_PREPARE_ERROR', [
+            'telefono' => $telefono,
+            'error' => $cn->error
+        ]);
+
+        $cn->close();
+        return null;
+    }
+
+    $st->bind_param('s', $telefono);
+    $st->execute();
+
+    $rs = $st->get_result();
+    $row = $rs ? $rs->fetch_assoc() : null;
+
+    if ($rs) {
+        $rs->free();
+    }
+
+    $st->close();
+    $cn->close();
+
+    wa_log('CONTEXTO_COMPLETO_OBTENIDO', [
+        'telefono' => $telefono,
+        'id_cotizacion' => $row['id_cotizaciones_generadas'] ?? null,
+        'id_agenda' => $row['agenda_id_agenda'] ?? null
+    ]);
+
+    return $row ?: null;
+}
+
 
 // =========================
 // DEFAULT
