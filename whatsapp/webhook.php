@@ -591,11 +591,11 @@ function wa_finalizar_cotizacion_desde_estado(string $from, string $profileName,
             // Si el promedio es mayor a 0, es un Estado 2 (Pendiente de enviar)
             if (floatval($promedio) > 0) {
                 $nuevoEstado = 2; 
-                $mensajeBot = "¡Datos recibidos con éxito! ✅\n\nEstoy procesando la información...⏱ En unos minutos te enviaré la propuesta por aquí mismo.";
+                $mensajeBot = "¡Datos recibidos con éxito! ✅\n\nEstoy procesando la información...⏱ En unos minutos te enviaré la propuesta.";
             } else {
                 // Si realmente es 0, es Estado 1 (No cotizó)
                 $nuevoEstado = 1; 
-                $mensajeBot = "Recibí los datos correctamente ✅\n\nEstamos analizando tu vehículo de forma personalizada. En breve un asesor se comunicará contigo para darte el valor.";
+                $mensajeBot = "¡Datos recibidos con éxito! ✅\n\nEstoy procesando la información...⏱ En unos minutos te enviaré la propuesta por aquí mismo.";
             }
 
             // Actualizamos la tabla
