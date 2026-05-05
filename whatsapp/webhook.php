@@ -3105,11 +3105,18 @@ if (($userState['step'] ?? '') === 'marca') {
     }
 
     if ($marcaExacta !== null) {
-        wa_preguntar_modelo_con_lista(
+         $marcaFinal = $marcaExacta['nombre'];
+
+        wa_set_user_state($from, [
+            'step' => 'modelo',
+            'marca' => $marcaFinal,
+            'id_marca' => $marcaExacta['id_marca']
+        ], 'ESPERANDO_MODELO', 'BOT', $profileName !== '' ? $profileName : null);
+
+        twiml_message_and_save(
             $from,
-            $profileName,
-            (string)$marcaExacta['nombre'],
-            (int)$marcaExacta['id_marca']
+             "Anotado. ¿Qué MODELO es?\n"
+            . "(Ej: Onix, E2, Gol)"
         );
     }
 
