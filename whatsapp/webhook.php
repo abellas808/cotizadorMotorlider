@@ -29,7 +29,7 @@ const TWILIO_ACCOUNT_SID = 'AC4a648c5c55de9d9b1f1f6601b14d4c4d';
 const TWILIO_WHATSAPP_FROM = 'whatsapp:+59898057857';
 const TWILIO_TEMPLATE_FICHA_OFICIAL = 'HX119384cc1a71182dcee9535564b16f15';
 const TWILIO_TEMPLATE_TIPO_VENTA = 'HXfaf8c64eb73fcfe261c8b5710e737614';
-const TWILIO_TEMPLATE_CONFIRMAR_AGENDA  = 'HX6ae99ac3d943643937c2b0c3c376f2e6';
+const TWILIO_TEMPLATE_CONFIRMAR_AGENDA  = 'HXe4cd6227d51aece9904eac072735d08b';
 
 // =========================
 // PATHS
@@ -2902,7 +2902,7 @@ if (
 
         twiml_message_and_save(
             $from,
-            "Perfecto, elijamos un día para la revisión:\n\n"
+            "¡Genial! Seleccioná el día que te quede mejor:\n\n"
             . implode("\n", $lineas)
             . "\n\nRespondé con el número del día.\n"
             . "También podés escribir CANCELAR."
@@ -4322,9 +4322,7 @@ if (($userState['step'] ?? '') === 'agenda_dia') {
 
     twiml_message_and_save(
         $from,
-        "Perfecto \n\n"
-        . "Día elegido: " . wa_formatear_fecha_chat($fechaElegida) . "\n\n"
-        . "Estos son los horarios disponibles:\n"
+        "Ahora elegí el horario disponible para el " . wa_formatear_fecha_chat($fechaElegida) . "\n\n"
         . implode("\n", $lineas)
         . "\n\nRespondé con el número de la hora.\n"
         . "También podés escribir ATRAS o CANCELAR."

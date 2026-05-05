@@ -343,25 +343,44 @@ if ($telefono === '') {
 // =========================
 // TIPO DE PLANTILLA
 // =========================
-$tipoVenta = trim((string)($elemento['tipo_venta'] ?? ''));
 
-if ($tipoVenta === 'venta_contado') {
+$tipoVentaOriginal = trim((string)($elemento['tipo_venta'] ?? ''));
+$tipoVentaNorm = strtolower($tipoVentaOriginal);
+
+$tipoVentaOriginal = trim((string)($elemento['tipo_venta'] ?? ''));
+
+if ($tipoVentaOriginal === '') {
+    j([
+        'ok' => false,
+        'mensaje' => 'tipo_venta VACIO',
+        'raw' => $elemento
+    ]);
+}
+
+// normalizo por si viene con espacios o variantes
+$tipoVentaNorm = str_replace(['á','é','í','ó','ú'], ['a','e','i','o','u'], $tipoVentaNorm);
+
+if (strpos($tipoVentaNorm, 'venta') !== false) {
+	$tipoVenta = 'Venta';
 	$clavePlantilla = 'respuesta_humana_venta_contado';
-} elseif ($tipoVenta === 'entrega_forma_pago') {
+} elseif (strpos($tipoVentaNorm, 'entrega') !== false) {
+	$tipoVenta = 'Entrega';
 	$clavePlantilla = 'respuesta_humana_forma_pago';
 } else {
+	$tipoVenta = $tipoVentaOriginal;
 	$clavePlantilla = 'respuesta_humana_forma_pago';
 }
 
 $plantillasWhatsapp = [
 	'respuesta_humana_venta_contado' =>
-		"{nombre_cliente}, estaríamos comprando su vehículo en un valor estimado entre *USD {pre_tasacion_desde}* y *USD {pre_tasacion_hasta}*.\n\n"
-		. "Para continuar, un asesor de nuestro equipo se comunicará contigo para revisar los detalles.",
+		"{nombre_cliente}, estaríamos comprando su vehículo al contado entre *USD {pre_tasacion_desde}* a *USD {pre_tasacion_hasta}* (nosotros asumimos los honorarios y gastos de escribano).\n\n"
+		. "Para definir el precio exacto y revisar el vehículo será necesaria la inspección mecánica. La misma es realizada en nuestro local ubicado en Av. de las Américas 7868 (Frente al Puente de las Américas), tiene una duración de 30 min y es sin costo.\n\n"
+		. "¿Le gustaría agendarse para la revisión?",
 
 	'respuesta_humana_forma_pago' =>
-    "{nombre_cliente}, estaríamos comprando su vehículo al contado entre *USD {pre_tasacion_desde}* a *USD {pre_tasacion_hasta}* (nosotros asumimos los honorarios y gastos de escribanos).\n\n"
-    . "Para definir el precio exacto y revisar el vehículo será necesaria la inspección mecánica. La misma es realizada en nuestro local ubicado en Av. de las Américas 7868 (Frente al Puente de las Américas), tiene una duración de 30 min y es sin costo.\n\n"
-    . "¿Le gustaría agendarse para la revisión?",
+		"{nombre_cliente}, estaríamos tasando su vehículo entre *USD {pre_tasacion_desde}* a *USD {pre_tasacion_hasta}* que será tomado como parte de pago del vehículo en el cual está interesado/a.\n\n"
+		. "Para definir el precio exacto y revisar el vehículo será necesaria la revisión mecánica. La misma es realizada en nuestro local ubicado en Av. de las Américas 7868 (Frente al Puente de las Américas), tiene una duración de 30 min y es sin costo.\n\n"
+		. "¿Le gustaría agendarse para la revisión?",
 	
 	'respuesta_cierre_no_agenda' =>
 		"Gracias por comunicarte con Motorlider. Quedamos a las órdenes para cuando quieras retomar la cotización."
