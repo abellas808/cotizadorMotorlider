@@ -5,6 +5,7 @@ error_reporting(E_ALL);*/
 
 	session_start();
 	require('../config/config.inc.php');
+	require_once __DIR__ . '/../apicotizador/services/MailService.php';
 	header('Content-Type: application/json');
 	header('Access-Control-Allow-Origin: *');
 	header('Access-Control-Allow-Methods: POST, GET, OPTIONS');
@@ -1889,90 +1890,92 @@ function obtenerContenidoURLConCurl($url) {
 		LogCron("INSERT OK agenda_id=".$ins->insert_id);
 
 		// =========================
-		// 6. MAIL AGENDA INTERNO (NO ROMPE FLUJO)
+		// 6. MAIL AGENDA INTERNO CON MailService
 		// =========================
-
 		try {
-		// 	$destinatarios = [
-		// 		'aramos@motorlider.com.uy',
-		// 		'lara.motorlider@gmail.com',
-		// 		'kevin.fernandez@motorlider.com.uy',
-		// 		'sebastian.motorlider@gmail.com',
-		// 		'fernandomotorlideruy@gmail.com',
-		// 		'info@motorlider.com.uy',
-		// 		'abella.motorlider@gmail.com'
-		// 	];
-		$destinatarios = [
-			'abella.motorlider@gmail.com'
-		];
-			// Si querés mantener también el mail de la sucursal
-			if (!empty($suc_email)) {
-				$destinatarios[] = $suc_email;
+			LogCron("MAIL AGENDA SERVICE INICIO");
+
+			$cot = [];
+
+			if (!empty($id_cotizacion)) {
+				$qCot = $bd->query("
+					SELECT *
+					FROM cotizaciones_generadas
+					WHERE id_cotizaciones_generadas = " . (int)$id_cotizacion . "
+					LIMIT 1
+				");
+
+				if ($qCot && $qCot->num_rows > 0) {
+					$cot = $qCot->fetch_assoc();
+					LogCron("MAIL AGENDA COTIZACION DATA: " . json_encode($cot));
+				} else {
+					LogCron("MAIL AGENDA COTIZACION NO ENCONTRADA id=" . $id_cotizacion);
+				}
 			}
 
-			// Evitar duplicados
-			$destinatarios = array_unique(array_filter($destinatarios));
+			$modeloNombre = $cot['familia'] ?? $modelo ?? '';
 
-			$fechaFormateada = date('d/m/Y', strtotime($fecha));
-			$horaFormateada = substr($hora, 0, 5);
+			if (!empty($cot['familia'])) {
+				$qModelo = $bd->query("
+					SELECT nombre
+					FROM act_modelo
+					WHERE id_model = " . (int)$cot['familia'] . "
+					LIMIT 1
+				");
 
-			$vehiculoAsunto = trim($marca . ' ' . $modelo);
+				if ($qModelo && $qModelo->num_rows > 0) {
+					$rowModelo = $qModelo->fetch_assoc();
+					$modeloNombre = $rowModelo['nombre'];
+				}
 
-			if ($vehiculoAsunto === '') {
-				$vehiculoAsunto = $auto;
+				LogCron("MAIL AGENDA MODELO NOMBRE: " . $modeloNombre);
 			}
 
-			$asunto = "AGENDA | " . $fechaFormateada . " " . $horaFormateada . " | " . $nombre . " | " . $vehiculoAsunto;
+			$clienteData = [
+				'nombre' => $nombre,
+				'email' => $email,
+				'telefono' => $telefono,
+				'auto' => $cot['auto'] ?? $auto,
+				'nombre_auto' => $cot['auto'] ?? $auto,
+				'marca' => $cot['marca'] ?? $marca,
+				'modelo' => $modeloNombre,
+				'anio' => $cot['anio'] ?? $anio,
+				'km' => $cot['kilometros'] ?? '',
+				'valor_pretendido' => $cot['precio_pretendido'] ?? ''
+			];
 
-			$telefonoLimpio = str_replace('whatsapp:', '', $telefono);
+			$agendaData = [
+				'fecha' => date('d/m/Y', strtotime($fecha)),
+				'hora' => substr($hora, 0, 5),
+				'id_agenda' => $ins->insert_id ?? null,
+				'id_cotizacion' => $id_cotizacion ?? null
+			];
 
-			$body =
-			"<h3>AGENDA CONFIRMADA</h3><br>"
+			$resultadoMail = [
+				'min' => $cot['valor_minimo'] ?? '',
+				'max' => $cot['valor_maximo'] ?? '',
+				'avg' => $cot['valor_promedio'] ?? '',
+				'valor_minimo_motorlider' => $cot['valor_minimo_autodata'] ?? '',
+				'valor_maximo_motorlider' => $cot['valor_maximo_autodata'] ?? '',
+				'valor_promedio_motorlider' => $cot['valor_promedio_autodata'] ?? ''
+			];
 
-			. "<strong>CLIENTE</strong><br>"
-			. "Nombre: {$nombre}<br>"
-			. "Email: {$email}<br>"
-			. "Teléfono: {$telefonoLimpio}<br><br>"
+			putenv('COTIZADOR_MAIL_TEST_TO=abella.motorlider@gmail.com,info@motorlider.com.uy');
+			putenv('COTIZADOR_MAIL_FROM=ventas@motorlider.com.uy');
 
-			. "<strong>VEHÍCULO</strong><br>"
-			. "Auto: {$auto}<br>"
-			. "Marca: {$marca}<br>"
-			. "Modelo: {$modelo}<br>"
-			. "Año: {$anio}<br>"
-			. "KM: {$km}<br>"
-			. "Valor pretendido: {$valor_pretendido}<br><br>"
+			$mailService = new MailService();
+			$mailResult = $mailService->enviarMailInternoAgenda($clienteData, $agendaData, $resultadoMail);
 
-			. "<strong>RESULTADO</strong><br>"
-			. "OK: " . ($ok ? 'SI' : 'NO') . "<br>"
-			. "Min: {$min}<br>"
-			. "Max: {$max}<br>"
-			. "Prom: {$prom}<br>"
-			. "Valor mínimo Motorlider: {$valor_min_motorlider}<br>"
-			. "Valor máximo Motorlider: {$valor_max_motorlider}<br>"
-			. "Valor promedio Motorlider: {$valor_prom_motorlider}<br>";
+			LogCron("MAIL AGENDA SERVICE RESULT: " . json_encode($mailResult, JSON_UNESCAPED_UNICODE));
 
-			$mail = new PHPMailer(true);
-			$mail->isHTML(true);
-			$mail->From = "noresponder@motorliderweb.com.uy";
-			$mail->FromName = "MOTORLIDER";
-
-			foreach ($destinatarios as $destino) {
-				$mail->AddAddress($destino);
+			if (!($mailResult['ok'] ?? false)) {
+				throw new Exception($mailResult['mensaje'] ?? 'MailService no envió ningún mail');
 			}
 
-			$mail->Subject = $asunto;
-			$mail->Body = $body;
-
-			$mail->send();
-
-			LogCron("MAIL AGENDA DESTINATARIOS: " . implode(',', $destinatarios));
-			LogCron("MAIL AGENDA ERRORINFO: " . $mail->ErrorInfo);
-			LogCron("MAIL AGENDA ERROR: " . $mail->Error);
-
-			LogCron("MAIL AGENDA OK asunto: " . $asunto);
+			LogCron("MAIL AGENDA SERVICE OK");
 			$msg = "Agenda confirmada y email enviado.";
-		} catch (Exception $e) {
-			LogCron("MAIL AGENDA ERROR: " . $e->getMessage());
+		} catch (Throwable $e) {
+			LogCron("MAIL AGENDA SERVICE ERROR: " . $e->getMessage());
 			$msg = "Agenda confirmada (sin email).";
 		}						
 

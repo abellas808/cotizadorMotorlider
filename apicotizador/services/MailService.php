@@ -147,6 +147,90 @@ class MailService
     
     public function enviarSoloMailInternoCotizacion(array $clienteData, array $resultado): void
     {
-        $this->enviarMailInterno($clienteData, $resultado);
+        //$this->enviarMailInterno($clienteData, $resultado);
+    }
+
+    public function enviarMailInternoAgenda(array $clienteData, array $agendaData, array $resultado = []): array
+    {
+        $from = getenv('COTIZADOR_MAIL_FROM') ?: 'no-reply@motorlider.com.uy';
+
+        $toInternos = [
+            'aramos@motorlider.com.uy',
+            'lara.motorlider@gmail.com',
+            'kevin.fernandez@motorlider.com.uy',
+            'sebastian.motorlider@gmail.com',
+            'fernandomotorlideruy@gmail.com',
+            'info@motorlider.com.uy',
+            'abella.motorlider@gmail.com'
+        ];
+
+        $fecha = (string)($agendaData['fecha'] ?? '');
+        $hora  = substr((string)($agendaData['hora'] ?? ''), 0, 5);
+
+        $nombre = trim((string)($clienteData['nombre'] ?? ''));
+        $marca  = trim((string)($clienteData['marca'] ?? ''));
+        $modelo = trim((string)($clienteData['modelo'] ?? ''));
+
+       $autoAsunto = trim((string)($clienteData['auto'] ?? $clienteData['nombre_auto'] ?? trim($marca . ' ' . $modelo)));
+
+        $subject = "AGENDA | {$fecha} {$hora} | {$nombre} | {$autoAsunto}";
+        $telefono = str_replace('whatsapp:', '', (string)($clienteData['telefono'] ?? ''));
+
+        $body  = "AGENDA CONFIRMADA\n";
+        $body .= "====================================\n\n";
+
+        $body .= "CLIENTE\n";
+        $body .= "Nombre: " . $nombre . "\n";
+        $body .= "Email: " . ($clienteData['email'] ?? '') . "\n";
+        $body .= "Teléfono: " . $telefono . "\n\n";
+
+        $body .= "VEHÍCULO\n";
+        $body .= "Auto: " . ($clienteData['auto'] ?? $clienteData['nombre_auto'] ?? '') . "\n";
+        $body .= "Marca: " . $marca . "\n";
+        $body .= "Modelo: " . $modelo . "\n";
+        $body .= "Año: " . ($clienteData['anio'] ?? '') . "\n";
+        $body .= "KM: " . ($clienteData['km'] ?? '') . "\n";
+        $body .= "Valor pretendido: " . ($clienteData['valor_pretendido'] ?? '') . "\n\n";
+
+        $body .= "AGENDA\n";
+        $body .= "Fecha: " . $fecha . "\n";
+        $body .= "Hora: " . $hora . "\n\n";
+
+        $body .= "RESULTADO\n";
+        $body .= "OK: SI\n";
+        $body .= "Min: " . ($resultado['min'] ?? '') . "\n";
+        $body .= "Max: " . ($resultado['max'] ?? '') . "\n";
+        $body .= "Prom: " . ($resultado['avg'] ?? '') . "\n";
+        $body .= "Valor mínimo Motorlider: " . ($resultado['valor_minimo_motorlider'] ?? '') . "\n";
+        $body .= "Valor máximo Motorlider: " . ($resultado['valor_maximo_motorlider'] ?? '') . "\n";
+        $body .= "Valor promedio Motorlider: " . ($resultado['valor_promedio_motorlider'] ?? '') . "\n";
+
+        $headers  = "From: {$from}\r\n";
+        $headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
+
+       $enviados = 0;
+        $errores = [];
+
+        foreach ($toInternos as $toInterno) {
+            if (!filter_var($toInterno, FILTER_VALIDATE_EMAIL)) {
+                $errores[] = "Email inválido: " . $toInterno;
+                continue;
+            }
+
+            $ok = mail($toInterno, $subject, $body, $headers);
+
+            if ($ok) {
+                $enviados++;
+            } else {
+                $errores[] = "mail() devolvió false para: " . $toInterno;
+            }
+        }
+
+        return [
+            'ok' => $enviados > 0,
+            'enviados' => $enviados,
+            'destinatarios' => $toInternos,
+            'errores' => $errores
+        ];
     }
 }
