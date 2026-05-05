@@ -2905,7 +2905,7 @@ if (
             "¡Genial! Seleccioná el día que te quede mejor:\n\n"
             . implode("\n", $lineas)
             . "\n\nRespondé con el número del día.\n"
-            . "También podés escribir CANCELAR."
+            //. "También podés escribir CANCELAR."
         );
     }
 
@@ -3050,7 +3050,7 @@ if (in_array($currentEstado, ['PENDIENTE_RESPUESTA_HUMANA', 'HUMANO_EN_CONVERSAC
             . "Estos son los próximos días disponibles para la inspección:\n"
             . implode("\n", $lineas)
             . "\n\nRespondé con el número del día.\n"
-            . "También podés escribir ATRAS o CANCELAR."
+            //. "También podés escribir ATRAS o CANCELAR."
         );
     }
 
