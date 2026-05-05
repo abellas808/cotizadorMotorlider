@@ -4502,7 +4502,7 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
             "¡Agenda confirmada! ✅\n\n"
             . "Fecha: " . wa_formatear_fecha_chat($fecha) . "\n"
             . "Hora: " . substr($hora, 0, 5) . "\n\n"
-            . "Te esperamos en Av. de las Américas 7868."
+            . "Te esperamos en Motorlider. ¡Nos vemos pronto!"
         );
     }
 
