@@ -68,7 +68,23 @@ if (!function_exists('cot_badge')) {
         if (!isset($colores[$tipo])) $tipo = 'gris';
         $c = $colores[$tipo];
 
-        return '<span title="' . htmlspecialchars($texto) . '" style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:bold;line-height:1.4;color:' . $c['fg'] . ';background:' . $c['bg'] . ';white-space:nowrap;width:100%;text-align:center;">' . htmlspecialchars($texto) . '</span>';
+        return '<span title="' . htmlspecialchars($texto) . '" 
+        style="
+        display:inline-block;
+        padding:2px 6px;
+        border-radius:4px;
+        font-size:10px;
+        font-weight:bold;
+        line-height:1.2;
+        color:' . $c['fg'] . ';
+        background:' . $c['bg'] . ';
+        white-space:normal;
+        word-break:break-word;
+        max-width:100px;
+        text-align:center;
+        ">
+        ' . htmlspecialchars($texto) . '
+        </span>';
     }
 }
 
