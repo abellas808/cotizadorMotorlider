@@ -250,10 +250,12 @@ if (!function_exists('cot_sql_first_existing')) {
 
 if (!function_exists('cot_qs_base')) {
     function cot_qs_base($extra = array()) {
-        global $modulo, $busqueda, $fecha_desde, $fecha_hasta, $estado_cot, $estado_age, $orden_campo, $orden_dir, $inactivo;
+        global $modulo, $busqueda, $fecha_desde, $fecha_hasta, $estado_cot, $estado_age, $orden_campo, $orden_dir, $inactivo, $idcot, $telefono_filtro;
         $params = array(
             'm' => $modulo['prefijo'] . '_l'
         );
+        if (!empty($idcot)) $params['idcot'] = $idcot;
+        if (!empty($telefono_filtro)) $params['telcot'] = $telefono_filtro;
         if ($busqueda !== '') $params['b'] = $busqueda;
         if ($fecha_desde !== '') $params['fd'] = $fecha_desde;
         if ($fecha_hasta !== '') $params['fh'] = $fecha_hasta;
@@ -293,6 +295,7 @@ $fecha_hasta = isset($_GET['fh']) ? trim($_GET['fh']) : date('Y-m-d', strtotime(
 $estado_cot = isset($_GET['ecot']) ? trim($_GET['ecot']) : '';
 $estado_age = isset($_GET['eage']) ? trim($_GET['eage']) : '';
 $idcot = isset($_GET['idcot']) ? intval($_GET['idcot']) : 0;
+$telefono_filtro = isset($_GET['telcot']) ? trim($_GET['telcot']) : '';
 
 if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha_desde)) $fecha_desde = date('Y-m-01');
 if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha_hasta)) $fecha_hasta = date('Y-m-d');
@@ -338,6 +341,13 @@ if ($estado_cot !== '') {
 }
 if ($idcot > 0) {
     $sql_filtros .= " and c.id_cotizaciones_generadas = " . intval($idcot);
+}
+if ($telefono_filtro !== '') {
+    $tel = preg_replace('/[^0-9]/', '', $telefono_filtro);
+
+    if ($tel !== '') {
+        $sql_filtros .= " and REPLACE(REPLACE(REPLACE(c.telefono, 'whatsapp:', ''), '+', ''), ' ', '') LIKE '%" . addslashes($tel) . "%'";
+    }
 }
 if ($estado_age !== '') {
     switch ($estado_age) {
@@ -611,7 +621,7 @@ $cant_cotizaciones = $db->query_first('SELECT COUNT(*) AS cant ' . $sql_from);
     }
 
     .cot-grid-wrap {
-        overflow-x: hidden;
+        overflow-x: visible;
         margin-top: 70px !important;
         position: relative;
         z-index: 1;
@@ -621,8 +631,7 @@ $cant_cotizaciones = $db->query_first('SELECT COUNT(*) AS cant ' . $sql_from);
     .cot-grid-compact {
         width: 100%;
         table-layout: fixed;
-        font-size: 10px;
-        margin-bottom: 0;
+        font-size: 9px;
     }
 
     .cot-grid-compact th,
@@ -681,19 +690,24 @@ $cant_cotizaciones = $db->query_first('SELECT COUNT(*) AS cant ' . $sql_from);
         background: #fcfcfc;
     }
 
-    .cot-col-cod { width: 46px; }
-    .cot-col-auto { width: 114px; }
-    .cot-col-anio { width: 38px; text-align: center; }
-    .cot-col-km { width: 58px; text-align: right; }
-    .cot-col-nombre { width: 96px; }
-    .cot-col-tel { width: 76px; }
-    .cot-col-money { width: 62px; text-align: right; }
-    .cot-col-fecha { width: 68px; text-align: center; }
-    .cot-col-estado { width: 90px; text-align: center; }
-    .cot-col-agecod { width: 42px; text-align: center; }
-    .cot-col-agehora { width: 44px; text-align: center; }
-    .cot-col-conf { width: 88px; text-align: center; }
-    .cot-grid-compact a { white-space: nowrap; }
+    
+    .cot-col-auto { width: 90px; }
+    .cot-col-nombre { width: 80px; }
+    .cot-col-tel { width: 68px; }
+    .cot-col-money { width: 55px; }
+    .cot-col-fecha { width: 58px; }
+    .cot-col-estado { width: 78px; }
+    .cot-col-conf { width: 72px; }
+
+    .cot-filtros-bar {
+        max-width: 100%;
+        overflow: hidden;
+    }
+
+    .cot-filtro-item input,
+    .cot-filtro-item select {
+        max-width: 180px;
+    }
 </style>
 
 <script>
@@ -701,6 +715,7 @@ $cant_cotizaciones = $db->query_first('SELECT COUNT(*) AS cant ' . $sql_from);
         var url = '?m=<?php echo $modulo['prefijo']; ?>_l';
         if (pagina && pagina > 0) url += '&p=' + pagina;
         url += '&idcot=' + encodeURIComponent($('#idcot').val());
+        url += '&telcot=' + encodeURIComponent($('#telcot').val());
         url += '&fd=' + encodeURIComponent($('#fd').val());
         url += '&fh=' + encodeURIComponent($('#fh').val());
         url += '&ecot=' + encodeURIComponent($('#ecot').val());
@@ -729,6 +744,10 @@ $cant_cotizaciones = $db->query_first('SELECT COUNT(*) AS cant ' . $sql_from);
             <div class="cot-filtro-item">
                 <label for="idcot">ID cotización</label>
                 <input type="number" id="idcot" value="<?php echo isset($_GET['idcot']) ? intval($_GET['idcot']) : ''; ?>">
+            </div>
+            <div class="cot-filtro-item">
+                <label for="telcot">Teléfono</label>
+                <input type="text" id="telcot" value="<?php echo isset($_GET['telcot']) ? htmlspecialchars($_GET['telcot']) : ''; ?>">
             </div>
             <div class="cot-filtro-item">
                 <label for="fd">Fecha desde</label>
