@@ -91,6 +91,8 @@ if (!function_exists('cot_v_estado_cotizacion_texto')) {
 				return 'RECHAZADO';
 			case 6:
 				return 'COMUNICARSE CON CLIENTE';
+			case 7:
+                return 'CLIENTE AVANZÓ';
 			default:
 				return 'NO COTIZÓ';
 		}
@@ -449,6 +451,21 @@ if (!function_exists('cot_v_hora_chat')) {
 				<div class="cot-label">Estado</div>
 				<div class="cot-value <?php echo ($estadoCotizacionId == 2) ? 'estado-pendiente' : 'estado-finalizada'; ?>">
 					<?php echo_s($estadoCotizacionTexto); ?>
+				</div>
+			</div>
+
+			<div class="cot-item">
+				<div class="cot-label">Avanzó</div>
+				<div class="cot-value">
+					<label style="display:flex; align-items:center; gap:8px; margin:0;">
+						<input
+							type="checkbox"
+							id="chk_avanzo"
+							onchange="guardarAvanzo(this.checked)"
+							<?php echo ((int)($elemento['avanzo'] ?? 0) === 1) ? 'checked' : ''; ?>
+						>
+						<span>Cliente avanzó</span>
+					</label>
 				</div>
 			</div>
 
@@ -997,6 +1014,46 @@ function rechazarCompra() {
 	};
 
 	xhr.send('id=<?php echo intval($id); ?>');
+}
+
+function guardarAvanzo(marcado) {
+	var chk = document.getElementById('chk_avanzo');
+
+	chk.disabled = true;
+
+	var xhr = new XMLHttpRequest();
+	xhr.open('POST', '/adm/modulos/cot/ajax_marcar_avanzo.php', true);
+	xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
+
+	xhr.onreadystatechange = function() {
+		if (xhr.readyState !== 4) return;
+
+		chk.disabled = false;
+
+		if (xhr.status !== 200) {
+			alert('Error HTTP ' + xhr.status + '\n' + xhr.responseText);
+			chk.checked = !marcado;
+			return;
+		}
+
+		try {
+			var res = JSON.parse(xhr.responseText);
+
+			if (!res.ok) {
+				alert(res.mensaje || 'No se pudo guardar Avanzó.');
+				chk.checked = !marcado;
+				return;
+			}
+		} catch (e) {
+			alert('Respuesta inválida del servidor:\n' + xhr.responseText);
+			chk.checked = !marcado;
+		}
+	};
+
+	xhr.send(
+		'id=<?php echo intval($id); ?>' +
+		'&avanzo=' + encodeURIComponent(marcado ? 1 : 0)
+	);
 }
 
 window.addEventListener('load', function () {

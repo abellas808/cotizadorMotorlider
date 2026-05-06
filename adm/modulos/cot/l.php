@@ -106,6 +106,8 @@ if (!function_exists('cot_estado_cotizacion_badge')) {
                 return cot_badge('RECHAZADO', 'verde');
             case 6:
                 return cot_badge('COMUNICARSE CON CLIENTE', 'verde');
+            case 7:
+                return cot_badge('CLIENTE AVANZÓ', 'verde');
             default:
                 return cot_badge('NO COTIZÓ', 'gris');
         }
@@ -290,6 +292,7 @@ $fecha_desde = isset($_GET['fd']) ? trim($_GET['fd']) : date('Y-m-01');
 $fecha_hasta = isset($_GET['fh']) ? trim($_GET['fh']) : date('Y-m-d', strtotime('+30 days'));
 $estado_cot = isset($_GET['ecot']) ? trim($_GET['ecot']) : '';
 $estado_age = isset($_GET['eage']) ? trim($_GET['eage']) : '';
+$idcot = isset($_GET['idcot']) ? intval($_GET['idcot']) : 0;
 
 if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha_desde)) $fecha_desde = date('Y-m-01');
 if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha_hasta)) $fecha_hasta = date('Y-m-d');
@@ -332,6 +335,9 @@ $sql_filtros .= " and DATE(c.fecha) >= '" . addslashes($fecha_desde) . "'";
 $sql_filtros .= " and DATE(c.fecha) <= '" . addslashes($fecha_hasta) . "'";
 if ($estado_cot !== '') {
     $sql_filtros .= " and c.estado = '" . addslashes($estado_cot) . "'";
+}
+if ($idcot > 0) {
+    $sql_filtros .= " and c.id_cotizaciones_generadas = " . intval($idcot);
 }
 if ($estado_age !== '') {
     switch ($estado_age) {
@@ -694,6 +700,7 @@ $cant_cotizaciones = $db->query_first('SELECT COUNT(*) AS cant ' . $sql_from);
     function cotIrListado(pagina){
         var url = '?m=<?php echo $modulo['prefijo']; ?>_l';
         if (pagina && pagina > 0) url += '&p=' + pagina;
+        url += '&idcot=' + encodeURIComponent($('#idcot').val());
         url += '&fd=' + encodeURIComponent($('#fd').val());
         url += '&fh=' + encodeURIComponent($('#fh').val());
         url += '&ecot=' + encodeURIComponent($('#ecot').val());
@@ -719,6 +726,10 @@ $cant_cotizaciones = $db->query_first('SELECT COUNT(*) AS cant ' . $sql_from);
 
     <div class="cot-toolbar-wrap">
         <div class="cot-filtros-bar">
+            <div class="cot-filtro-item">
+                <label for="idcot">ID cotización</label>
+                <input type="number" id="idcot" value="<?php echo isset($_GET['idcot']) ? intval($_GET['idcot']) : ''; ?>">
+            </div>
             <div class="cot-filtro-item">
                 <label for="fd">Fecha desde</label>
                 <input type="date" id="fd" value="<?php echo_s($fecha_desde); ?>">
