@@ -2904,7 +2904,7 @@ if (
             $from,
             "¡Genial! Seleccioná el día que te quede mejor:\n\n"
             . implode("\n", $lineas)
-            . "\n\nRespondé con el número del día.\n"
+            //. "\n\nRespondé con el número del día.\n"
             //. "También podés escribir CANCELAR."
         );
     }
@@ -3049,7 +3049,7 @@ if (in_array($currentEstado, ['PENDIENTE_RESPUESTA_HUMANA', 'HUMANO_EN_CONVERSAC
             "Perfecto \n\n"
             . "Estos son los próximos días disponibles para la inspección:\n"
             . implode("\n", $lineas)
-            . "\n\nRespondé con el número del día.\n"
+            //. "\n\nRespondé con el número del día.\n"
             //. "También podés escribir ATRAS o CANCELAR."
         );
     }
@@ -4269,7 +4269,7 @@ if (($userState['step'] ?? '') === 'agenda_dia') {
             $from,
             "No entendí el día elegido.\n\n"
             . "Respondé con el número del día disponible.\n"
-            . "También podés escribir ATRAS o CANCELAR."
+            //. "También podés escribir ATRAS o CANCELAR."
         );
     }
 
@@ -4324,8 +4324,8 @@ if (($userState['step'] ?? '') === 'agenda_dia') {
         $from,
         "Ahora elegí el horario disponible para el " . wa_formatear_fecha_chat($fechaElegida) . "\n\n"
         . implode("\n", $lineas)
-        . "\n\nRespondé con el número de la hora.\n"
-        . "También podés escribir ATRAS o CANCELAR."
+        //. "\n\nRespondé con el número de la hora.\n"
+        //. "También podés escribir ATRAS o CANCELAR."
     );
 }
 
@@ -4390,7 +4390,7 @@ if (($userState['step'] ?? '') === 'agenda_hora') {
             "Perfecto \n\n"
             . "Volvemos a elegir el día.\n\n"
             . implode("\n", $lineas)
-            . "\n\nRespondé con el número del día."
+            //. "\n\nRespondé con el número del día."
         );
     }
 
@@ -4399,8 +4399,8 @@ if (($userState['step'] ?? '') === 'agenda_hora') {
         twiml_message_and_save(
             $from,
             "No entendí la hora elegida.\n\n"
-            . "Respondé con el número del horario.\n"
-            . "También podés escribir ATRAS o CANCELAR."
+            //. "Respondé con el número del horario.\n"
+            //. "También podés escribir ATRAS o CANCELAR."
         );
     }
 
@@ -4486,7 +4486,7 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
         twiml_message_and_save(
             $from,
             "Para agendar, respondé CONFIRMAR.\n"
-            . "También podés escribir ATRAS o CANCELAR."
+            //. "También podés escribir ATRAS o CANCELAR."
         );
     }
 

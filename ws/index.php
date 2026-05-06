@@ -1957,8 +1957,17 @@ function obtenerContenidoURLConCurl($url) {
 				'avg' => $cot['valor_promedio'] ?? '',
 				'valor_minimo_motorlider' => $cot['valor_minimo_autodata'] ?? '',
 				'valor_maximo_motorlider' => $cot['valor_maximo_autodata'] ?? '',
-				'valor_promedio_motorlider' => $cot['valor_promedio_autodata'] ?? ''
+				'valor_promedio_motorlider' => $cot['valor_promedio_autodata'] ?? '',
+				'pretasacion_desde' => $cot['pretasacion_desde'] ?? '',
+				'pretasacion_hasta' => $cot['pretasacion_hasta'] ?? ''
 			];
+
+			LogCron("MAIL AGENDA PRETASACION DEBUG: " . json_encode([
+				'id_cotizacion' => $id_cotizacion ?? null,
+				'cot_pretasacion_desde' => $cot['pretasacion_desde'] ?? 'NO_EXISTE',
+				'cot_pretasacion_hasta' => $cot['pretasacion_hasta'] ?? 'NO_EXISTE',
+				'resultadoMail' => $resultadoMail
+			], JSON_UNESCAPED_UNICODE));
 
 			putenv('COTIZADOR_MAIL_TEST_TO=abella.motorlider@gmail.com,info@motorlider.com.uy');
 			putenv('COTIZADOR_MAIL_FROM=ventas@motorlider.com.uy');

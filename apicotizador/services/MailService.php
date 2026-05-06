@@ -192,10 +192,6 @@ class MailService
         $body .= "KM: " . ($clienteData['km'] ?? '') . "\n";
         $body .= "Valor pretendido: " . ($clienteData['valor_pretendido'] ?? '') . "\n\n";
 
-        $body .= "AGENDA\n";
-        $body .= "Fecha: " . $fecha . "\n";
-        $body .= "Hora: " . $hora . "\n\n";
-
         $body .= "RESULTADO\n";
         $body .= "OK: SI\n";
         $body .= "Min: " . ($resultado['min'] ?? '') . "\n";
@@ -203,7 +199,26 @@ class MailService
         $body .= "Prom: " . ($resultado['avg'] ?? '') . "\n";
         $body .= "Valor mínimo Motorlider: " . ($resultado['valor_minimo_motorlider'] ?? '') . "\n";
         $body .= "Valor máximo Motorlider: " . ($resultado['valor_maximo_motorlider'] ?? '') . "\n";
-        $body .= "Valor promedio Motorlider: " . ($resultado['valor_promedio_motorlider'] ?? '') . "\n";
+        $body .= "Valor promedio Motorlider: " . ($resultado['valor_promedio_motorlider'] ?? '') . "\n\n";
+
+        $pretasacionDesde = $resultado['pretasacion_desde'] ?? 0;
+        $pretasacionHasta = $resultado['pretasacion_hasta'] ?? 0;
+
+        error_log("MAILSERVICE PRETASACION DEBUG: " . json_encode([
+            'resultado_pretasacion_desde' => $resultado['pretasacion_desde'] ?? 'NO_EXISTE',
+            'resultado_pretasacion_hasta' => $resultado['pretasacion_hasta'] ?? 'NO_EXISTE',
+            'pretasacionDesde_final' => $pretasacionDesde,
+            'pretasacionHasta_final' => $pretasacionHasta
+        ], JSON_UNESCAPED_UNICODE));
+
+        $desdeFmt = number_format((float)$pretasacionDesde, 0, ',', '.');
+        $hastaFmt = number_format((float)$pretasacionHasta, 0, ',', '.');
+
+        $body .= "Pretasación: USD {$desdeFmt} - USD {$hastaFmt}\n\n";
+
+        $body .= "AGENDA\n";
+        $body .= "Día: " . $fecha . "\n";
+        $body .= "Hora: " . $hora . "\n\n";
 
         $headers  = "From: {$from}\r\n";
         $headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
