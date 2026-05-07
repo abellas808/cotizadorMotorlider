@@ -362,6 +362,46 @@ if ($modoEnvio === 'final') {
 		LIMIT 1
 	");
 
+	// =========================
+	// ACTUALIZAR ESTADO CONVERSACION
+	// =========================
+
+	$rowConvEstado = $db->query_first("
+		SELECT datos_json
+		FROM whatsapp_conversaciones
+		WHERE telefono = '" . $db->escape($telefono) . "'
+		ORDER BY id DESC
+		LIMIT 1
+	");
+
+	$datosEstado = [];
+
+	if (!empty($rowConvEstado['datos_json'])) {
+		$tmpEstado = json_decode((string)$rowConvEstado['datos_json'], true);
+
+		if (is_array($tmpEstado)) {
+			$datosEstado = $tmpEstado;
+		}
+	}
+
+	$datosEstado['step'] = 'tasacion_final_enviado';
+	$datosEstado['sub_step'] = 'esperando_respuesta_cliente';
+	$datosEstado['id_cotizacion'] = intval($id);
+
+	$db->query("
+		UPDATE whatsapp_conversaciones
+		SET
+			estado = 'PENDIENTE_RESPUESTA_HUMANA',
+			modo_atencion = 'BOT',
+			datos_json = '" . $db->escape(json_encode($datosEstado, JSON_UNESCAPED_UNICODE)) . "',
+			id_cotizacion = '" . intval($id) . "',
+			fecha_ultima_interaccion = NOW(),
+			fecha_mod = NOW()
+		WHERE telefono = '" . $db->escape($telefono) . "'
+		ORDER BY id DESC
+		LIMIT 1
+	");
+
 	j([
 		'ok' => true,
 		'mensaje' => 'Tasación final enviada correctamente.',

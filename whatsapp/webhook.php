@@ -266,7 +266,8 @@ function wa_respuesta_es_si(string $texto): bool
     $v = wa_normalizar_texto($texto);
 
     return in_array($v, [
-        'si', 'sí', 's', 'quiero agendar', 'agendar', 'si quiero', 'dale', 'ok', 'bueno'
+        'si',
+        'sí'
     ], true);
 }
 
@@ -2593,77 +2594,79 @@ $currentConv = wa_get_conversation($from);
 $currentEstado = (string)($currentConv['estado'] ?? 'INICIO');
 
 // =========================
+// CONTROL SEGURO: NO AGENDAR DESDE PENDIENTE HUMANO
+// =========================
+$stepActual = (string)($userState['step'] ?? '');
+
+if ($stepActual === 'pendiente_humano') {
+    if (wa_respuesta_es_si($body) || wa_es_agendar($body)) {
+
+        wa_log('PENDIENTE_HUMANO_BLOQUEADO', [
+            'telefono' => $from,
+            'body' => $body,
+            'step' => $stepActual
+        ]);
+
+        twiml_message_and_save(
+            $from,
+            "Gracias por tu mensaje 👍\n\nUn asesor está revisando tu vehículo y se va a comunicar contigo en breve."
+        );
+        return;
+    }
+}
+
+// =========================
 // RESPUESTA A TASACION FINAL
 // =========================
 $ultimaTasacionFinal = wa_obtener_ultima_tasacion_final_mensaje($from);
 
 if ($ultimaTasacionFinal !== null) {
 
-    if (
-        wa_respuesta_tasacion_final_si($body) ||
-        $buttonPayload === 'tasacion_finalizar_si'
-    ) {
-        $idConvCotizacion = intval($currentConv['id_cotizacion'] ?? 0);
+    if ($ultimaTasacionFinal !== null) {
 
-        $idCotizacion = wa_obtener_cotizacion_actual_para_agenda(
-            $from,
-            $userState,
-            $idConvCotizacion
-        );
+        if ($buttonPayload === 'tasacion_finalizar_si') {
+            // TODO tu código actual del SI
 
-        wa_log('TASACION_FINAL_SI_DETECTADO', [
-            'telefono' => $from,
-            'id_conv_cotizacion' => $idConvCotizacion,
-            'id_cotizacion' => $idCotizacion,
-            'body' => $body,
-            'button_payload' => $buttonPayload
-        ]);
-
-        if ($idCotizacion > 0) {
-            wa_marcar_cotizacion_comunicarse_cliente($idCotizacion);
-        } else {
-            wa_log('TASACION_FINAL_SI_SIN_COTIZACION', [
-                'telefono' => $from,
-                'user_state' => $userState
-            ]);
+            twiml_message_and_save(
+                $from,
+                "Excelente! \n\n"
+                . "Un asesor de nuestro equipo se va a estar comunicando contigo desde el número 091 398 398 para coordinar los últimos detalles y concretar el negocio.\n\n"
+                . "¡Ha sido un gusto atenderte! ",
+                [
+                    'origen' => 'webhook_bot',
+                    'tipo' => 'respuesta_tasacion_final',
+                    'respuesta' => 'SI',
+                    'id_cotizacion' => $idCotizacion
+                ]
+            );
+            return;
         }
+
+        if ($buttonPayload === 'tasacion_finalizar_no') {
+            // TODO tu código actual del NO
+
+            twiml_message_and_save($from, $mensajeRespuesta);
+            return;
+        }
+
+        // =========================
+        // FALLBACK TASACION FINAL
+        // =========================
+        wa_log('TASACION_FINAL_RESPUESTA_INVALIDA', [
+            'telefono' => $from,
+            'body' => $body,
+            'button_payload' => $buttonPayload ?? '',
+            'step_actual' => $userState['step'] ?? ''
+        ]);
 
         twiml_message_and_save(
             $from,
-            "Excelente! \n\n"
-            . "Un asesor de nuestro equipo se va a estar comunicando contigo desde el número 091 398 398 para coordinar los últimos detalles y concretar el negocio.\n\n"
-            . "¡Ha sido un gusto atenderte! ",
-            [
-                'origen' => 'webhook_bot',
-                'tipo' => 'respuesta_tasacion_final',
-                'respuesta' => 'SI',
-                'id_cotizacion' => $idCotizacion
-            ]
+            "Para continuar, por favor usá uno de los botones:\n\n"
+            . "✅ Sí, quiero avanzar\n"
+            . "❌ Por ahora no"
         );
+        return;
     }
-
-    if (
-    wa_respuesta_tasacion_final_no($body) ||
-    $buttonPayload === 'tasacion_finalizar_no'
-) {
-
-    $idConversacion = intval($ultimaTasacionFinal['id_conversacion'] ?? 0);
-    $metaTasacion = $ultimaTasacionFinal['meta'] ?? [];
-    $idCotizacion = intval($metaTasacion['id_cotizacion'] ?? 0);
-
-    $mensajeRespuesta = "Entendido.\n\n"
-        . "Muchas gracias por darnos la oportunidad de tasar tu vehículo. Si más adelante cambiás de opinión o querés evaluar otras opciones con nosotros, ¡este chat siempre estará disponible para ti!\n\n"
-        . "Que tengas un gran día.";
-
-    wa_registrar_carrito_abandonado(
-        $idCotizacion,
-        $idConversacion,
-        $from,
-        $body
-    );
-
-    twiml_message_and_save( $from,$mensajeRespuesta);
-}
 }
 
 // =========================
@@ -2841,6 +2844,28 @@ if (
 ) {
     $userState = wa_get_user_data($from);
 
+    // =========================
+    // CONTROL SEGURO: NO AGENDAR DESDE PENDIENTE HUMANO
+    // =========================
+    $stepActual = (string)($userState['step'] ?? '');
+
+    if ($stepActual === 'pendiente_humano') {
+        if (wa_respuesta_es_si($body) || wa_es_agendar($body)) {
+
+            wa_log('PENDIENTE_HUMANO_BLOQUEADO', [
+                'telefono' => $from,
+                'body' => $body,
+                'step' => $stepActual
+            ]);
+
+            twiml_message_and_save(
+                $from,
+                "Gracias por tu mensaje 👍\n\nUn asesor está revisando tu vehículo y se va a comunicar contigo en breve."
+            );
+            return;
+        }
+    }
+
     wa_log('PRETASACION_BUTTON_DETECTED', [
         'from' => $from,
         'button_payload' => $buttonPayload,
@@ -2849,64 +2874,40 @@ if (
     ]);
 
     if ($buttonPayload === 'tasacion_finalizar_si') {
-        $location = wa_agenda_location_id();
-        $respDisponibilidad = wa_obtener_disponibilidad_agenda($location);
 
-        if (
-            ($respDisponibilidad['codigo'] ?? 500) != 200 ||
-            empty($respDisponibilidad['availability']) ||
-            !is_array($respDisponibilidad['availability'])
-        ) {
-            twiml_message_and_save(
-                $from,
-                "En este momento no encontré días disponibles para agenda.\n\n"
-                . "Un asesor lo estará coordinando a la brevedad."
-            );
+        $idCotizacion = intval($userState['id_cotizacion'] ?? 0);
+
+        if ($idCotizacion > 0) {
+            wa_marcar_cotizacion_comunicarse_cliente($idCotizacion);
         }
 
-        $opciones = [];
-        $lineas = [];
-        $fechas = $respDisponibilidad['availability'];
-        $max = min(7, count($fechas));
-
-        for ($i = 0; $i < $max; $i++) {
-            $nro = (string)($i + 1);
-            $fecha = (string)$fechas[$i]['fecha'];
-
-            $opciones[$nro] = [
-                'fecha' => $fecha
-            ];
-
-            $lineas[] = $nro . " = " . wa_formatear_fecha_chat($fecha);
-        }
-
-        $nuevoEstado = $userState;
-        $nuevoEstado['step'] = 'agenda_dia';
-        $nuevoEstado['sub_step'] = 'seleccionando_dia';
-        $nuevoEstado['agenda_location'] = $location;
-        $nuevoEstado['agenda_dias_opciones'] = $opciones;
-
-        unset(
-            $nuevoEstado['agenda_fecha'],
-            $nuevoEstado['agenda_hora'],
-            $nuevoEstado['agenda_horas_opciones']
-        );
+        $userState['step'] = 'pendiente_humano';
+        $userState['sub_step'] = 'tasacion_final_aceptada';
 
         wa_set_user_state(
             $from,
-            $nuevoEstado,
-            'ESPERANDO_FECHA',
-            'BOT',
-            $profileName !== '' ? $profileName : null
+            $userState,
+            'PENDIENTE_RESPUESTA_HUMANA',
+            'HUMANO',
+            $profileName !== '' ? $profileName : null,
+            null,
+            $idCotizacion > 0 ? $idCotizacion : null
         );
 
         twiml_message_and_save(
             $from,
-            "¡Genial! Seleccioná el día que te quede mejor:\n\n"
-            . implode("\n", $lineas)
-            //. "\n\nRespondé con el número del día.\n"
-            //. "También podés escribir CANCELAR."
+            "Excelente! 🙌\n\n"
+            . "Un asesor de nuestro equipo se va a estar comunicando contigo desde el número 091 398 398 para coordinar los últimos detalles y concretar el negocio.\n\n"
+            . "¡Ha sido un gusto atenderte! 👋",
+            [
+                'origen' => 'webhook_bot',
+                'tipo' => 'respuesta_tasacion_final',
+                'respuesta' => 'SI',
+                'id_cotizacion' => $idCotizacion
+            ]
         );
+
+        return;
     }
 
     if ($buttonPayload === 'tasacion_finalizar_no') {
@@ -3085,6 +3086,28 @@ if (in_array($currentEstado, ['PENDIENTE_RESPUESTA_HUMANA', 'HUMANO_EN_CONVERSAC
 
 // refrescar por si algún comando global cambió estado
 $userState = wa_get_user_data($from);
+
+// =========================
+// CONTROL SEGURO: NO AGENDAR DESDE PENDIENTE HUMANO
+// =========================
+$stepActual = (string)($userState['step'] ?? '');
+
+if ($stepActual === 'pendiente_humano') {
+    if (wa_respuesta_es_si($body) || wa_es_agendar($body)) {
+
+        wa_log('PENDIENTE_HUMANO_BLOQUEADO', [
+            'telefono' => $from,
+            'body' => $body,
+            'step' => $stepActual
+        ]);
+
+        twiml_message_and_save(
+            $from,
+            "Gracias por tu mensaje 👍\n\nUn asesor está revisando tu vehículo y se va a comunicar contigo en breve."
+        );
+        return;
+    }
+}
 
 
 // =========================
@@ -4624,6 +4647,29 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
 }
 
 $userState = wa_get_user_data($from);
+
+// =========================
+// CONTROL SEGURO: NO AGENDAR DESDE PENDIENTE HUMANO
+// =========================
+$stepActual = (string)($userState['step'] ?? '');
+
+if ($stepActual === 'pendiente_humano') {
+    if (wa_respuesta_es_si($body) || wa_es_agendar($body)) {
+
+        wa_log('PENDIENTE_HUMANO_BLOQUEADO', [
+            'telefono' => $from,
+            'body' => $body,
+            'step' => $stepActual
+        ]);
+
+        twiml_message_and_save(
+            $from,
+            "Gracias por tu mensaje 👍\n\nUn asesor está revisando tu vehículo y se va a comunicar contigo en breve."
+        );
+        return;
+    }
+}
+
 $step = $userState['step'] ?? '';
 $subStep = $userState['sub_step'] ?? '';
 
@@ -4633,47 +4679,47 @@ $body = strtolower(trim($_POST['Body'] ?? ''));
 // =========================
 // RESPUESTA PRE TASACION
 // =========================
-if ($step === 'resultado_enviado' && $subStep === 'esperando_agenda') {
+// if ($step === 'resultado_enviado' && $subStep === 'esperando_agenda') {
 
-    // 👉 SI (botón o texto)
-    if (
-        $payload === 'tasacion_finalizar_si' ||
-        in_array($body, ['si', 'sí', '1', 'ok'])
-    ) {
-        wa_set_user_state($from, [
-            'step' => 'agenda_dia'
-        ]);
+//     // 👉 SI (botón o texto)
+//     if (
+//         $payload === 'tasacion_finalizar_si' ||
+//         in_array($body, ['si', 'sí', '1', 'ok'])
+//     ) {
+//         wa_set_user_state($from, [
+//             'step' => 'agenda_dia'
+//         ]);
 
-        // llamar a availability
-        $availability = wa_obtener_disponibilidad_agenda(wa_agenda_location_id());
+//         // llamar a availability
+//         $availability = wa_obtener_disponibilidad_agenda(wa_agenda_location_id());
 
-        if (empty($availability)) {
-            twiml_message_and_save($from,
-                "En este momento no encontré días disponibles para agenda.\n\n"
-                . "Un asesor lo estará coordinando a la brevedad."
-            );
-        }
+//         if (empty($availability)) {
+//             twiml_message_and_save($from,
+//                 "En este momento no encontré días disponibles para agenda.\n\n"
+//                 . "Un asesor lo estará coordinando a la brevedad."
+//             );
+//         }
 
-        // seguir flujo agenda...
-        return;
-    }
+//         // seguir flujo agenda...
+//         return;
+//     }
 
-    // 👉 NO
-    if (
-        $payload === 'tasacion_finalizar_no' ||
-        in_array($body, ['no', '2', 'por ahora no'])
-    ) {
-        wa_set_user_state($from, [
-            'step' => 'cerrado'
-        ]);
+//     // 👉 NO
+//     if (
+//         $payload === 'tasacion_finalizar_no' ||
+//         in_array($body, ['no', '2', 'por ahora no'])
+//     ) {
+//         wa_set_user_state($from, [
+//             'step' => 'cerrado'
+//         ]);
 
-        twiml_message_and_save($from,
-            "Perfecto, cuando quieras retomar estamos a las órdenes 👍"
-        );
+//         twiml_message_and_save($from,
+//             "Perfecto, cuando quieras retomar estamos a las órdenes 👍"
+//         );
 
-        return;
-    }
-}
+//         return;
+//     }
+// }
 
 function wa_marcar_cotizacion_comunicarse_cliente(int $idCotizacion): bool
 {
