@@ -113,13 +113,16 @@ function actualizar_conversacion_post_pre_tasacion($telefono, $idCotizacion)
 	}
 
 	$datos['step'] = 'resultado_enviado';
-
+	$datos['sub_step'] = 'esperando_agenda';
+	
 	$db->query("
 		UPDATE whatsapp_conversaciones
 		SET
 			estado = 'PENDIENTE_RESPUESTA_HUMANA',
 			modo_atencion = 'BOT',
 			datos_json = '" . $db->escape(json_encode($datos, JSON_UNESCAPED_UNICODE)) . "',
+			step_actual = 'resultado_enviado',
+			sub_step_actual = 'esperando_agenda',
 			id_cotizacion = '" . intval($idCotizacion) . "',
 			fecha_ultima_interaccion = NOW(),
 			fecha_mod = NOW()
@@ -190,7 +193,7 @@ function enviar_template_pretasacion_twilio($to, $bodyTexto) {
 	$postFields = http_build_query([
 		'From' => TWILIO_WHATSAPP_FROM,
 		'To'   => $to,
-		'ContentSid' => 'HXbe5b0b76b87ec973927c8483f4586f72',
+		'ContentSid' => 'HX473298718a4dad72fb2e706921659a13',
 		'ContentVariables' => json_encode([
 			'1' => $bodyTexto
 		], JSON_UNESCAPED_UNICODE)

@@ -2615,6 +2615,110 @@ if ($stepActual === 'pendiente_humano') {
     }
 }
 
+
+// =========================
+// RESPUESTA PRE TASACION
+// =========================
+$step = (string)($userState['step'] ?? '');
+$subStep = (string)($userState['sub_step'] ?? '');
+$payload = trim((string)($_POST['ButtonPayload'] ?? ''));
+$bodyLower = strtolower(trim((string)($_POST['Body'] ?? '')));
+
+if ($step === 'resultado_enviado' && $subStep === 'esperando_agenda') {
+
+    // SI, AGENDAR
+    if (
+        $payload === 'si_agendar' ||
+        in_array($bodyLower, ['agendar', 'si agendar', 'sí agendar'], true)
+    ) {
+
+        $location = wa_agenda_location_id();
+        $respDisponibilidad = wa_obtener_disponibilidad_agenda($location);
+
+        if (
+            ($respDisponibilidad['codigo'] ?? 500) != 200 ||
+            empty($respDisponibilidad['availability']) ||
+            !is_array($respDisponibilidad['availability'])
+        ) {
+            twiml_message_and_save(
+                $from,
+                "En este momento no encontré días disponibles para agenda.\n\n"
+                . "Un asesor lo estará coordinando a la brevedad."
+            );
+            return;
+        }
+
+        $opciones = [];
+        $lineas = [];
+        $fechas = $respDisponibilidad['availability'];
+        $max = min(7, count($fechas));
+
+        for ($i = 0; $i < $max; $i++) {
+            $nro = (string)($i + 1);
+            $fecha = (string)$fechas[$i]['fecha'];
+
+            $opciones[$nro] = [
+                'fecha' => $fecha
+            ];
+
+            $lineas[] = $nro . " = " . wa_formatear_fecha_chat($fecha);
+        }
+
+        $nuevoEstado = $userState;
+        $nuevoEstado['step'] = 'agenda_dia';
+        $nuevoEstado['sub_step'] = 'seleccionando_dia';
+        $nuevoEstado['agenda_location'] = $location;
+        $nuevoEstado['agenda_dias_opciones'] = $opciones;
+
+        unset(
+            $nuevoEstado['agenda_fecha'],
+            $nuevoEstado['agenda_hora'],
+            $nuevoEstado['agenda_horas_opciones']
+        );
+
+        wa_set_user_state(
+            $from,
+            $nuevoEstado,
+            'ESPERANDO_FECHA',
+            'BOT',
+            $profileName !== '' ? $profileName : null
+        );
+
+        twiml_message_and_save(
+            $from,
+            "¡Genial! Seleccioná el día que te quede mejor:\n\n"
+            . implode("\n", $lineas)
+        );
+
+        return;
+    }
+
+    // EN OTRO MOMENTO
+    if (
+        $payload === 'tasacion_finalizar_no' ||
+        in_array($bodyLower, ['en otro momento', 'no', 'ahora no'], true)
+    ) {
+        $nuevoEstado = $userState;
+        $nuevoEstado['step'] = 'cerrado';
+        $nuevoEstado['sub_step'] = 'no_agenda';
+
+        wa_set_user_state(
+            $from,
+            $nuevoEstado,
+            'CERRADO',
+            'BOT',
+            $profileName !== '' ? $profileName : null
+        );
+
+        twiml_message_and_save(
+            $from,
+            "Perfecto, cuando quieras retomar estamos a las órdenes 👍"
+        );
+
+        return;
+    }
+}
+
 // =========================
 // RESPUESTA A TASACION FINAL
 // =========================
@@ -4459,7 +4563,14 @@ if (($userState['step'] ?? '') === 'agenda_hora') {
 // AGENDA - CONFIRMAR
 // =========================
 if (($userState['step'] ?? '') === 'agenda_confirmar') {
+
+    $buttonPayload = trim((string)($_POST['ButtonPayload'] ?? ''));
+
     $respuestaNorm = wa_normalizar_texto($body);
+
+    if ($buttonPayload !== '') {
+        $respuestaNorm = wa_normalizar_texto($buttonPayload);
+    }
 
     if (wa_es_cancelar_agenda($body)) {
         $nuevoEstado = $userState;
@@ -4505,7 +4616,7 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
         );
     }
 
-    if (!in_array($respuestaNorm, ['confirmar', 'confirmo', 'si', 'ok'], true)) {
+    if (!in_array($respuestaNorm, ['confirmar', '.confirmar', 'si', 'ok'], true)) {
         twiml_message_and_save(
             $from,
             "Para agendar, respondé CONFIRMAR.\n"
@@ -4675,51 +4786,6 @@ $subStep = $userState['sub_step'] ?? '';
 
 $payload = $_POST['ButtonPayload'] ?? '';
 $body = strtolower(trim($_POST['Body'] ?? ''));
-
-// =========================
-// RESPUESTA PRE TASACION
-// =========================
-// if ($step === 'resultado_enviado' && $subStep === 'esperando_agenda') {
-
-//     // 👉 SI (botón o texto)
-//     if (
-//         $payload === 'tasacion_finalizar_si' ||
-//         in_array($body, ['si', 'sí', '1', 'ok'])
-//     ) {
-//         wa_set_user_state($from, [
-//             'step' => 'agenda_dia'
-//         ]);
-
-//         // llamar a availability
-//         $availability = wa_obtener_disponibilidad_agenda(wa_agenda_location_id());
-
-//         if (empty($availability)) {
-//             twiml_message_and_save($from,
-//                 "En este momento no encontré días disponibles para agenda.\n\n"
-//                 . "Un asesor lo estará coordinando a la brevedad."
-//             );
-//         }
-
-//         // seguir flujo agenda...
-//         return;
-//     }
-
-//     // 👉 NO
-//     if (
-//         $payload === 'tasacion_finalizar_no' ||
-//         in_array($body, ['no', '2', 'por ahora no'])
-//     ) {
-//         wa_set_user_state($from, [
-//             'step' => 'cerrado'
-//         ]);
-
-//         twiml_message_and_save($from,
-//             "Perfecto, cuando quieras retomar estamos a las órdenes 👍"
-//         );
-
-//         return;
-//     }
-// }
 
 function wa_marcar_cotizacion_comunicarse_cliente(int $idCotizacion): bool
 {
