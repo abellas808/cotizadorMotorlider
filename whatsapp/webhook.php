@@ -2722,55 +2722,88 @@ if ($step === 'resultado_enviado' && $subStep === 'esperando_agenda') {
 // =========================
 // RESPUESTA A TASACION FINAL
 // =========================
-$ultimaTasacionFinal = wa_obtener_ultima_tasacion_final_mensaje($from);
+if ($buttonPayload === 'tasacion_finalizar_si') {
 
-if ($ultimaTasacionFinal !== null) {
+    $conv = wa_get_conversation($from);
 
-    if ($ultimaTasacionFinal !== null) {
+    $idCotizacion = intval($userState['id_cotizacion'] ?? 0);
 
-        if ($buttonPayload === 'tasacion_finalizar_si') {
-            // TODO tu código actual del SI
-
-            twiml_message_and_save(
-                $from,
-                "Excelente! \n\n"
-                . "Un asesor de nuestro equipo se va a estar comunicando contigo desde el número 091 398 398 para coordinar los últimos detalles y concretar el negocio.\n\n"
-                . "¡Ha sido un gusto atenderte! ",
-                [
-                    'origen' => 'webhook_bot',
-                    'tipo' => 'respuesta_tasacion_final',
-                    'respuesta' => 'SI',
-                    'id_cotizacion' => $idCotizacion
-                ]
-            );
-            return;
-        }
-
-        if ($buttonPayload === 'tasacion_finalizar_no') {
-            // TODO tu código actual del NO
-
-            twiml_message_and_save($from, $mensajeRespuesta);
-            return;
-        }
-
-        // =========================
-        // FALLBACK TASACION FINAL
-        // =========================
-        wa_log('TASACION_FINAL_RESPUESTA_INVALIDA', [
-            'telefono' => $from,
-            'body' => $body,
-            'button_payload' => $buttonPayload ?? '',
-            'step_actual' => $userState['step'] ?? ''
-        ]);
-
-        twiml_message_and_save(
-            $from,
-            "Para continuar, por favor usá uno de los botones:\n\n"
-            . "✅ Sí, quiero avanzar\n"
-            . "❌ Por ahora no"
-        );
-        return;
+    if ($idCotizacion <= 0) {
+        $idCotizacion = intval($conv['id_cotizacion'] ?? 0);
     }
+
+    if ($idCotizacion > 0) {
+        wa_marcar_cotizacion_comunicarse_cliente($idCotizacion);
+    }
+
+    $userState['step'] = 'pendiente_humano';
+    $userState['sub_step'] = 'tasacion_final_aceptada';
+
+    wa_set_user_state(
+        $from,
+        $userState,
+        'PENDIENTE_RESPUESTA_HUMANA',
+        'HUMANO',
+        $profileName !== '' ? $profileName : null,
+        null,
+        $idCotizacion > 0 ? $idCotizacion : null
+    );
+
+    twiml_message_and_save(
+        $from,
+        "Excelente! 🙌\n\n"
+        . "Un asesor de nuestro equipo se va a estar comunicando contigo desde el número 091 398 398 para coordinar los últimos detalles y concretar el negocio.\n\n"
+        . "¡Ha sido un gusto atenderte! 👋",
+        [
+            'origen' => 'webhook_bot',
+            'tipo' => 'respuesta_tasacion_final',
+            'respuesta' => 'SI',
+            'id_cotizacion' => $idCotizacion
+        ]
+    );
+
+    return;
+}
+
+if ($buttonPayload === 'tasacion_finalizar_no') {
+
+    $conv = wa_get_conversation($from);
+
+    $idConversacion = intval($conv['id'] ?? 0);
+
+    $idCotizacion = intval($userState['id_cotizacion'] ?? 0);
+
+    if ($idCotizacion <= 0) {
+        $idCotizacion = intval($conv['id_cotizacion'] ?? 0);
+    }
+
+    wa_registrar_carrito_abandonado(
+        $idCotizacion,
+        $idConversacion,
+        $from,
+        $body !== '' ? $body : 'Por ahora no ❌'
+    );
+
+    $userState['step'] = 'cerrado';
+    $userState['sub_step'] = 'tasacion_final_rechazada';
+
+    wa_set_user_state(
+        $from,
+        $userState,
+        'CERRADO',
+        'BOT',
+        $profileName !== '' ? $profileName : null,
+        null,
+        $idCotizacion > 0 ? $idCotizacion : null
+    );
+
+    twiml_message_and_save(
+        $from,
+        "Perfecto, gracias por avisarnos.\n\n"
+        . "Quedamos a las órdenes por si querés retomarlo más adelante."
+    );
+
+    return;
 }
 
 // =========================
@@ -3015,16 +3048,44 @@ if (
     }
 
     if ($buttonPayload === 'tasacion_finalizar_no') {
-        $userState['step'] = 'cerrado';
-        $userState['sub_step'] = 'no_agenda';
 
-        wa_set_user_state($from, $userState, 'CERRADO', 'BOT', $profileName);
+        $conv = wa_get_conversation($from);
+
+        $idConversacion = intval($conv['id'] ?? 0);
+
+        $idCotizacion = intval($userState['id_cotizacion'] ?? 0);
+
+        if ($idCotizacion <= 0) {
+            $idCotizacion = intval($conv['id_cotizacion'] ?? 0);
+        }
+
+        wa_registrar_carrito_abandonado(
+            $idCotizacion,
+            $idConversacion,
+            $from,
+            $body !== '' ? $body : 'Por ahora no ❌'
+        );
+
+        $userState['step'] = 'cerrado';
+        $userState['sub_step'] = 'tasacion_final_rechazada';
+
+        wa_set_user_state(
+            $from,
+            $userState,
+            'CERRADO',
+            'BOT',
+            $profileName !== '' ? $profileName : null,
+            null,
+            $idCotizacion > 0 ? $idCotizacion : null
+        );
 
         twiml_message_and_save(
             $from,
             "Perfecto, gracias por avisarnos.\n\n"
             . "Quedamos a las órdenes por si querés retomarlo más adelante."
         );
+
+        return;
     }
 }
 
