@@ -89,6 +89,7 @@ $config['modulos'][] = 'pvv';
 $config['modulos'][] = 'pds';
 $config['modulos'][] = 'aud';
 $config['modulos'][] = 'usd';
+$config['modulos'][] = 'cab';
 //$config['modulos'][] = 'fcot';
 //$config['modulos'][] = 'nov';
 
