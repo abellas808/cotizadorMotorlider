@@ -94,23 +94,31 @@ if (!function_exists('cot_estado_cotizacion_badge')) {
         $estado_id = isset($entrada['estado_id']) ? intval($entrada['estado_id']) : 1;
 
         switch ($estado_id) {
-            case 1:
-                return cot_badge('NO COTIZÓ', 'gris');
-            case 2:
-                return cot_badge('PENDIENTE', 'amarillo');
-            case 3:
-                return cot_badge('COT. PRELIMINAR', 'naranja');
-            case 4:
-                return cot_badge('FINALIZADO', 'verde');
-            case 5:
-                return cot_badge('RECHAZADO', 'verde');
-            case 6:
-                return cot_badge('COMUNICARSE CON CLIENTE', 'verde');
-            case 7:
-                return cot_badge('CLIENTE AVANZÓ', 'verde');
-            default:
-                return cot_badge('NO COTIZÓ', 'gris');
-        }
+			case 1:
+				return 'NO COTIZÓ';
+			case 2:
+				return 'PENDIENTE';
+			case 3:
+				return 'COT. PRELIMINAR';
+			case 4:
+				return 'FINALIZADO';
+			case 5:
+				return 'RECHAZADO';
+			case 6:
+				return 'COMUNICARSE CON CLIENTE';
+			case 7:
+                return 'CLIENTE AVANZÓ';
+			case 8:
+                return 'AGENDADO';
+			case 9:
+                return 'AVANZÓ';
+			case 10:
+                return 'INSPECIÓN REALIZADA';
+			case 11:
+                return 'COTIZACIÓN FINAL';
+			default:
+				return 'NO COTIZÓ';
+		}
     }
 }
 

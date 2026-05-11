@@ -348,13 +348,13 @@ if ($modoEnvio === 'final') {
 	}
 
 	// =========================
-	// ACTUALIZAR ESTADO FINALIZADO
+	// ACTUALIZAR ESTADO COTIZACIÓN FINAL
 	// =========================
 	$db->query("
 		UPDATE cotizaciones_generadas
 		SET
-			estado = 'FINALIZADO',
-			estado_id = 4,
+			estado = 'COTIZACIÓN FINAL',
+			estado_id = 11,
 			msg = '" . $db->escape($mensaje) . "',
 			detalle_estado = 'Tasación final enviada por WhatsApp',
 			fecha_mod = NOW()

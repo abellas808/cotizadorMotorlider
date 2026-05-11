@@ -27,9 +27,9 @@ const DB_USER = 'marcos2022_usr_api';
 const DB_PASS = '_eT4AjJ79~tX]*h)J5';
 const TWILIO_ACCOUNT_SID = 'AC4a648c5c55de9d9b1f1f6601b14d4c4d';
 const TWILIO_WHATSAPP_FROM = 'whatsapp:+59898057857';
-const TWILIO_TEMPLATE_FICHA_OFICIAL = 'HX119384cc1a71182dcee9535564b16f15';
+const TWILIO_TEMPLATE_FICHA_OFICIAL = 'HX87986b209f35aeeed79d069cb816c647';
 const TWILIO_TEMPLATE_TIPO_VENTA = 'HXfaf8c64eb73fcfe261c8b5710e737614';
-const TWILIO_TEMPLATE_CONFIRMAR_AGENDA  = 'HXbc2e7d0584ec07e5bdeb517c79a2347b';
+const TWILIO_TEMPLATE_CONFIRMAR_AGENDA  = 'HX681d179d01fa947c267a0ae2ca1a3737';
 
 // =========================
 // PATHS
@@ -2819,7 +2819,12 @@ try {
     $agendaPendienteConfirmacionGlobal = null;
 }
 
-if ($agendaPendienteConfirmacionGlobal !== null) {
+$stepActual = (string)($userState['step'] ?? '');
+
+if (
+    $agendaPendienteConfirmacionGlobal !== null
+    && in_array($stepActual, ['agenda_confirmar', 'agenda_confirmacion_humana'], true)
+) {
     if (wa_respuesta_es_si($body)) {
         try {
             wa_marcar_confirmacion_agenda((int)$agendaPendienteConfirmacionGlobal['id_agenda'], 'SI');
@@ -3742,11 +3747,11 @@ if (($userState['step'] ?? '') === 'km') {
         'km' => $km
     ], 'ESPERANDO_VERSION', 'BOT', $profileName !== '' ? $profileName : null);
 
-    twiml_message_and_save(
-        $from,
-        "Perfecto. ¿Cuál es la Versión exacta?\n"
-        . "(Ej: GLS, LTZ, GS)"
-    );
+    // twiml_message_and_save(
+    //     $from,
+    //     "Perfecto. ¿Cuál es la Versión exacta?\n"
+    //     . "(Ej: GLS, LTZ, GS)"
+    // );
 }
 
 // =========================
@@ -4229,14 +4234,23 @@ if (($userState['step'] ?? '') === 'version_sugerida') {
     twiml_message_and_save($from, "Perfecto \n\nVersión: {$respuesta}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
 }
 
-// =========================
+/// =========================
 // PASO: FICHA OFICIAL
 // =========================
 if (($userState['step'] ?? '') === 'ficha_oficial') {
-    $ficha = normalize_yes_no($body);
+
+    $buttonPayload = trim((string)($_POST['ButtonPayload'] ?? ''));
+
+    if ($buttonPayload === 'ficha_oficial_si') {
+        $ficha = 'si';
+    } elseif ($buttonPayload === 'ficha_oficial_no') {
+        $ficha = 'no';
+    } else {
+        $ficha = normalize_yes_no($body);
+    }
 
     if ($ficha === null) {
-        twiml_message_and_save($from, "No entendí la respuesta. Respondé solamente: SI o NO");
+        twiml_message_and_save($from, "No entendí la respuesta. Tocá una opción: SI o NO");
     }
 
     $marca = trim((string)($userState['marca'] ?? ''));
@@ -4246,25 +4260,23 @@ if (($userState['step'] ?? '') === 'ficha_oficial') {
     $version = trim((string)($userState['version'] ?? ''));
 
     wa_set_user_state($from, [
-    'step' => 'duenios',
-    'marca' => $marca,
-    'id_marca' => $userState['id_marca'] ?? null,
-    'modelo' => $modelo,
-    'id_model' => $userState['id_model'] ?? null,
-    'id_version' => $userState['id_version'] ?? null,
-    'anio' => $anio,
-    'km' => $km,
-    'version' => $version,
-    'ficha_oficial' => $ficha
-], 'ESPERANDO_DUENIOS', 'BOT', $profileName !== '' ? $profileName : null);
+        'step' => 'duenios',
+        'marca' => $marca,
+        'id_marca' => $userState['id_marca'] ?? null,
+        'modelo' => $modelo,
+        'id_model' => $userState['id_model'] ?? null,
+        'id_version' => $userState['id_version'] ?? null,
+        'anio' => $anio,
+        'km' => $km,
+        'version' => $version,
+        'ficha_oficial' => $ficha
+    ], 'ESPERANDO_DUENIOS', 'BOT', $profileName !== '' ? $profileName : null);
 
-twiml_message_and_save(
-    $from,
-     "¿Cuántos dueños tuvo el vehículo?\n"
-    . "Ejemplo: 1, 2, 3..."
-);
-
-    wa_preguntar_tipo_venta_interactiva($from);
+    twiml_message_and_save(
+        $from,
+        "¿Cuántos dueños tuvo el vehículo?\n"
+        . "Ejemplo: 1, 2, 3..."
+    );
 }
 
 // =========================
@@ -4512,8 +4524,8 @@ if (($userState['step'] ?? '') === 'agenda_dia') {
         $from,
         "Ahora elegí el horario disponible para el " . wa_formatear_fecha_chat($fechaElegida) . "\n\n"
         . implode("\n", $lineas)
-        //. "\n\nRespondé con el número de la hora.\n"
-        //. "También podés escribir ATRAS o CANCELAR."
+        . "\n\nRespondé con el número de la hora.\n"
+        . "También podés escribir ATRAS o CANCELAR."
     );
 }
 
@@ -4620,6 +4632,7 @@ if (($userState['step'] ?? '') === 'agenda_hora') {
     }
 }
 
+
 // =========================
 // AGENDA - CONFIRMAR
 // =========================
@@ -4695,9 +4708,9 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
         twiml_message_and_save(
             $from,
             "¡Agenda confirmada! ✅\n\n"
-            . "Fecha: " . wa_formatear_fecha_chat($fecha) . "\n"
-            . "Hora: " . substr($hora, 0, 5) . "\n\n"
-            . "Te esperamos en Motorlider. ¡Nos vemos pronto!"
+            . "🗓️ Fecha: " . wa_formatear_fecha_chat($fecha) . "\n"
+            . "⏰ Hora: " . substr($hora, 0, 5) . "\n\n"
+            . "Te esperamos en Motorlider. ¡Nos vemos pronto! 👋🏻 "
         );
     }
 

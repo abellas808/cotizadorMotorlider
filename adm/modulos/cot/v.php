@@ -93,6 +93,14 @@ if (!function_exists('cot_v_estado_cotizacion_texto')) {
 				return 'COMUNICARSE CON CLIENTE';
 			case 7:
                 return 'CLIENTE AVANZÓ';
+			case 8:
+                return 'AGENDADO';
+			case 9:
+                return 'AVANZÓ';
+			case 10:
+                return 'INSPECIÓN REALIZADA';
+			case 11:
+                return 'COTIZACIÓN FINAL';
 			default:
 				return 'NO COTIZÓ';
 		}
@@ -458,12 +466,14 @@ if (!function_exists('cot_v_hora_chat')) {
 				<div class="cot-label">Avanzó</div>
 				<div class="cot-value">
 					<label style="display:flex; align-items:center; gap:8px; margin:0;">
-						<input
-							type="checkbox"
-							id="chk_avanzo"
-							onchange="guardarAvanzo(this.checked)"
-							<?php echo ((int)($elemento['avanzo'] ?? 0) === 1) ? 'checked' : ''; ?>
-						>
+						<?php $puedeModificarAvanzo = ((int)($elemento['estado_id'] ?? 0) === 6); ?>
+							<input
+								type="checkbox"
+								id="chk_avanzo"
+								onchange="guardarAvanzo(this.checked)"
+								<?php echo ((int)($elemento['avanzo'] ?? 0) === 1) ? 'checked' : ''; ?>
+								<?php echo $puedeModificarAvanzo ? '' : 'disabled'; ?>
+							>
 						<span>Cliente avanzó</span>
 					</label>
 				</div>
