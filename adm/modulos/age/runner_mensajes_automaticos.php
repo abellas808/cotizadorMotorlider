@@ -381,9 +381,10 @@ function construirMensajeRecordatorio(array $agenda): string
         $msg .= " ({$auto})";
     }
     $msg .= ".\n";
-    $msg .= "Fecha: {$fechaFmt}\n";
-    $msg .= "Hora: {$hora}\n";
-    $msg .= "Dirección: {$direccion}\n\n";
+    $msg .= "🗓️ Fecha: {$fechaFmt}\n";
+    $msg .= "⏰ Hora: {$hora}\n";
+    $msg .= "📍 Dirección: {$direccion}  (Frente al Puente de las Américas)\n";
+    $msg .= "https://n9.cl/1q4vx \n\n";
     $msg .= "Te esperamos en Motorlider.";
 
     return $msg;
