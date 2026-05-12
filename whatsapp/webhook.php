@@ -2686,7 +2686,7 @@ if ($step === 'resultado_enviado' && $subStep === 'esperando_agenda') {
 
         twiml_message_and_save(
             $from,
-            "¡Genial! Seleccioná el día que te quede mejor:\n\n"
+            "🗓️ ¡Genial! Seleccioná el día que te quede mejor:\n\n"
             . implode("\n", $lineas)
         );
 
@@ -4522,7 +4522,7 @@ if (($userState['step'] ?? '') === 'agenda_dia') {
 
     twiml_message_and_save(
         $from,
-        "Ahora elegí el horario disponible para el " . wa_formatear_fecha_chat($fechaElegida) . "\n\n"
+        "⏰ Ahora elegí el horario disponible para el " . wa_formatear_fecha_chat($fechaElegida) . "\n\n"
         . implode("\n", $lineas)
         . "\n\nRespondé con el número de la hora.\n"
         . "También podés escribir ATRAS o CANCELAR."
@@ -4705,6 +4705,38 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
     $contextoPrevio = wa_obtener_contexto_completo_por_telefono($from);
 
     if (!empty($contextoPrevio['agenda_id_agenda'])) {
+
+        $idCotizacionPrevio = (int)(
+        $contextoPrevio['id_cotizaciones_generadas']
+        ?? $contextoPrevio['id_cotizacion']
+        ?? 0
+    );
+
+        if ($idCotizacionPrevio > 0) {
+            $cnEstado = wa_db();
+
+            $sqlEstado = "
+                UPDATE cotizaciones_generadas
+                SET
+                    estado_id = 8,
+                    estado = 'AGENDADO',
+                    fecha_mod = NOW()
+                WHERE id_cotizaciones_generadas = " . intval($idCotizacionPrevio) . "
+                LIMIT 1
+            ";
+
+            $okEstado = $cnEstado->query($sqlEstado);
+
+            wa_log('COTIZACION_ESTADO_AGENDADO_PREVIO_SQL', [
+                'id_cotizacion' => $idCotizacionPrevio,
+                'ok' => $okEstado,
+                'affected_rows' => $cnEstado->affected_rows,
+                'error' => $cnEstado->error
+            ]);
+
+            $cnEstado->close();
+        }
+
         twiml_message_and_save(
             $from,
             "¡Agenda confirmada! ✅\n\n"
