@@ -80,7 +80,7 @@ if (!function_exists('cot_badge')) {
         background:' . $c['bg'] . ';
         white-space:normal;
         word-break:break-word;
-        max-width:100px;
+        max-width:140px;
         text-align:center;
         ">
         ' . htmlspecialchars($texto) . '
@@ -698,13 +698,19 @@ $cant_cotizaciones = $db->query_first('SELECT COUNT(*) AS cant ' . $sql_from);
         background: #fcfcfc;
     }
 
-    
+    .cot-grid-compact td.cot-col-estado {
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: unset !important;
+        line-height: 1.2;
+    }
+
     .cot-col-auto { width: 90px; }
     .cot-col-nombre { width: 80px; }
     .cot-col-tel { width: 68px; }
     .cot-col-money { width: 55px; }
     .cot-col-fecha { width: 58px; }
-    .cot-col-estado { width: 78px; }
+    .cot-col-estado { width: 145px; }
     .cot-col-conf { width: 72px; }
 
     .cot-filtros-bar {

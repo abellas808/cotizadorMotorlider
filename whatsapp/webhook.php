@@ -2777,6 +2777,32 @@ if ($buttonPayload === 'tasacion_finalizar_no') {
         $idCotizacion = intval($conv['id_cotizacion'] ?? 0);
     }
 
+    if ($idCotizacion > 0) {
+        $cnEstado = wa_db();
+
+        $sqlEstado = "
+            UPDATE cotizaciones_generadas
+            SET
+                estado_id = 10,
+                estado = 'INSPECCIÓN REALIZADA',
+                detalle_estado = 'Cliente rechazó la tasación final',
+                fecha_mod = NOW()
+            WHERE id_cotizaciones_generadas = " . intval($idCotizacion) . "
+            LIMIT 1
+        ";
+
+        $okEstado = $cnEstado->query($sqlEstado);
+
+        wa_log('TASACION_FINAL_NO_ESTADO_INSPECCION_REALIZADA', [
+            'id_cotizacion' => $idCotizacion,
+            'ok' => $okEstado,
+            'affected_rows' => $cnEstado->affected_rows,
+            'error' => $cnEstado->error
+        ]);
+
+        $cnEstado->close();
+    }
+
     wa_registrar_carrito_abandonado(
         $idCotizacion,
         $idConversacion,
@@ -3062,6 +3088,32 @@ if (
 
         if ($idCotizacion <= 0) {
             $idCotizacion = intval($conv['id_cotizacion'] ?? 0);
+        }
+
+        if ($idCotizacion > 0) {
+            $cnEstado = wa_db();
+
+            $sqlEstado = "
+                UPDATE cotizaciones_generadas
+                SET
+                    estado_id = 10,
+                    estado = 'INSPECCIÓN REALIZADA',
+                    detalle_estado = 'Cliente rechazó la tasación final',
+                    fecha_mod = NOW()
+                WHERE id_cotizaciones_generadas = " . intval($idCotizacion) . "
+                LIMIT 1
+            ";
+
+            $okEstado = $cnEstado->query($sqlEstado);
+
+            wa_log('TASACION_FINAL_NO_ESTADO_INSPECCION_REALIZADA', [
+                'id_cotizacion' => $idCotizacion,
+                'ok' => $okEstado,
+                'affected_rows' => $cnEstado->affected_rows,
+                'error' => $cnEstado->error
+            ]);
+
+            $cnEstado->close();
         }
 
         wa_registrar_carrito_abandonado(
