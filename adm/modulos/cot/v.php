@@ -466,7 +466,7 @@ if (!function_exists('cot_v_hora_chat')) {
 				<div class="cot-label">Avanzó</div>
 				<div class="cot-value">
 					<label style="display:flex; align-items:center; gap:8px; margin:0;">
-						<?php $puedeModificarAvanzo = ((int)($elemento['estado_id'] ?? 0) === 6); ?>
+						<?php $puedeModificarAvanzo = in_array((int)($elemento['estado_id'] ?? 0), [6, 11, 9], true); ?>
 							<input
 								type="checkbox"
 								id="chk_avanzo"
@@ -1026,44 +1026,35 @@ function rechazarCompra() {
 	xhr.send('id=<?php echo intval($id); ?>');
 }
 
-function guardarAvanzo(marcado) {
-	var chk = document.getElementById('chk_avanzo');
+function guardarAvanzo(checked) {
 
-	chk.disabled = true;
+    $.ajax({
+        url: '/adm/modulos/cot/ajax_marcar_avanzo.php',
+        type: 'POST',
+        dataType: 'json',
+        data: {
+            id: <?php echo intval($elemento['id_cotizaciones_generadas']); ?>,
+            avanzo: checked ? 1 : 0
+        },
+        success: function(resp) {
 
-	var xhr = new XMLHttpRequest();
-	xhr.open('POST', '/adm/modulos/cot/ajax_marcar_avanzo.php', true);
-	xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
+            if (!resp || !resp.ok) {
+                alert(resp && resp.mensaje ? resp.mensaje : 'No se pudo guardar.');
 
-	xhr.onreadystatechange = function() {
-		if (xhr.readyState !== 4) return;
+                $('#chk_avanzo').prop('checked', !checked);
+                return;
+            }
 
-		chk.disabled = false;
+            // REFRESCAR PAGINA PARA ACTUALIZAR ESTADO
+            location.reload();
+        },
+        error: function() {
 
-		if (xhr.status !== 200) {
-			alert('Error HTTP ' + xhr.status + '\n' + xhr.responseText);
-			chk.checked = !marcado;
-			return;
-		}
+            alert('Error al guardar.');
 
-		try {
-			var res = JSON.parse(xhr.responseText);
-
-			if (!res.ok) {
-				alert(res.mensaje || 'No se pudo guardar Avanzó.');
-				chk.checked = !marcado;
-				return;
-			}
-		} catch (e) {
-			alert('Respuesta inválida del servidor:\n' + xhr.responseText);
-			chk.checked = !marcado;
-		}
-	};
-
-	xhr.send(
-		'id=<?php echo intval($id); ?>' +
-		'&avanzo=' + encodeURIComponent(marcado ? 1 : 0)
-	);
+            $('#chk_avanzo').prop('checked', !checked);
+        }
+    });
 }
 
 window.addEventListener('load', function () {
