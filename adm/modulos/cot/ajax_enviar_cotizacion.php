@@ -30,6 +30,17 @@ function j($a) {
 	exit;
 }
 
+function cot_normalizar_money($valor) {
+
+    $valor = trim((string)$valor);
+
+    $valor = str_replace(['.', ','], '', $valor);
+
+    $valor = preg_replace('/\D/', '', $valor);
+
+    return intval($valor);
+}
+
 function normalizar_telefono_whatsapp($telefono)
 {
 	$telefono = trim((string)$telefono);
@@ -296,8 +307,8 @@ function registrar_mensaje_whatsapp_backend(
 // INPUT
 // =========================
 $id = intval($_POST['id'] ?? 0);
-$pretasacion_desde = trim((string)($_POST['pretasacion_desde'] ?? ''));
-$pretasacion_hasta = trim((string)($_POST['pretasacion_hasta'] ?? ''));
+$pretasacion_desde = cot_normalizar_money($_POST['pretasacion_desde'] ?? '');
+$pretasacion_hasta = cot_normalizar_money($_POST['pretasacion_hasta'] ?? '');
 
 if ($id <= 0) {
 	j(['ok' => false, 'mensaje' => 'ID inválido.']);
@@ -307,7 +318,7 @@ if ($pretasacion_desde === '' || $pretasacion_hasta === '') {
 	j(['ok' => false, 'mensaje' => 'Completá pre tasación desde y hasta.']);
 }
 
-if (floatval($pretasacion_hasta) < floatval($pretasacion_desde)) {
+if ($pretasacion_hasta < $pretasacion_desde) {
 	j(['ok' => false, 'mensaje' => 'La pre tasación hasta no puede ser menor que la desde.']);
 }
 
@@ -404,8 +415,8 @@ if ($nombreCliente === '') {
 	$nombreCliente = 'Estimado/a cliente';
 }
 
-$desdeFmt = number_format((float)$pretasacion_desde, 0, ',', '.');
-$hastaFmt = number_format((float)$pretasacion_hasta, 0, ',', '.');
+$desdeFmt = number_format($pretasacion_desde, 0, ',', '.');
+$hastaFmt = number_format($pretasacion_hasta, 0, ',', '.');
 
 $mensaje = $plantilla;
 $mensaje = str_replace('{nombre_cliente}', $nombreCliente, $mensaje);
@@ -468,8 +479,8 @@ $db->query("
 		'" . $db->escape((string)($usuario['nombre'] ?? '')) . "',
 		'ENVIO_PRE_TASACION',
 		'" . $db->escape($mensaje) . "',
-		" . floatval($pretasacion_desde) . ",
-		" . floatval($pretasacion_hasta) . ",
+		" . intval($pretasacion_desde) . ",
+		" . intval($pretasacion_hasta) . ",
 		NULL,
 		'" . $db->escape((string)($envio['sid'] ?? '')) . "',
 		NOW()
@@ -493,8 +504,8 @@ $humanoEsc = $db->escape($humanoTomadoPor);
 $db->query("
 	UPDATE cotizaciones_generadas
 	SET
-		pretasacion_desde = " . floatval($pretasacion_desde) . ",
-		pretasacion_hasta = " . floatval($pretasacion_hasta) . ",
+		pretasacion_desde = " . intval($pretasacion_desde) . ",
+		pretasacion_hasta = " . intval($pretasacion_hasta) . ",
 		msg = '{$mensajeEsc}',
 		detalle_estado = 'Respuesta humana enviada por WhatsApp',
 		estado = 'PRELIMINAR',

@@ -547,22 +547,20 @@ if (!function_exists('cot_v_hora_chat')) {
 				<div class="cot-item">
 					<div class="cot-label">Pre tasación desde</div>
 					<div class="cot-value cot-value-big">
-						<input type="number" step="1" id="pretasacion_desde" class="cot-edit-field" value="<?php echo htmlspecialchars(cot_v_input_money($elemento['pretasacion_desde'])); ?>" disabled>
-					</div>
+						<input type="text" inputmode="numeric" id="pretasacion_desde" class="cot-edit-field js-money-field" value="<?php echo htmlspecialchars(cot_v_input_money($elemento['pretasacion_desde'])); ?>" disabled>					</div>
 				</div>
 
 				<div class="cot-item">
 					<div class="cot-label">Pre tasación hasta</div>
 					<div class="cot-value cot-value-big">
-						<input type="number" step="1" id="pretasacion_hasta" class="cot-edit-field" value="<?php echo htmlspecialchars(cot_v_input_money($elemento['pretasacion_hasta'])); ?>" disabled>
+						<input type="text" inputmode="numeric" id="pretasacion_hasta" class="cot-edit-field js-money-field" value="<?php echo htmlspecialchars(cot_v_input_money($elemento['pretasacion_hasta'])); ?>" disabled>
 					</div>
 				</div>
 
 				<div class="cot-item">
 					<div class="cot-label">Tasación final</div>
 					<div class="cot-value cot-value-big">
-						<input type="number" step="1" id="tasacion_final" class="cot-edit-field" value="<?php echo htmlspecialchars(cot_v_input_money($elemento['tasacion_final'])); ?>" disabled>
-					</div>
+						<input type="text" inputmode="numeric" id="tasacion_final" class="cot-edit-field js-money-field" value="<?php echo htmlspecialchars(cot_v_input_money($elemento['tasacion_final'])); ?>" disabled>					</div>
 				</div>
 
 				<div class="cot-item">
@@ -738,6 +736,59 @@ if (!function_exists('cot_v_hora_chat')) {
 </div>
 
 <script>
+
+function soloDigitos(valor) {
+	return String(valor || '').replace(/\D/g, '');
+}
+
+function formatearMiles(valor) {
+	var digitos = soloDigitos(valor);
+
+	if (digitos === '') {
+		return '';
+	}
+
+	return digitos.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+function normalizarCampoMoney(input) {
+	input.value = formatearMiles(input.value);
+}
+
+function valorMoneyPlano(id) {
+	var el = document.getElementById(id);
+	return soloDigitos(el ? el.value : '');
+}
+
+function inicializarMoneyFields() {
+	var campos = document.querySelectorAll('.js-money-field');
+
+	for (var i = 0; i < campos.length; i++) {
+		normalizarCampoMoney(campos[i]);
+
+		campos[i].addEventListener('input', function() {
+			normalizarCampoMoney(this);
+			actualizarBotonesEnvio();
+		});
+
+		campos[i].addEventListener('paste', function(e) {
+			var clipboard = (e.clipboardData || window.clipboardData).getData('text');
+			e.preventDefault();
+			this.value = formatearMiles(clipboard);
+			actualizarBotonesEnvio();
+		});
+
+		campos[i].addEventListener('keypress', function(e) {
+			var code = e.which || e.keyCode;
+			var char = String.fromCharCode(code);
+
+			if (!/[0-9]/.test(char)) {
+				e.preventDefault();
+			}
+		});
+	}
+}
+
 var pretasacionDesdeOriginal = document.getElementById('pretasacion_desde').value;
 var pretasacionHastaOriginal = document.getElementById('pretasacion_hasta').value;
 var tasacionFinalOriginal = document.getElementById('tasacion_final').value;
@@ -747,9 +798,9 @@ function tieneValor(valor) {
 }
 
 function actualizarBotonesEnvio() {
-	var pretasacion_desde = document.getElementById('pretasacion_desde').value || '';
-	var pretasacion_hasta = document.getElementById('pretasacion_hasta').value || '';
-	var tasacion_final = document.getElementById('tasacion_final').value || '';
+	var pretasacion_desde = valorMoneyPlano('pretasacion_desde');
+	var pretasacion_hasta = valorMoneyPlano('pretasacion_hasta');
+	var tasacion_final = valorMoneyPlano('tasacion_final');
 
 	var btnPre = document.getElementById('btn_enviar_pre_whatsapp');
 	var btnFinal = document.getElementById('btn_enviar_final_whatsapp');
@@ -1096,6 +1147,8 @@ function guardarAvanzo(checked) {
 }
 
 window.addEventListener('load', function () {
+	inicializarMoneyFields();
+	
 	var chatBox = document.getElementById('cot_chat_box');
 	if (chatBox) {
 		chatBox.scrollTop = chatBox.scrollHeight;

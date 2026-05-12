@@ -76,6 +76,17 @@ function registrar_mensaje_whatsapp_backend(
 	return true;
 }
 
+function cot_normalizar_money($valor) {
+
+    $valor = trim((string)$valor);
+
+    $valor = str_replace(['.', ','], '', $valor);
+
+    $valor = preg_replace('/\D/', '', $valor);
+
+    return intval($valor);
+}
+
 function enviar_whatsapp_template_twilio($to, $contentSid, $variables = []) {
 	$url = 'https://api.twilio.com/2010-04-01/Accounts/' . TWILIO_ACCOUNT_SID . '/Messages.json';
 
@@ -134,9 +145,9 @@ function enviar_whatsapp_template_twilio($to, $contentSid, $variables = []) {
 }
 
 $id = intval($_POST['id'] ?? 0);
-$pretasacion_desde = trim((string)($_POST['pretasacion_desde'] ?? ''));
-$pretasacion_hasta = trim((string)($_POST['pretasacion_hasta'] ?? ''));
-$tasacion_final = trim((string)($_POST['tasacion_final'] ?? ''));
+$pretasacion_desde = cot_normalizar_money($_POST['pretasacion_desde'] ?? '');
+$pretasacion_hasta = cot_normalizar_money($_POST['pretasacion_hasta'] ?? '');
+$tasacion_final = cot_normalizar_money($_POST['tasacion_final'] ?? '');
 
 if ($id <= 0) {
 	j(['ok' => false, 'mensaje' => 'ID inválido.']);
@@ -147,15 +158,15 @@ $idUsuario = intval($_SESSION[$config['codigo_unico']]['login_usuario_id'] ?? 0)
 $sets = [];
 
 if ($pretasacion_desde !== '') {
-	$sets[] = "pretasacion_desde = " . floatval($pretasacion_desde);
+	$sets[] = "pretasacion_desde = " . intval($pretasacion_desde);
 }
 
 if ($pretasacion_hasta !== '') {
-	$sets[] = "pretasacion_hasta = " . floatval($pretasacion_hasta);
+	$sets[] = "pretasacion_hasta = " . intval($pretasacion_hasta);
 }
 
 if ($tasacion_final !== '') {
-	$sets[] = "tasacion_final = " . floatval($tasacion_final);
+	$sets[] = "tasacion_final = " . intval($tasacion_final);
 }
 
 if ($idUsuario > 0) {
@@ -258,7 +269,7 @@ if ($modoEnvio === 'final') {
 		]);
 	}
 
-	$tasacionFmt = number_format(floatval($tasacion_final), 0, ',', '.');
+	$tasacionFmt = number_format($tasacion_final, 0, ',', '.');
 
 	// =========================
 	// MENSAJE QUE SE ENVÍA AL CLIENTE
