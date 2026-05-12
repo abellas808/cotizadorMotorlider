@@ -8,9 +8,14 @@ if (!isset($sistema_iniciado)) exit();
 $id = intval($_GET['i']);
 
 $elemento = $db->query_first('
-	SELECT *
-	FROM cotizaciones_generadas
-	WHERE id_cotizaciones_generadas = "' . $id . '"
+	SELECT 
+		cg.*,
+		ce.nombre_estado,
+		ce.color_label
+	FROM cotizaciones_generadas cg
+	LEFT JOIN cotizaciones_estados ce 
+		ON ce.id_estado = cg.estado_id
+	WHERE cg.id_cotizaciones_generadas = "' . $id . '"
 	LIMIT 1;
 ');
 
@@ -104,6 +109,39 @@ if (!function_exists('cot_v_estado_cotizacion_texto')) {
 			default:
 				return 'NO COTIZÓ';
 		}
+	}
+}
+
+if (!function_exists('cot_v_estado_badge')) {
+	function cot_v_estado_badge($elemento) {
+
+		$texto = trim((string)($elemento['nombre_estado'] ?? ''));
+		$color = trim((string)($elemento['color_label'] ?? ''));
+
+		if ($texto === '') {
+			$texto = cot_v_estado_cotizacion_texto($elemento);
+		}
+
+		if ($color === '') {
+			$color = '#999999';
+		}
+
+		return '
+			<span style="
+				display:inline-block;
+				padding:6px 12px;
+				border-radius:6px;
+				font-size:12px;
+				font-weight:bold;
+				color:#fff;
+				background:' . htmlspecialchars($color) . ';
+				line-height:1.2;
+				text-transform:uppercase;
+				letter-spacing:.3px;
+			">
+				' . htmlspecialchars($texto) . '
+			</span>
+		';
 	}
 }
 
@@ -457,8 +495,8 @@ if (!function_exists('cot_v_hora_chat')) {
 
 			<div class="cot-item">
 				<div class="cot-label">Estado</div>
-				<div class="cot-value <?php echo ($estadoCotizacionId == 2) ? 'estado-pendiente' : 'estado-finalizada'; ?>">
-					<?php echo_s($estadoCotizacionTexto); ?>
+				<div class="cot-value">
+					<?php echo cot_v_estado_badge($elemento); ?>
 				</div>
 			</div>
 
