@@ -98,6 +98,36 @@ if (!function_exists('age_badge')) {
     }
 }
 
+if (!function_exists('age_estado_cot_badge_db')) {
+    function age_estado_cot_badge_db($entrada) {
+        $texto = trim((string)($entrada['estado_nombre'] ?? ''));
+        $color = trim((string)($entrada['estado_color'] ?? ''));
+
+        if ($texto === '') {
+            $texto = trim((string)($entrada['cot_estado'] ?? 'SIN COT.'));
+        }
+
+        if ($color === '') {
+            $color = '#eef0f2';
+        }
+
+        return '<span title="' . htmlspecialchars($texto) . '" style="
+            display:inline-block;
+            padding:3px 7px;
+            border-radius:4px;
+            font-size:10px;
+            font-weight:bold;
+            line-height:1.2;
+            color:#fff;
+            background:' . htmlspecialchars($color) . ';
+            white-space:normal;
+            word-break:break-word;
+            max-width:150px;
+            text-align:center;
+        ">' . htmlspecialchars($texto) . '</span>';
+    }
+}
+
 if (!function_exists('age_estado_agenda_badge')) {
     function age_estado_agenda_badge($entrada) {
         $tsAgenda = strtotime(($entrada['fecha'] ?? '') . ' ' . substr((string)($entrada['hora'] ?? ''), 0, 5));
@@ -359,6 +389,7 @@ if ($estado_age !== '') {
 $sql_from = '
     FROM agendas a
     LEFT JOIN cotizaciones_generadas c ON c.id_cotizaciones_generadas = a.id_cotizacion
+    LEFT JOIN cotizaciones_estados ce ON ce.id_estado = c.estado_id
     WHERE 1=1 ' . $sql_filtros . $sql_b;
 
 $listado = $db->query(
@@ -367,6 +398,8 @@ $listado = $db->query(
         c.id_cotizaciones_generadas AS cot_id,
         c.auto AS cot_auto,
         c.estado AS cot_estado,
+        ce.nombre_estado AS estado_nombre,
+        ce.color_label AS estado_color, 
         ' . $expr_pre_desde . ' AS pretasacion_desde,
         ' . $expr_pre_hasta . ' AS pretasacion_hasta,
         ' . $expr_pre_final . ' AS pretasacion_final,
@@ -436,8 +469,6 @@ if ($total_paginas <= 0) $total_paginas = 1;
     .age-box-ok { background:#f6fff5; border:1px solid #cfe6cc; border-radius:8px; padding:12px 14px; margin-top:12px; }
     .age-box-grid { display:flex; flex-wrap:wrap; gap:16px; margin-top:14px; }
     .age-box-col { flex:1 1 240px; background:#fff; border:1px solid #ddd; border-radius:8px; padding:12px; }
-
-    .age-grid-wrap { overflow-x: hidden; margin-top: 60px !important; clear: both; position: relative; z-index: 1; }
     .age-grid-compact { width:100%; table-layout:fixed; font-size:10px; margin-bottom:0; }
     .age-grid-compact th, .age-grid-compact td { padding:3px 4px !important; vertical-align:middle !important; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.1; }
     .age-grid-compact thead tr.group-row th { font-size:11px; text-transform:uppercase; letter-spacing:.35px; padding-top:6px !important; padding-bottom:6px !important; border-bottom:1px solid #d8dde3; }
@@ -452,8 +483,27 @@ if ($total_paginas <= 0) $total_paginas = 1;
     .age-col-hora { width:48px; text-align:center; }
     .age-col-auto { width:120px; }
     .age-col-nombre { width:96px; }
-    .age-col-estado { width:90px; text-align:center; }
-    .age-col-detalle { width:170px; }
+    .age-grid-wrap { overflow-x: auto; margin-top: 40px !important; clear: both; position: relative; z-index: 1; }
+
+    .age-col-estado {
+        width: 125px;
+        text-align: center;
+    }
+
+    .age-col-estado-cot {
+        width: 150px;
+    }
+
+    .age-col-detalle {
+        width: 210px;
+    }
+    .age-grid-compact td.age-col-estado,
+    .age-grid-compact td.age-col-detalle {
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: unset !important;
+        line-height: 1.2;
+    }
     .age-col-money { width:70px; text-align:right; }
     .age-col-check { width:26px; text-align:center; }
     @media (max-width: 768px) { .age-modal-grid { grid-template-columns: 1fr; } }
@@ -615,7 +665,7 @@ if ($total_paginas <= 0) $total_paginas = 1;
                 <td class="age-col-money"><?php echo_s(age_format_tasacion($entrada['pretasacion_desde'] ?? '')); ?></td>
                 <td class="age-col-money"><?php echo_s(age_format_tasacion($entrada['pretasacion_hasta'] ?? '')); ?></td>
                 <td class="age-col-money" style="font-weight:bold;"><?php echo_s(age_format_tasacion($entrada['pretasacion_final'] ?? '')); ?></td>
-                <td class="age-col-estado"><?php echo age_estado_cot_badge($entrada['cot_estado'] ?? ''); ?></td>
+                <td class="age-col-estado age-col-estado-cot"><?php echo age_estado_cot_badge_db($entrada); ?></td>
                 <td class="age-col-check"><input name="e_sel[]" type="checkbox" value="<?php echo $entrada['id_agenda']; ?>" /></td>
             </tr>
         <?php } ?>

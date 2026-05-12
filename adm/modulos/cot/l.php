@@ -88,6 +88,36 @@ if (!function_exists('cot_badge')) {
     }
 }
 
+if (!function_exists('cot_estado_badge_db')) {
+    function cot_estado_badge_db($entrada) {
+        $texto = trim((string)($entrada['estado_nombre'] ?? ''));
+        $color = trim((string)($entrada['estado_color'] ?? ''));
+
+        if ($texto === '') {
+            $texto = cot_estado_cotizacion_badge($entrada);
+        }
+
+        if ($color === '') {
+            $color = '#eef0f2';
+        }
+
+        return '<span title="' . htmlspecialchars($texto) . '" style="
+            display:inline-block;
+            padding:3px 7px;
+            border-radius:4px;
+            font-size:10px;
+            font-weight:bold;
+            line-height:1.2;
+            color:#fff;
+            background:' . htmlspecialchars($color) . ';
+            white-space:normal;
+            word-break:break-word;
+            max-width:140px;
+            text-align:center;
+        ">' . htmlspecialchars($texto) . '</span>';
+    }
+}
+
 if (!function_exists('cot_estado_cotizacion_badge')) {
     function cot_estado_cotizacion_badge($entrada) {
         // Lógica corregida basada en estado_id
@@ -443,6 +473,7 @@ $expr_tas_final = cot_sql_first_existing('c', 'cotizaciones_generadas', array('t
 
 $sql_from = '
     FROM cotizaciones_generadas c
+    LEFT JOIN cotizaciones_estados ce ON ce.id_estado = c.estado_id
     LEFT JOIN agendas a ON a.id_agenda = (
         SELECT ag.id_agenda
         FROM agendas ag
@@ -458,6 +489,8 @@ $sql_from = '
 $sql_select = "
     SELECT SQL_CALC_FOUND_ROWS
         c.*,
+        ce.nombre_estado AS estado_nombre,
+        ce.color_label AS estado_color,
         {$expr_tas_desde} AS tasacion_desde,
         {$expr_tas_hasta} AS tasacion_hasta,
         {$expr_tas_final} AS tasacion_final,
@@ -903,7 +936,7 @@ $cant_cotizaciones = $db->query_first('SELECT COUNT(*) AS cant ' . $sql_from);
                         <td class="cot-col-money"><?php echo_s(cot_format_tasacion($tasHasta)); ?></td>
                         <td class="cot-col-money" style="font-weight:bold;"><?php echo_s(cot_format_tasacion($tasFinal)); ?></td>
                         <td class="cot-col-fecha"><?php echo_s(cot_format_fecha($entrada['fecha'])); ?></td>
-                        <td class="cot-col-estado"><?php echo cot_estado_cotizacion_badge($entrada); ?></td>
+                        <td class="cot-col-estado"><?php echo cot_estado_badge_db($entrada); ?></td>
                         <td class="cot-col-agecod sep-age">
                             <?php if (intval(cot_pick_first($entrada, array('agenda_id_agenda'), 0)) > 0) { ?>
                                 <a href="?m=age_v&i=<?php echo intval($entrada['agenda_id_agenda']); ?>"><?php echo intval($entrada['agenda_id_agenda']); ?></a>
