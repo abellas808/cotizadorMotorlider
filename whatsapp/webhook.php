@@ -2593,6 +2593,106 @@ $userState = wa_get_user_data($from);
 $currentConv = wa_get_conversation($from);
 $currentEstado = (string)($currentConv['estado'] ?? 'INICIO');
 
+$buttonPayloadAgenda = trim((string)($_POST['ButtonPayload'] ?? ''));
+
+if (
+    $buttonPayloadAgenda === 'asistencia__agenda_si' ||
+    $buttonPayloadAgenda === 'asistencia_agenda_no'
+) {
+    try {
+        $agendaPendiente = wa_obtener_agenda_pendiente_confirmacion($from);
+
+        if ($agendaPendiente === null) {
+            wa_log('AGENDA_PAYLOAD_SIN_PENDIENTE', [
+                'from' => $from,
+                'payload' => $buttonPayloadAgenda
+            ]);
+
+            twiml_message_and_save(
+                $from,
+                "Recibimos tu respuesta, pero no encontramos una agenda pendiente de confirmación. Un asesor lo revisará."
+            );
+
+             return;
+        }
+
+        if ($buttonPayloadAgenda === 'asistencia__agenda_si') {
+            wa_marcar_confirmacion_agenda((int)$agendaPendiente['id_agenda'], 'SI');
+
+            wa_registrar_notificacion_agenda(
+                (int)$agendaPendiente['id_agenda'],
+                (string)$agendaPendiente['telefono'],
+                'respuesta_cliente',
+                (string)$agendaPendiente['fecha'],
+                (string)$agendaPendiente['hora'],
+                'Cliente confirmó asistencia mediante botón',
+                '',
+                json_encode([
+                    'origen' => 'twilio_template',
+                    'payload' => $buttonPayloadAgenda,
+                    'resultado' => 'CONFIRMADO'
+                ], JSON_UNESCAPED_UNICODE),
+                'RECIBIDO'
+            );
+
+            twiml_message_and_save(
+                $from,
+                "Perfecto ✅ Tu agenda quedó confirmada para el "
+                . wa_formatear_fecha_chat((string)$agendaPendiente['fecha'])
+                . " a las " . substr((string)$agendaPendiente['hora'], 0, 5)
+                . ".Te estaremos enviando un recordatorio antes de la inspección."
+            );
+
+            return;
+        }
+
+        if ($buttonPayloadAgenda === 'asistencia_agenda_no') {
+            wa_marcar_confirmacion_agenda(
+                (int)$agendaPendiente['id_agenda'],
+                'NO',
+                'Cancelada por cliente vía botón de WhatsApp'
+            );
+
+            wa_registrar_notificacion_agenda(
+                (int)$agendaPendiente['id_agenda'],
+                (string)$agendaPendiente['telefono'],
+                'cancelacion_cliente',
+                (string)$agendaPendiente['fecha'],
+                (string)$agendaPendiente['hora'],
+                'Cliente canceló asistencia mediante botón',
+                '',
+                json_encode([
+                    'origen' => 'twilio_template',
+                    'payload' => $buttonPayloadAgenda,
+                    'resultado' => 'CANCELADO'
+                ], JSON_UNESCAPED_UNICODE),
+                'INFO'
+            );
+
+            twiml_message_and_save(
+                $from,
+                "Perfecto. Tu agenda del "
+                . wa_formatear_fecha_chat((string)$agendaPendiente['fecha'])
+                . " a las " . substr((string)$agendaPendiente['hora'], 0, 5)
+                . " fue cancelada. Si querés coordinar una nueva fecha, respondé AGENDAR."
+            );
+
+            return;
+        }
+    } catch (Throwable $e) {
+        wa_log('AGENDA_PAYLOAD_ERROR', [
+            'from' => $from,
+            'payload' => $buttonPayloadAgenda,
+            'error' => $e->getMessage()
+        ]);
+
+        twiml_message_and_save(
+            $from,
+            "Ocurrió un problema procesando tu respuesta. Un asesor lo revisará a la brevedad."
+        );
+    }
+}
+
 // =========================
 // CONTROL SEGURO: NO AGENDAR DESDE PENDIENTE HUMANO
 // =========================
@@ -3628,6 +3728,18 @@ if (($userState['step'] ?? '') === 'modelo_sugerido') {
     $idMarca = (int)($userState['id_marca'] ?? 0);
     $opciones = $userState['modelo_opciones'] ?? [];
 
+    if ($respuesta === '') {
+        twiml_message_and_save($from, "No pude leer el modelo. Escribime el MODELO del vehículo.");
+        return;
+    }
+
+    if ($idMarca <= 0) {
+        wa_set_user_state($from, ['step' => null], 'INICIO', 'BOT', $profileName !== '' ? $profileName : null);
+        twiml_message_and_save($from, "Se perdió la referencia de la marca seleccionada.\n\nEscribí COTIZAR para comenzar nuevamente.");
+        return;
+    }
+
+    // 1) Si responde con número de sugerencia
     if (isset($opciones[$respuesta])) {
         $modeloFinal = $opciones[$respuesta]['nombre'];
         $idModel = (int)$opciones[$respuesta]['id_model'];
@@ -3641,8 +3753,10 @@ if (($userState['step'] ?? '') === 'modelo_sugerido') {
         ], 'ESPERANDO_ANIO', 'BOT', $profileName !== '' ? $profileName : null);
 
         twiml_message_and_save($from, "¿De qué AÑO es?");
+        return;
     }
 
+    // 2) Si responde con el nombre exacto de una de las sugerencias
     foreach ($opciones as $op) {
         if (wa_normalizar_texto((string)$op['nombre']) === $respuestaNorm) {
             $modeloFinal = (string)$op['nombre'];
@@ -3657,14 +3771,88 @@ if (($userState['step'] ?? '') === 'modelo_sugerido') {
             ], 'ESPERANDO_ANIO', 'BOT', $profileName !== '' ? $profileName : null);
 
             twiml_message_and_save($from, "¿De qué AÑO es?");
+            return;
         }
     }
 
-    $opcionesTexto = [];
-    foreach ($opciones as $nro => $op) {
-        $opcionesTexto[] = $nro . '. ' . $op['nombre'];
+    // 3) NUEVO COMPORTAMIENTO:
+    // Si el cliente escribe otro modelo distinto a las sugerencias,
+    // volvemos a validar contra el catálogo completo de modelos de esa marca.
+    try {
+        $modeloExacto = wa_buscar_modelo_exacto($idMarca, $respuesta);
+    } catch (Throwable $e) {
+        wa_log('MODELO_SUGERIDO_REBUSQUEDA_DB_EXCEPTION', [
+            'error' => $e->getMessage(),
+            'id_marca' => $idMarca,
+            'respuesta' => $respuesta
+        ]);
+
+        twiml_message_and_save($from, "Ocurrió un problema consultando el catálogo de modelos. Probá nuevamente en unos instantes.");
+        return;
     }
 
+    if ($modeloExacto !== null) {
+        $modeloFinal = $modeloExacto['nombre'];
+
+        wa_set_user_state($from, [
+            'step' => 'anio',
+            'marca' => $marca,
+            'id_marca' => $idMarca,
+            'modelo' => $modeloFinal,
+            'id_model' => $modeloExacto['id_model']
+        ], 'ESPERANDO_ANIO', 'BOT', $profileName !== '' ? $profileName : null);
+
+        twiml_message_and_save($from, "¿De qué AÑO es?");
+        return;
+    }
+
+    // 4) Si tampoco existe exacto, buscamos nuevas sugerencias con lo que escribió ahora
+    try {
+        $nuevasSugerencias = wa_buscar_modelos_similares($idMarca, $respuesta, 5);
+    } catch (Throwable $e) {
+        wa_log('MODELO_SUGERIDO_REBUSQUEDA_SUGERENCIAS_DB_EXCEPTION', [
+            'error' => $e->getMessage(),
+            'id_marca' => $idMarca,
+            'respuesta' => $respuesta
+        ]);
+
+        $nuevasSugerencias = [];
+    }
+
+    if (!empty($nuevasSugerencias)) {
+        $opcionesTexto = [];
+        $opcionesEstado = [];
+
+        foreach ($nuevasSugerencias as $i => $op) {
+            $nro = $i + 1;
+            $opcionesTexto[] = $nro . '. ' . $op['nombre'];
+            $opcionesEstado[(string)$nro] = [
+                'id' => $op['id'],
+                'id_marca' => $op['id_marca'],
+                'id_model' => $op['id_model'],
+                'nombre' => $op['nombre']
+            ];
+        }
+
+        wa_set_user_state($from, [
+            'step' => 'modelo_sugerido',
+            'marca' => $marca,
+            'id_marca' => $idMarca,
+            'modelo_input' => $respuesta,
+            'modelo_opciones' => $opcionesEstado
+        ], 'ESPERANDO_MODELO', 'BOT', $profileName !== '' ? $profileName : null);
+
+        twiml_message_and_save(
+            $from,
+            "No encontré ese modelo exacto para {$marca}.\n\n"
+            . "Quizás quisiste decir:\n"
+            . implode("\n", $opcionesTexto)
+            . "\n\nRespondé con el número o escribí nuevamente el modelo correcto."
+        );
+        return;
+    }
+
+    // 5) Si no existe ni tiene sugerencias
     wa_registrar_input_no_match_safe([
         'telefono' => $from,
         'nombre_cliente' => $profileName,
@@ -3682,10 +3870,10 @@ if (($userState['step'] ?? '') === 'modelo_sugerido') {
 
     twiml_message_and_save(
         $from,
-        "No entendí la opción elegida.\n\n"
-        . "Respondé con el número o con uno de estos nombres:\n"
-        . implode("\n", $opcionesTexto)
+        "No encontré ese modelo para {$marca}.\n\n"
+        . "Probá escribiendo nuevamente el nombre del modelo."
     );
+    return;
 }
 
 // =========================

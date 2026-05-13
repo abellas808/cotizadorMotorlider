@@ -75,6 +75,7 @@ $config['modulos'][] = 'wel';
 $config['modulos'][] = 'cot';
 $config['modulos'][] = 'coi';
 $config['modulos'][] = 'age';
+$config['modulos'][] = 'mlapify';
 //$config['modulos'][] = 'dol';
 //$config['modulos'][] = 'usu';
 //$config['modulos'][] = 'ban';

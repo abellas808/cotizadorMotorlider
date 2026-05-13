@@ -13,6 +13,7 @@ const TWILIO_ACCOUNT_SID    = 'AC4a648c5c55de9d9b1f1f6601b14d4c4d';
 const TWILIO_AUTH_TOKEN     = '58f767d26211d9d0c20ea687df00b4c3';
 const TWILIO_WHATSAPP_FROM  = 'whatsapp:+59898057857';
 const TWILIO_API_URL_FORMAT = 'https://api.twilio.com/2010-04-01/Accounts/%s/Messages.json';
+const TWILIO_TEMPLATE_ASISTENCIA_AGENDA = 'HXdbb930f81ded747f4bb4d681767373ed';
 
 /**
  * SETTINGS DEL PROCESO
@@ -333,6 +334,88 @@ function enviarWhatsapp(string $telefono, string $mensaje): array
     ];
 }
 
+function enviarWhatsappTemplateAsistenciaAgenda(string $telefono, array $agenda): array
+{
+    $to = normalizarTelefonoWhatsapp($telefono);
+
+    if ($to === '') {
+        return [
+            'ok' => false,
+            'http_code' => 0,
+            'error' => 'Teléfono vacío',
+            'raw' => ''
+        ];
+    }
+
+    $nombre = trim((string)($agenda['nombre'] ?? ''));
+    $auto = trim((string)($agenda['auto'] ?? ''));
+    $fechaFmt = formatearFechaEs((string)($agenda['fecha'] ?? ''));
+    $hora = substr((string)($agenda['hora'] ?? ''), 0, 5);
+
+    $contentVariables = [
+        '1' => $nombre,
+        '2' => $auto,
+        '3' => $fechaFmt,
+        '4' => $hora
+    ];
+
+    $url = sprintf(TWILIO_API_URL_FORMAT, TWILIO_ACCOUNT_SID);
+
+    $postFields = [
+        'From' => TWILIO_WHATSAPP_FROM,
+        'To' => $to,
+        'ContentSid' => TWILIO_TEMPLATE_ASISTENCIA_AGENDA,
+        'ContentVariables' => json_encode($contentVariables, JSON_UNESCAPED_UNICODE)
+    ];
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => http_build_query($postFields),
+        CURLOPT_USERPWD => TWILIO_ACCOUNT_SID . ':' . TWILIO_AUTH_TOKEN,
+        CURLOPT_HTTPAUTH => CURLAUTH_BASIC,
+        CURLOPT_TIMEOUT => 60,
+        CURLOPT_CONNECTTIMEOUT => 15,
+        CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_SSL_VERIFYHOST => 2,
+    ]);
+
+    $raw = curl_exec($ch);
+    $curlError = curl_error($ch);
+    $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    $decoded = json_decode((string)$raw, true);
+
+    logMensajeAutomatico('TWILIO_TEMPLATE_ASISTENCIA_AGENDA_RESPONSE', [
+        'to' => $to,
+        'http_code' => $httpCode,
+        'error' => $curlError,
+        'raw' => $raw
+    ]);
+
+    if ($curlError !== '') {
+        return [
+            'ok' => false,
+            'http_code' => $httpCode,
+            'error' => $curlError,
+            'raw' => $raw
+        ];
+    }
+
+    $ok = ($httpCode >= 200 && $httpCode < 300 && is_array($decoded) && !empty($decoded['sid']));
+
+    return [
+        'ok' => $ok,
+        'http_code' => $httpCode,
+        'sid' => $decoded['sid'] ?? '',
+        'status' => $decoded['status'] ?? '',
+        'error' => $decoded['message'] ?? '',
+        'raw' => $raw
+    ];
+}
+
 function formatearFechaEs(string $fecha): string
 {
     $ts = strtotime($fecha);
@@ -406,9 +489,10 @@ function construirMensajeConfirmacion24h(array $agenda): string
         $msg .= " de tu vehículo ({$auto})";
     }
     $msg .= ".\n";
-    $msg .= "Fecha: {$fechaFmt}\n";
-    $msg .= "Hora: {$hora}\n";
-    $msg .= "Dirección: {$direccion}\n\n";
+    $msg .= "🗓️ Fecha: {$fechaFmt}\n";
+    $msg .= "⏰ Hora: {$hora}\n";
+    $msg .= "📍 Dirección: {$direccion} (Frente al Puente de las Américas)\n";
+    $msg .= " https://n9.cl/1q4vx \n\n";
     $msg .= "Por favor respondé SI o NO.";
 
     return $msg;
@@ -613,7 +697,7 @@ while ($row = $q->fetch_assoc()) {
 
             if (!yaFueEnviado($db, $idAgenda, $tipo) && $confirmacionAsistencia === '') {
                 $mensaje = construirMensajeConfirmacion48h($row);
-                $envio = enviarWhatsapp($telefono, $mensaje);
+                $envio = enviarWhatsappTemplateAsistenciaAgenda($telefono, $row);
 
                 if (!empty($envio['ok'])) {
                     registrarEnvio(
@@ -678,7 +762,7 @@ while ($row = $q->fetch_assoc()) {
 
             if (!yaFueEnviado($db, $idAgenda, $tipo) && $confirmacionAsistencia === '') {
                 $mensaje = construirMensajeConfirmacion24h($row);
-                $envio = enviarWhatsapp($telefono, $mensaje);
+                $envio = enviarWhatsappTemplateAsistenciaAgenda($telefono, $row);
 
                 if (!empty($envio['ok'])) {
                     registrarEnvio(
