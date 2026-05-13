@@ -4141,7 +4141,7 @@ if (($userState['step'] ?? '') === 'version') {
             'version' => $versionIngresada
         ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message_and_save($from, "Perfecto \n\nVersión: {$versionIngresada}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
+        wa_preguntar_ficha_oficial_interactiva($from);
     }
 
     try {
@@ -4165,7 +4165,7 @@ if (($userState['step'] ?? '') === 'version') {
             'version' => $versionIngresada
         ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message_and_save($from, "Perfecto \n\nVersión: {$versionIngresada}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
+        wa_preguntar_ficha_oficial_interactiva($from);
     }
 
     if ($versionExacta !== null) {
@@ -4207,7 +4207,7 @@ if (($userState['step'] ?? '') === 'version') {
             'version' => $versionIngresada
         ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message_and_save($from, "Perfecto \n\nVersión: {$versionIngresada}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
+        wa_preguntar_ficha_oficial_interactiva($from);
     }
 
     if (!empty($sugerencias)) {
@@ -4274,7 +4274,7 @@ if (($userState['step'] ?? '') === 'version') {
         'version' => $versionIngresada
     ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-    twiml_message_and_save($from, "Perfecto \n\nVersión: {$versionIngresada}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
+    wa_preguntar_ficha_oficial_interactiva($from);
 }
 
 // =========================
@@ -4322,7 +4322,7 @@ if (($userState['step'] ?? '') === 'version_sugerida') {
             'version' => $versionInput
         ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message_and_save($from, "Perfecto \n\nVersión: {$versionInput}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
+        wa_preguntar_ficha_oficial_interactiva($from);
     }
 
     if (isset($opciones[$respuesta])) {
@@ -4471,7 +4471,7 @@ if (($userState['step'] ?? '') === 'version_sugerida') {
         'version' => $respuesta
     ], 'ESPERANDO_FICHA_OFICIAL', 'BOT', $profileName !== '' ? $profileName : null);
 
-    twiml_message_and_save($from, "Perfecto \n\nVersión: {$respuesta}\n\n¿Posee ficha oficial?\nRespondé: SI o NO");
+    wa_preguntar_ficha_oficial_interactiva($from);
 }
 
 /// =========================
