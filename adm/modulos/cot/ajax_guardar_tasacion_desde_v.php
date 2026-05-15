@@ -11,9 +11,32 @@ require_once(__DIR__ . '/../../includes/database.php');
 require_once(__DIR__ . '/../../includes/funciones.php');
 
 session_start();
-require_once(__DIR__ . '/../../includes/chk_login.php');
 
 header('Content-Type: application/json; charset=utf-8');
+
+function j($a) {
+	if (ob_get_length()) {
+		ob_clean();
+	}
+	echo json_encode($a);
+	exit;
+}
+
+$idUsuarioSesion = intval($_SESSION[$config['codigo_unico']]['login_usuario_id'] ?? 0);
+
+if ($idUsuarioSesion <= 0) {
+	http_response_code(401);
+
+	j([
+		'ok' => false,
+		'session_expired' => true,
+		'mensaje' => 'La sesión expiró. Volvé a iniciar sesión.'
+	]);
+}
+
+require_once(__DIR__ . '/../../includes/chk_login.php');
+
+
 date_default_timezone_set('America/Montevideo');
 
 global $db;
@@ -153,7 +176,7 @@ if ($id <= 0) {
 	j(['ok' => false, 'mensaje' => 'ID inválido.']);
 }
 
-$idUsuario = intval($_SESSION[$config['codigo_unico']]['login_usuario_id'] ?? 0);
+$idUsuario = $idUsuarioSesion;
 
 $sets = [];
 
@@ -181,6 +204,16 @@ $sql = "
 	WHERE id_cotizaciones_generadas = " . intval($id) . "
 	LIMIT 1
 ";
+
+$usuario = null;
+if ($idUsuario > 0) {
+	$usuario = $db->query_first("
+		SELECT nombre, email
+		FROM admin_usuarios
+		WHERE id = " . intval($idUsuario) . "
+		LIMIT 1
+	");
+}
 
 $db->query("
     INSERT INTO cotizaciones_usuarios_historial
@@ -219,16 +252,6 @@ if (!$ok) {
 		'mensaje' => 'No se pudo guardar la tasación.',
 		'sql' => $sql
 	]);
-}
-
-$usuario = null;
-if ($idUsuario > 0) {
-	$usuario = $db->query_first("
-		SELECT nombre, email
-		FROM admin_usuarios
-		WHERE id = " . intval($idUsuario) . "
-		LIMIT 1
-	");
 }
 
 $modoEnvio = trim((string)($_POST['modo_envio'] ?? ''));

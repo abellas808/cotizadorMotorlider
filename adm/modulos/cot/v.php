@@ -870,6 +870,17 @@ function guardarTasacionInterna() {
 
 		btn.disabled = false;
 
+		if (xhr.status === 401) {
+			feedback.style.color = '#b94a48';
+			feedback.innerHTML = 'La sesión expiró. Redirigiendo al login...';
+
+			setTimeout(function() {
+				window.location.href = '/adm/login.php';
+			}, 800);
+
+			return;
+		}
+
 		if (xhr.status !== 200) {
 			feedback.style.color = '#b94a48';
 			feedback.innerHTML = 'Error HTTP ' + xhr.status + '<br><small>' + xhr.responseText + '</small>';
@@ -958,6 +969,17 @@ function enviarRespuestaWhatsapp(modoEnvio) {
 
 		actualizarBotonesEnvio();
 
+		if (xhr.status === 401) {
+			feedback.style.color = '#b94a48';
+			feedback.innerHTML = 'La sesión expiró. Redirigiendo al login...';
+
+			setTimeout(function() {
+				window.location.href = '/adm/login.php';
+			}, 800);
+
+			return;
+		}
+
 		if (xhr.status !== 200) {
 			feedback.style.color = '#b94a48';
 			feedback.innerHTML = 'Error HTTP ' + xhr.status + '<br><small>' + xhr.responseText + '</small>';
@@ -1030,6 +1052,17 @@ function enviarRespuestaFinal(modoEnvio) {
 
 		actualizarBotonesEnvio();
 
+		if (xhr.status === 401) {
+			feedback.style.color = '#b94a48';
+			feedback.innerHTML = 'La sesión expiró. Redirigiendo al login...';
+
+			setTimeout(function() {
+				window.location.href = '/adm/login.php';
+			}, 800);
+
+			return;
+		}
+
 		if (xhr.status !== 200) {
 			feedback.style.color = '#b94a48';
 			feedback.innerHTML = 'Error HTTP ' + xhr.status + '<br><small>' + xhr.responseText + '</small>';
@@ -1083,8 +1116,18 @@ function rechazarCompra() {
 	xhr.onreadystatechange = function() {
 		if (xhr.readyState !== 4) return;
 
+		if (xhr.status === 401) {
+			feedback.style.color = '#b94a48';
+			feedback.innerHTML = 'La sesión expiró. Redirigiendo al login...';
+
+			setTimeout(function() {
+				window.location.href = '/adm/login.php';
+			}, 800);
+
+			return;
+		}
+
 		if (xhr.status !== 200) {
-			btn.disabled = false;
 			feedback.style.color = '#b94a48';
 			feedback.innerHTML = 'Error HTTP ' + xhr.status + '<br><small>' + xhr.responseText + '</small>';
 			return;
