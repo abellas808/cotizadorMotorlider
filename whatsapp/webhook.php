@@ -2744,6 +2744,15 @@ if (
                 . " fue cancelada. Si querés coordinar una nueva fecha, respondé AGENDAR."
             );
 
+            wa_registrar_carrito_abandonado(
+                $idCotizacion,
+                $idConversacion,
+                $from,
+                $body !== '' ? $body : 'Canceló agenda',
+                'CANCELO_RECORDATORIO_AGENDA',
+                'RECORDATORIO_AGENDA'
+            );
+
             return;
         }
     } catch (Throwable $e) {
