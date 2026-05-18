@@ -45,14 +45,6 @@ const TWILIO_ACCOUNT_SID = 'AC4a648c5c55de9d9b1f1f6601b14d4c4d';
 const TWILIO_AUTH_TOKEN  = '58f767d26211d9d0c20ea687df00b4c3';
 const TWILIO_WHATSAPP_FROM = 'whatsapp:+59898057857';
 
-function j($a) {
-	if (ob_get_length()) {
-		ob_clean();
-	}
-	echo json_encode($a);
-	exit;
-}
-
 function registrar_mensaje_whatsapp_backend(
 	$idConversacion,
 	$telefono,
@@ -215,6 +207,16 @@ if ($idUsuario > 0) {
 	");
 }
 
+$ok = $db->query($sql);
+
+if (!$ok) {
+	j([
+		'ok' => false,
+		'mensaje' => 'No se pudo guardar la tasación.',
+		'sql' => $sql
+	]);
+}
+
 $db->query("
     INSERT INTO cotizaciones_usuarios_historial
     (
@@ -243,16 +245,6 @@ $db->query("
         NOW()
     )
 ");
-
-$ok = $db->query($sql);
-
-if (!$ok) {
-	j([
-		'ok' => false,
-		'mensaje' => 'No se pudo guardar la tasación.',
-		'sql' => $sql
-	]);
-}
 
 $modoEnvio = trim((string)($_POST['modo_envio'] ?? ''));
 
