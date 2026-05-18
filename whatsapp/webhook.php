@@ -2334,18 +2334,66 @@ function wa_registrar_carrito_abandonado(
     int $idCotizacion,
     int $idConversacion,
     string $telefono,
-    string $mensajeCliente
+    string $mensajeCliente,
+    string $motivoAbandono = 'SIN_DEFINIR',
+    string $origenAbandono = 'WHATSAPP_BOT',
+    string $usuario = ''
 ): void {
 
     wa_log('CARRITO_INTENTO', [
         'id_cotizacion' => $idCotizacion,
         'id_conversacion' => $idConversacion,
         'telefono' => $telefono,
-        'mensaje_cliente' => $mensajeCliente
+        'mensaje_cliente' => $mensajeCliente,
+        'motivo_abandono' => $motivoAbandono,
+        'origen_abandono' => $origenAbandono
     ]);
 
     $cn = wa_db();
     $cn->set_charset("utf8mb4");
+
+    $cot = null;
+
+    if ($idCotizacion > 0) {
+        $sqlCot = "
+            SELECT
+                nombre,
+                email,
+                marca,
+                familia AS modelo,
+                anio,
+                kilometros,
+                tasacion_final
+            FROM cotizaciones_generadas
+            WHERE id_cotizaciones_generadas = ?
+            LIMIT 1
+        ";
+
+        $stCot = $cn->prepare($sqlCot);
+
+        if ($stCot) {
+            $stCot->bind_param('i', $idCotizacion);
+            $stCot->execute();
+            $resCot = $stCot->get_result();
+            $cot = $resCot ? $resCot->fetch_assoc() : null;
+            $stCot->close();
+        } else {
+            wa_log('CARRITO_COT_PREPARE_ERROR', [
+                'error' => $cn->error,
+                'sql' => $sqlCot
+            ]);
+        }
+    }
+
+    $nombre = (string)($cot['nombre'] ?? '');
+    $email = (string)($cot['email'] ?? '');
+    $marca = (string)($cot['marca'] ?? '');
+    $modelo = (string)($cot['modelo'] ?? '');
+    $anio = intval($cot['anio'] ?? 0);
+    $kilometros = intval($cot['kilometros'] ?? 0);
+    $tasacionFinal = floatval($cot['tasacion_final'] ?? 0);
+
+    $idExistente = 0;
 
     $sql = "
         INSERT INTO carrito_abandonado
@@ -2353,49 +2401,68 @@ function wa_registrar_carrito_abandonado(
             id_cotizacion,
             id_conversacion,
             telefono,
+            nombre,
+            email,
+            marca,
+            modelo,
+            anio,
+            kilometros,
+            tasacion_final,
             mensaje_cliente,
+            motivo_abandono,
+            origen_abandono,
             fecha_respuesta,
+            usuario,
             estado,
+            observaciones,
+            fecha_ultima_gestion,
+            usuario_ultima_gestion,
             fecha_alta
         )
         VALUES
-        (?, ?, ?, ?, NOW(), 'PENDIENTE', NOW())
+        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, 'PENDIENTE', '', NULL, '', NOW())
     ";
 
     $st = $cn->prepare($sql);
 
     if (!$st) {
-        wa_log('CARRITO_PREPARE_ERROR', [
+        wa_log('CARRITO_INSERT_PREPARE_ERROR', [
             'error' => $cn->error,
             'sql' => $sql
         ]);
-
         $cn->close();
         return;
     }
 
     $st->bind_param(
-        'iiss',
+        'iisssssiidssss',
         $idCotizacion,
         $idConversacion,
         $telefono,
-        $mensajeCliente
+        $nombre,
+        $email,
+        $marca,
+        $modelo,
+        $anio,
+        $kilometros,
+        $tasacionFinal,
+        $mensajeCliente,
+        $motivoAbandono,
+        $origenAbandono,
+        $usuario
     );
 
     if (!$st->execute()) {
-        wa_log('CARRITO_EXECUTE_ERROR', [
+        wa_log('CARRITO_INSERT_ERROR', [
             'error' => $st->error,
             'errno' => $st->errno,
             'id_cotizacion' => $idCotizacion,
-            'id_conversacion' => $idConversacion,
-            'telefono' => $telefono,
-            'mensaje_cliente' => $mensajeCliente
+            'telefono' => $telefono
         ]);
     } else {
         wa_log('CARRITO_INSERT_OK', [
             'id_insertado' => $st->insert_id,
             'id_cotizacion' => $idCotizacion,
-            'id_conversacion' => $idConversacion,
             'telefono' => $telefono
         ]);
     }
@@ -2798,6 +2865,25 @@ if ($step === 'resultado_enviado' && $subStep === 'esperando_agenda') {
         $payload === 'tasacion_finalizar_no' ||
         in_array($bodyLower, ['en otro momento', 'no', 'ahora no'], true)
     ) {
+        $conv = wa_get_conversation($from);
+
+        $idConversacion = intval($conv['id'] ?? 0);
+
+        $idCotizacion = intval($userState['id_cotizacion'] ?? 0);
+
+        if ($idCotizacion <= 0) {
+            $idCotizacion = intval($conv['id_cotizacion'] ?? 0);
+        }
+
+        wa_registrar_carrito_abandonado(
+            $idCotizacion,
+            $idConversacion,
+            $from,
+            $body !== '' ? $body : 'En otro momento',
+            'NO_AGENDA_REVISION',
+            'PRETASACION'
+        );
+
         $nuevoEstado = $userState;
         $nuevoEstado['step'] = 'cerrado';
         $nuevoEstado['sub_step'] = 'no_agenda';
@@ -2807,7 +2893,9 @@ if ($step === 'resultado_enviado' && $subStep === 'esperando_agenda') {
             $nuevoEstado,
             'CERRADO',
             'BOT',
-            $profileName !== '' ? $profileName : null
+            $profileName !== '' ? $profileName : null,
+            null,
+            $idCotizacion > 0 ? $idCotizacion : null
         );
 
         twiml_message_and_save(
@@ -2907,7 +2995,9 @@ if ($buttonPayload === 'tasacion_finalizar_no') {
         $idCotizacion,
         $idConversacion,
         $from,
-        $body !== '' ? $body : 'Por ahora no ❌'
+        $body !== '' ? $body : 'Por ahora no ❌',
+        'TASACION_FINAL_RECHAZADA',
+        'TASACION_FINAL'
     );
 
     $userState['step'] = 'cerrado';
@@ -3220,7 +3310,9 @@ if (
             $idCotizacion,
             $idConversacion,
             $from,
-            $body !== '' ? $body : 'Por ahora no ❌'
+            $body !== '' ? $body : 'Por ahora no ❌',
+            'TASACION_FINAL_RECHAZADA',
+            'TASACION_FINAL'
         );
 
         $userState['step'] = 'cerrado';
