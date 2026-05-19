@@ -61,6 +61,40 @@ if (!empty($elemento['id_usuario_cotizo']) && isset($db)) {
 	');
 }
 
+$agendaNoAsistio = null;
+$puedeMarcarNoAsistio = false;
+
+if (isset($db) && !empty($elemento['telefono'])) {
+
+	$telefonoAgenda = trim((string)$elemento['telefono']);
+
+	$agendaNoAsistio = $db->query_first("
+		SELECT 
+			id_agenda,
+			fecha,
+			hora,
+			cancelado,
+			finalizada,
+			confirmacion_asistencia,
+			detalle_estado
+		FROM agendas
+		WHERE telefono = '" . $db->escape($telefonoAgenda) . "'
+		  AND cancelado = 0
+		  AND CONCAT(fecha, ' ', hora) < NOW()
+		ORDER BY fecha DESC, hora DESC, id_agenda DESC
+		LIMIT 1
+	");
+
+	$estadoActual = intval($elemento['estado_id'] ?? 0);
+	$tasacionFinal = floatval($elemento['tasacion_final'] ?? 0);
+
+	$puedeMarcarNoAsistio = (
+		$agendaNoAsistio
+		&& trim((string)$agendaNoAsistio['detalle_estado']) === 'Finalizada automáticamente por fecha/hora'
+		&& $tasacionFinal <= 0
+	);
+}
+
 if (!function_exists('cot_v_money')) {
 	function cot_v_money($valor) {
 		if ($valor === null || $valor === '' || !is_numeric($valor)) {
@@ -106,6 +140,8 @@ if (!function_exists('cot_v_estado_cotizacion_texto')) {
                 return 'INSPECIÓN REALIZADA';
 			case 11:
                 return 'COTIZACIÓN FINAL';
+			case 12:
+    			return 'NO ASISTIÓ';
 			default:
 				return 'NO COTIZÓ';
 		}
@@ -516,6 +552,28 @@ if (!function_exists('cot_v_hora_chat')) {
 					</label>
 				</div>
 			</div>
+
+			<div class="cot-item">
+			<div class="cot-label">No asistió</div>
+			<div class="cot-value">
+				<label style="display:flex; align-items:center; gap:8px; margin:0;">
+					<input
+						type="checkbox"
+						id="chk_no_asistio"
+						onchange="marcarNoAsistio(this.checked)"
+						<?php echo ((int)($elemento['estado_id'] ?? 0) === 12) ? 'checked' : ''; ?>
+						<?php echo $puedeMarcarNoAsistio ? '' : 'disabled'; ?>
+					>
+					<span>No asistió a la agenda</span>
+				</label>
+
+				<?php if (!$puedeMarcarNoAsistio && ((int)($elemento['estado_id'] ?? 0) !== 12)): ?>
+					<small style="display:block; color:#777; margin-top:4px;">
+						Disponible solo si la hora de agenda ya pasó y no existe tasación final enviada.
+					</small>
+				<?php endif; ?>
+			</div>
+		</div>
 
 			<?php if (($elemento['estado'] ?? '') == 'PENDIENTE'): ?>
 			<div class="cot-item"><div class="cot-label">Motivo</div><div class="cot-value estado-pendiente"><?php echo_s($elemento['detalle_estado']); ?></div></div>
@@ -1185,6 +1243,48 @@ function guardarAvanzo(checked) {
             alert('Error al guardar.');
 
             $('#chk_avanzo').prop('checked', !checked);
+        }
+    });
+}
+
+function marcarNoAsistio(checked) {
+
+    if (!checked) {
+        $('#chk_no_asistio').prop('checked', false);
+        return;
+    }
+
+    if (!confirm('¿Confirmás marcar esta cotización como NO ASISTIÓ? Se enviará al listado de carritos abandonados.')) {
+        $('#chk_no_asistio').prop('checked', false);
+        return;
+    }
+
+    $.ajax({
+        url: '/adm/modulos/cot/ajax_marcar_no_asistio.php',
+        type: 'POST',
+        dataType: 'json',
+        data: {
+            id: <?php echo intval($elemento['id_cotizaciones_generadas']); ?>
+        },
+        success: function(resp) {
+            if (!resp || !resp.ok) {
+                alert(resp && resp.mensaje ? resp.mensaje : 'No se pudo marcar como NO ASISTIÓ.');
+                $('#chk_no_asistio').prop('checked', false);
+                return;
+            }
+
+            location.reload();
+        },
+        error: function(xhr, textStatus, errorThrown) {
+            alert(
+                'Error al marcar NO ASISTIÓ.\n\n' +
+                'HTTP: ' + xhr.status + '\n' +
+                'Estado: ' + textStatus + '\n' +
+                'Error: ' + errorThrown + '\n\n' +
+                'Respuesta:\n' + xhr.responseText
+            );
+
+            $('#chk_no_asistio').prop('checked', false);
         }
     });
 }
