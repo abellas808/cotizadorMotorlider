@@ -2,11 +2,21 @@
 
 if (!isset($sistema_iniciado)) exit();
 
+function ca_tel_formateado($telefono) {
+    $telefono = trim((string)$telefono);
+    $telefono = str_replace('whatsapp:+598', '0', $telefono);
+    $telefono = str_replace('+598', '0', $telefono);
+    $telefono = str_replace('whatsapp:', '', $telefono);
+    return $telefono;
+}
+
 $listado = $db->query("
     SELECT
         ca.*,
         cg.auto AS cot_auto,
         cg.nombre AS cot_nombre,
+        cg.pretasacion_desde,
+        cg.pretasacion_hasta,
         cg.tasacion_final AS cot_tasacion_final
     FROM carrito_abandonado ca
     LEFT JOIN cotizaciones_generadas cg
@@ -35,8 +45,10 @@ require_once('sistema_pre_contenido.php');
             <th>Teléfono</th>
             <th>Cliente</th>
             <th>Vehículo</th>
+            <th>Pre tasación</th>
             <th>Tasación final</th>
             <th>Respuesta</th>
+            <th>Punto abandono</th>
             <th>Estado</th>
             <th></th>
         </tr>
@@ -51,9 +63,23 @@ require_once('sistema_pre_contenido.php');
                 <td><?php echo_s($row['id']); ?></td>
                 <td><?php echo_s($row['fecha_respuesta']); ?></td>
                 <td><?php echo_s($row['id_cotizacion']); ?></td>
-                <td><?php echo_s($row['telefono']); ?></td>
+                <td><?php echo_s(ca_tel_formateado($row['telefono'])); ?></td>
                 <td><?php echo_s($row['cot_nombre']); ?></td>
                 <td><?php echo_s($row['cot_auto']); ?></td>
+
+                <td>
+                    <?php
+                    $desde = (float)($row['pretasacion_desde'] ?? 0);
+                    $hasta = (float)($row['pretasacion_hasta'] ?? 0);
+
+                    if ($desde > 0 || $hasta > 0) {
+                        echo_s('USD ' . number_format($desde, 0, ',', '.') . ' a USD ' . number_format($hasta, 0, ',', '.'));
+                    } else {
+                        echo_s('-');
+                    }
+                    ?>
+                </td>
+
                 <td>
                     <?php
                     if ($row['cot_tasacion_final'] !== null && $row['cot_tasacion_final'] !== '') {
@@ -63,8 +89,23 @@ require_once('sistema_pre_contenido.php');
                     }
                     ?>
                 </td>
+
                 <td><?php echo_s($row['mensaje_cliente']); ?></td>
+
+                <td>
+                    <?php
+                    if (!empty($row['motivo_abandono'])) {
+                        echo_s($row['motivo_abandono']);
+                    } elseif (!empty($row['origen_abandono'])) {
+                        echo_s($row['origen_abandono']);
+                    } else {
+                        echo_s('-');
+                    }
+                    ?>
+                </td>
+
                 <td><?php echo_s($row['estado']); ?></td>
+
                 <td>
                     <?php if (intval($row['id_cotizacion']) > 0) { ?>
                         <a class="btn btn-small" href="?m=cot_v&i=<?php echo intval($row['id_cotizacion']); ?>">
@@ -79,7 +120,7 @@ require_once('sistema_pre_contenido.php');
     <?php } else { ?>
 
         <tr>
-            <td colspan="10" class="tc">
+            <td colspan="12" class="tc">
                 No hay carritos abandonados.
             </td>
         </tr>
