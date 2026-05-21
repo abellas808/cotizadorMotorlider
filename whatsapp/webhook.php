@@ -835,13 +835,15 @@ function wa_insert_message_history(
         throw new RuntimeException('Error prepare wa_insert_message_history: ' . $cn->error);
     }
 
+    $mensajeParaGuardar = wa_limpiar_emojis_para_historial($mensaje);
+
     $st->bind_param(
         'isssssss',
         $idConversacion,
         $telefono,
         $direccion,
         $emisor,
-        $mensaje,
+        $mensajeParaGuardar,
         $metaJson,
         $sidMensaje,
         $fecha
@@ -849,6 +851,20 @@ function wa_insert_message_history(
     $st->execute();
     $st->close();
     $cn->close();
+}
+
+function wa_limpiar_emojis_para_historial(string $texto): string
+{
+    // Quita emojis y símbolos compuestos que pueden romper historial/simulador
+    $texto = preg_replace('/[\x{1F000}-\x{1FAFF}]/u', '', $texto);
+
+    // Quita variation selectors como el "️" de 🗓️
+    $texto = preg_replace('/[\x{FE00}-\x{FE0F}]/u', '', $texto);
+
+    // Quita zero-width joiners
+    $texto = preg_replace('/\x{200D}/u', '', $texto);
+
+    return trim($texto);
 }
 
 function wa_get_user_data(string $telefono): array
@@ -5315,6 +5331,24 @@ function enviar_template_confirmacion($to, $fecha, $hora) {
 
 	$response = curl_exec($ch);
 	curl_close($ch);
+
+    $mensajeHistorial =
+        "Resumen de tu agenda:\n\n"
+        . "Fecha: " . $fecha . "\n"
+        . "Hora: " . substr($hora, 0, 5) . "\n"
+        . "Lugar: Av. de las Américas 7868 (Frente al Puente de las Américas)\n"
+        . "https://n9.cl/1q4vx";
+
+    wa_save_last_bot_message(
+        $to,
+        $mensajeHistorial,
+        [
+            'origen' => 'template_confirmacion_agenda',
+            'content_sid' => TWILIO_TEMPLATE_CONFIRMAR_AGENDA
+        ],
+        '',
+        'BOT'
+    );
 
 	return $response;
 }
