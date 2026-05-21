@@ -91,6 +91,7 @@ $config['modulos'][] = 'pds';
 $config['modulos'][] = 'aud';
 $config['modulos'][] = 'usd';
 $config['modulos'][] = 'cab';
+$config['modulos'][] = 'perdidos';
 //$config['modulos'][] = 'fcot';
 //$config['modulos'][] = 'nov';
 
