@@ -5,6 +5,7 @@ global $db;
 
 $marcas = [];
 $modelosPorMarca = [];
+$versionesPorModelo = [];
 
 function _pickArr($row, $keys, $default = null) {
 	foreach ($keys as $k) {
@@ -29,11 +30,19 @@ function findSchemaForTable($db, $tableName) {
 try {
 	$schemaMarca  = findSchemaForTable($db, 'act_marcas');
 	$schemaModelo = findSchemaForTable($db, 'act_modelo');
+	$schemaVersion = findSchemaForTable($db, 'act_version');
 
 	$tblMarca  = $schemaMarca  ? "{$schemaMarca}.act_marcas"  : "act_marcas";
 	$tblModelo = $schemaModelo ? "{$schemaModelo}.act_modelo" : "act_modelo";
+	$tblVersion = $schemaVersion ? "{$schemaVersion}.act_version" : "act_version";
 
-	$qm = $db->query("SELECT * FROM {$tblMarca} ORDER BY nombre");
+	$qm = $db->query("
+		SELECT *
+		FROM {$tblMarca}
+		WHERE prioridad = 1
+		ORDER BY nombre
+	");
+
 	while ($r = $db->fetch_array($qm)) {
 		$id  = _pickArr($r, ['id_marca','id','marca_id']);
 		$nom = _pickArr($r, ['nombre','name','marca']);
@@ -41,20 +50,56 @@ try {
 		$marcas[] = ['id' => (string)$id, 'nombre' => (string)$nom];
 	}
 
-	$qo = $db->query("SELECT * FROM {$tblModelo} ORDER BY nombre");
+	$qo = $db->query("
+		SELECT *
+		FROM {$tblModelo}
+		WHERE prioridad = 1
+		ORDER BY nombre
+	");
+
 	while ($r = $db->fetch_array($qo)) {
 		$idMarca = _pickArr($r, ['id_marca','marca_id']);
 		$idMod   = _pickArr($r, ['id_model','id_modelo','id_mdoelo','id','modelo_id']);
 		$nomMod  = _pickArr($r, ['nombre','name','modelo']);
+
 		if ($idMarca === null || $idMod === null || $nomMod === null) continue;
 
 		$key = (string)$idMarca;
 		if (!isset($modelosPorMarca[$key])) $modelosPorMarca[$key] = [];
-		$modelosPorMarca[$key][] = ['id' => (string)$idMod, 'nombre' => (string)$nomMod];
+
+		$modelosPorMarca[$key][] = [
+			'id' => (string)$idMod,
+			'nombre' => (string)$nomMod
+		];
 	}
+
+	$qv = $db->query("
+		SELECT *
+		FROM {$tblVersion}
+		WHERE activo = 1
+		ORDER BY nombre
+	");
+
+	while ($r = $db->fetch_array($qv)) {
+		$idModelo = _pickArr($r, ['id_modelo','id_model','modelo_id']);
+		$idVersion = _pickArr($r, ['id_version','id']);
+		$nomVersion = _pickArr($r, ['nombre','name','version']);
+
+		if ($idModelo === null || $idVersion === null || $nomVersion === null) continue;
+
+		$key = (string)$idModelo;
+		if (!isset($versionesPorModelo[$key])) $versionesPorModelo[$key] = [];
+
+		$versionesPorModelo[$key][] = [
+			'id' => (string)$idVersion,
+			'nombre' => (string)$nomVersion
+		];
+	}
+
 } catch (\Throwable $e) {
 	$marcas = [];
 	$modelosPorMarca = [];
+	$versionesPorModelo = [];
 }
 ?>
 
@@ -459,7 +504,9 @@ try {
 			<div class="mlapify-form-row">
 				<div class="mlapify-form-label">Versión</div>
 				<div class="mlapify-form-field">
-					<input type="text" id="cotiza_version" placeholder="Ej: Full, GLS, LTZ" />
+					<select id="cotiza_version" disabled>
+						<option value="">-- Seleccionar --</option>
+					</select>
 				</div>
 			</div>
 
@@ -569,6 +616,7 @@ try {
 
 <script>
 	const APIFY_MODELOS_POR_MARCA = <?php echo json_encode($modelosPorMarca, JSON_UNESCAPED_UNICODE); ?>;
+	const APIFY_VERSIONES_POR_MODELO = <?php echo json_encode($versionesPorModelo, JSON_UNESCAPED_UNICODE); ?>;
 
 	let apifyCorridaId = null;
 	let apifyTimer = null;
@@ -854,6 +902,29 @@ try {
 			$m.append('<option value="' + String(x.id).replace(/"/g,'&quot;') + '">' + $('<div>').text(x.nombre).html() + '</option>');
 		});
 		$m.prop('disabled', false);
+	}
+
+	function cargarVersionesEnSelect(idModelo, selectDestino) {
+		const $v = $(selectDestino);
+		$v.empty();
+
+		if (!idModelo || !APIFY_VERSIONES_POR_MODELO[idModelo] || !APIFY_VERSIONES_POR_MODELO[idModelo].length) {
+			$v.append('<option value="">-- Sin versiones --</option>');
+			$v.prop('disabled', true);
+			return;
+		}
+
+		$v.append('<option value="">-- Seleccionar --</option>');
+
+		APIFY_VERSIONES_POR_MODELO[idModelo].forEach(x => {
+			$v.append(
+				'<option value="' + String(x.nombre).replace(/"/g,'&quot;') + '">' +
+				$('<div>').text(x.nombre).html() +
+				'</option>'
+			);
+		});
+
+		$v.prop('disabled', false);
 	}
 
 	function cargarModelosPorMarca(idMarca) {
@@ -1478,6 +1549,11 @@ try {
 
 	$('#cotiza_marca').on('change', function(){
 		cargarModelosCotiza($(this).val());
+		cargarVersionesEnSelect('', '#cotiza_version');
+	});
+
+	$('#cotiza_modelo').on('change', function(){
+		cargarVersionesEnSelect($(this).val(), '#cotiza_version');
 	});
 
 	$('#btn_apify_filtrar').on('click', function(){
