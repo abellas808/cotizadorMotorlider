@@ -1,14 +1,16 @@
 <?php
 
 /**
- * /adm/modulos/cot/detectar_conversaciones_abandonadas.php
+ * Detecta conversaciones abandonadas ANTES de generar cotización.
  *
- * Detecta conversaciones iniciadas en WhatsApp que no llegaron a generar cotización.
+ * Debe registrar solo chats donde el cliente abandonó en pasos previos:
+ * inicio, marca, modelo, año, versión, ficha, kilómetros, tipo venta, valor pretendido.
  *
- * Lógica:
- * 1. Busca conversaciones sin id_cotizacion.
- * 2. Usa whatsapp_conversacion_mensajes para detectar el último mensaje real.
- * 3. Si el último mensaje fue ENTRANTE y pasaron X horas, registra abandono.
+ * NO debe registrar:
+ * - conversaciones que ya tienen cotización
+ * - mensajes enviados desde cot/v
+ * - casos PENDIENTE_RESPUESTA_HUMANA
+ * - casos donde ya se generó una cotización
  */
 
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
@@ -34,54 +36,76 @@ echo "=====================================\n";
 echo " DETECTOR CONVERSACIONES ABANDONADAS\n";
 echo "=====================================\n\n";
 
-/**
- * Para pruebas podés dejar 0.
- * Para producción recomendado: 24.
- */
 $HORAS_ESPERA = 24;
 
 /**
- * Steps previos a generar cotización.
+ * SOLO estos pasos pueden ir a conversaciones perdidas.
+ * Todo lo demás queda afuera.
  */
 $stepsAbandono = [
     'inicio',
     'marca',
+    'esperando_marca',
     'modelo',
+    'esperando_modelo',
     'modelo_sugerido',
     'anio',
+    'año',
+    'esperando_anio',
+    'esperando_año',
     'version',
+    'versión',
+    'esperando_version',
+    'esperando_versión',
     'ficha_tecnica',
+    'ficha',
+    'esperando_ficha_tecnica',
+    'kilometros',
+    'kilómetros',
+    'esperando_kilometros',
+    'esperando_kilómetros',
     'duenios',
+    'dueños',
     'tipo_venta',
-    'kilometros'
+    'esperando_tipo_venta',
+    'precio_pretendido',
+    'valor_pretendido',
+    'pretendido',
+    'esperando_precio_pretendido',
+    'esperando_valor_pretendido'
 ];
 
 $stepsSql = [];
-
 foreach ($stepsAbandono as $s) {
     $stepsSql[] = "'" . $db->escape($s) . "'";
 }
 
 /**
- * Busca conversaciones candidatas:
- * - Sin cotización generada.
- * - En un step previo a cotizar.
- * - El último mensaje real está en whatsapp_conversacion_mensajes.
- * - El último mensaje fue ENTRANTE.
- * - Pasaron X horas desde ese último mensaje.
- * - No existe ya un abandono pendiente o en gestión.
+ * Query:
+ * 1) Último mensaje real del teléfono debe ser SALIENTE del bot.
+ * 2) Deben haber pasado X horas.
+ * 3) El step debe estar dentro de los pasos previos a cotizar.
+ * 4) No debe tener id_cotizacion.
+ * 5) No debe existir cotización generada para ese teléfono después del inicio de la conversación.
+ * 6) No debe existir ya como pendiente/en gestión en conversaciones abandonadas.
  */
 $sql = "
     SELECT
         wc.*,
-        COALESCE(
-            NULLIF(wc.step_actual, ''),
-            JSON_UNQUOTE(JSON_EXTRACT(wc.datos_json, '$.step'))
-        ) AS step_real,
+
+        LOWER(TRIM(
+            COALESCE(
+                NULLIF(wc.step_actual, ''),
+                JSON_UNQUOTE(JSON_EXTRACT(wc.datos_json, '$.step')),
+                ''
+            )
+        )) AS step_real,
+
         ult.fecha AS fecha_ultimo_mensaje_real,
         ult.mensaje AS ultimo_mensaje_real,
         ult.direccion AS direccion_ultimo_mensaje,
         ult.emisor AS emisor_ultimo_mensaje
+
     FROM whatsapp_conversaciones wc
 
     INNER JOIN (
@@ -104,6 +128,21 @@ $sql = "
       AND ult.direccion = 'SALIENTE'
 
       AND ult.fecha <= DATE_SUB(NOW(), INTERVAL " . intval($HORAS_ESPERA) . " HOUR)
+
+      AND LOWER(TRIM(
+            COALESCE(
+                NULLIF(wc.step_actual, ''),
+                JSON_UNQUOTE(JSON_EXTRACT(wc.datos_json, '$.step')),
+                ''
+            )
+          )) IN (" . implode(',', $stepsSql) . ")
+
+      AND NOT EXISTS (
+          SELECT 1
+          FROM cotizaciones_generadas cg
+          WHERE cg.telefono = wc.telefono
+            AND cg.fecha >= DATE(wc.fecha_alta)
+      )
 
       AND NOT EXISTS (
           SELECT 1
@@ -131,7 +170,6 @@ while ($conv = $db->fetch_array($res)) {
 
     if (!empty($conv['datos_json'])) {
         $tmp = json_decode($conv['datos_json'], true);
-
         if (is_array($tmp)) {
             $datos = $tmp;
         }
@@ -146,8 +184,8 @@ while ($conv = $db->fetch_array($res)) {
     $tipoVenta = trim((string)($datos['tipo_venta'] ?? ''));
 
     echo "Conversación candidata: " . intval($conv['id']) .
-         " | Step: " . $conv['step_actual'] .
-         " | Último mensaje: " . $conv['ultimo_mensaje_real'] .
+         " | Step real: " . $conv['step_real'] .
+         " | Último mensaje BOT: " . $conv['ultimo_mensaje_real'] .
          " | Fecha: " . $conv['fecha_ultimo_mensaje_real'] . "\n";
 
     $sqlInsert = "
@@ -194,7 +232,7 @@ while ($conv = $db->fetch_array($res)) {
             '" . $db->escape($conv['email']) . "',
 
             '" . $db->escape($conv['estado']) . "',
-            '" . $db->escape($conv['step_actual']) . "',
+            '" . $db->escape($conv['step_real']) . "',
             '" . $db->escape($conv['sub_step_actual']) . "',
 
             '" . $db->escape($conv['ultimo_mensaje_cliente']) . "',
@@ -227,19 +265,13 @@ while ($conv = $db->fetch_array($res)) {
 
     if ($ok) {
         $totalInsertados++;
-
-        echo "OK INSERT conversación abandonada ID conversación: "
-            . intval($conv['id']) . "\n";
+        echo "OK INSERT conversación abandonada ID conversación: " . intval($conv['id']) . "\n";
     } else {
-        echo "ERROR insertando conversación ID: "
-            . intval($conv['id']) . "\n";
+        echo "ERROR insertando conversación ID: " . intval($conv['id']) . "\n";
     }
 }
 
 echo "\n=====================================\n";
 echo "TOTAL INSERTADOS: {$totalInsertados}\n";
-echo "=====================================\n";
-
+echo "\n=====================================\n";
 echo "</pre>";
-
-ob_end_flush();
