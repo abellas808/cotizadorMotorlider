@@ -202,8 +202,11 @@ $listado = $db->query("
                         <?php echo_s($row['estado']); ?>
                     </td>
 
-                    <td>
-                        <a class="btn" href="?m=perdidos_v&i=<?php echo intval($row['id']); ?>">
+                    <td class="tc">
+                        <a
+                            href="?m=perdidos_v&i=<?php echo intval($row['id']); ?>"
+                            class="btn btn-default"
+                        >
                             Ver conversación
                         </a>
                     </td>

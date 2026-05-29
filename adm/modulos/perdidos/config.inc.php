@@ -5,7 +5,8 @@ $sistema['modulos']['perdidos'] = array(
     'prefijo' => 'perdidos',
     'botonera' => 1,
     'paginas' => array(
-        'l' => 'l.php'
+        'l' => 'l.php',
+        'v' => 'v.php'
     ),
     'permisos' => array(
         1 => 'Solo ver',
