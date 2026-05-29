@@ -2675,7 +2675,7 @@ $bodyNorm = wa_normalizar_texto($body);
 $userState = wa_get_user_data($from);
 $currentConv = wa_get_conversation($from);
 $currentEstado = (string)($currentConv['estado'] ?? 'INICIO');
-
+$buttonPayload = trim((string)($_POST['ButtonPayload'] ?? ''));
 $buttonPayloadAgenda = trim((string)($_POST['ButtonPayload'] ?? ''));
 
 if (
@@ -3119,7 +3119,11 @@ Te estaremos enviando un recordatorio antes de la inspección."
         );
     }
 
-    if (wa_respuesta_es_no($body) || wa_es_cancelar_agenda($body)) {
+    if (
+    $buttonPayload === 'cancelar_agenda_final'
+    || wa_respuesta_es_no($body)
+    || ($buttonPayload === '' && wa_es_cancelar_agenda($body))
+    ) {
         try {
             wa_marcar_confirmacion_agenda(
                 (int)$agendaPendienteConfirmacionGlobal['id_agenda'],
@@ -3160,15 +3164,52 @@ Te estaremos enviando un recordatorio antes de la inspección."
             'id_agenda' => (int)$agendaPendienteConfirmacionGlobal['id_agenda']
         ]);
 
+        $conv = wa_get_conversation($from);
+        $idConversacion = intval($conv['id'] ?? 0);
+
+        $idCotizacion = wa_obtener_cotizacion_actual_para_agenda(
+            $from,
+            $userState,
+            (int)($conv['id_cotizacion'] ?? 0)
+        );
+
+        if ($idCotizacion <= 0) {
+            $contexto = wa_obtener_contexto_completo_por_telefono($from);
+            $idCotizacion = intval($contexto['id_cotizaciones_generadas'] ?? 0);
+        }
+
+        if ($idCotizacion > 0) {
+            wa_registrar_carrito_abandonado(
+                $idCotizacion,
+                $idConversacion,
+                $from,
+                'Cliente canceló la confirmación de agenda',
+                'NO_CONFIRMACION_AGENDA',
+                'CONFIRMACION_AGENDA'
+            );
+
+            wa_log('AGENDA_CANCELADA_CARRITO_OK', [
+                'from' => $from,
+                'id_cotizacion' => $idCotizacion,
+                'id_conversacion' => $idConversacion
+            ]);
+        } else {
+            wa_log('AGENDA_CANCELADA_CARRITO_SIN_COTIZACION', [
+                'from' => $from,
+                'agenda' => $agendaPendienteConfirmacionGlobal
+            ]);
+        }
+
         twiml_message_and_save(
             $from,
             "Perfecto. Tu agenda del "
             . wa_formatear_fecha_chat((string)$agendaPendienteConfirmacionGlobal['fecha'])
             . " a las " . substr((string)$agendaPendienteConfirmacionGlobal['hora'], 0, 5)
             . " fue cancelada.
-
-Si querés coordinar una nueva fecha, respondé AGENDAR."
+            Si querés coordinar una nueva fecha, respondé AGENDAR."
         );
+
+        return;
     }
 }
 
@@ -3187,7 +3228,10 @@ if (in_array($bodyNorm, ['hola', 'hi', 'menu', 'inicio'], true)) {
     wa_preguntar_inicio_cotizar_interactiva($from);
 }
 
-if (in_array($bodyNorm, ['cancelar', 'salir'], true)) {
+if (
+    in_array($bodyNorm, ['cancelar', 'salir'], true)
+    && $buttonPayload === ''
+) {
     wa_set_user_state(
         $from,
         ['step' => null],
@@ -3201,6 +3245,7 @@ if (in_array($bodyNorm, ['cancelar', 'salir'], true)) {
         "Perfecto. Cancelé el flujo actual.\n\n"
         . "Cuando quieras volver a empezar, escribí COTIZAR."
     );
+    return;
 }
 
 if ($bodyNorm === 'cotizar') {
@@ -3219,8 +3264,6 @@ if ($bodyNorm === 'cotizar') {
         . "(Ej: Chevrolet, BYD, Volkswagen)"
     );
 }
-
-$buttonPayload = trim((string)($_POST['ButtonPayload'] ?? ''));
 
 if (
     ($buttonPayload === 'tasacion_finalizar_si' || $buttonPayload === 'tasacion_finalizar_no')
@@ -5001,22 +5044,7 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
 
     if ($buttonPayload !== '') {
         $respuestaNorm = wa_normalizar_texto($buttonPayload);
-    }
-
-    if (wa_es_cancelar_agenda($body)) {
-        $nuevoEstado = $userState;
-        $nuevoEstado['step'] = 'cerrado';
-
-        wa_set_user_state(
-            $from,
-            $nuevoEstado,
-            'CERRADO',
-            'BOT',
-            $profileName !== '' ? $profileName : null
-        );
-
-        twiml_message_and_save($from, "Perfecto. Cancelé la agenda.\n\nGracias por comunicarte con Motorlider.");
-    }
+    }    
 
     if (wa_es_atras($body)) {
         $nuevoEstado = $userState;
@@ -5047,12 +5075,44 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
         );
     }
 
-    if (!in_array($respuestaNorm, ['confirmar', '.confirmar', 'si', 'ok'], true)) {
+    if ($buttonPayload === 'confirmar_agenda_final') {
         twiml_message_and_save(
             $from,
             "Para agendar, respondé CONFIRMAR.\n"
             //. "También podés escribir ATRAS o CANCELAR."
         );
+    }
+
+    if ($buttonPayload === 'cancelar_agenda_final') {
+
+        $conv = wa_get_conversation($from);
+        $idConversacion = intval($conv['id'] ?? 0);
+
+        $idCotizacion = intval($userState['id_cotizacion'] ?? 0);
+
+        if ($idCotizacion > 0) {
+            wa_registrar_carrito_abandonado(
+                $idCotizacion,
+                $idConversacion,
+                $from,
+                'Cliente canceló la confirmación de agenda',
+                'NO_CONFIRMACION_AGENDA',
+                'CONFIRMACION_AGENDA'
+            );
+        }
+
+        wa_set_user_state($from, [
+            'step' => 'cerrado',
+            'sub_step' => 'agenda_cancelada_final',
+            'id_cotizacion' => $idCotizacion
+        ], 'CERRADO', 'BOT', $profileName !== '' ? $profileName : null);
+
+        twiml_message_and_save(
+            $from,
+            "Perfecto, cancelamos la solicitud de agenda.\n\nQuedamos a las órdenes por si querés retomarlo más adelante."
+        );
+
+        return;
     }
 
     $location = (int)($userState['agenda_location'] ?? wa_agenda_location_id());
@@ -5101,6 +5161,21 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
             . "⏰ Hora: " . substr($hora, 0, 5) . "\n\n"
             . "Te esperamos en Motorlider. ¡Nos vemos pronto! 👋🏻 "
         );
+    }
+
+    if (wa_es_cancelar_agenda($body)) {
+        $nuevoEstado = $userState;
+        $nuevoEstado['step'] = 'cerrado';
+
+        wa_set_user_state(
+            $from,
+            $nuevoEstado,
+            'CERRADO',
+            'BOT',
+            $profileName !== '' ? $profileName : null
+        );
+
+        twiml_message_and_save($from, "Perfecto. Cancelé la agenda.\n\nGracias por comunicarte con Motorlider.");
     }
 
     $respHorariosValidacion = wa_obtener_horarios_agenda($location, $fecha);
