@@ -10,6 +10,45 @@ function ca_tel_formateado($telefono) {
     return $telefono;
 }
 
+$buscar = trim((string)($_GET['buscar'] ?? ''));
+$puntoAbandono = trim((string)($_GET['punto_abandono'] ?? ''));
+
+$where = "1=1";
+
+if ($buscar !== '') {
+    $b = $db->escape($buscar);
+
+    $where .= "
+        AND (
+            ca.id LIKE '%{$b}%'
+            OR ca.id_cotizacion LIKE '%{$b}%'
+            OR ca.telefono LIKE '%{$b}%'
+            OR ca.nombre LIKE '%{$b}%'
+            OR ca.email LIKE '%{$b}%'
+            OR ca.marca LIKE '%{$b}%'
+            OR ca.modelo LIKE '%{$b}%'
+            OR ca.mensaje_cliente LIKE '%{$b}%'
+            OR ca.motivo_abandono LIKE '%{$b}%'
+            OR ca.origen_abandono LIKE '%{$b}%'
+            OR ca.estado LIKE '%{$b}%'
+            OR cg.auto LIKE '%{$b}%'
+            OR cg.nombre LIKE '%{$b}%'
+        )
+    ";
+}
+
+if ($puntoAbandono !== '') {
+    $where .= " AND ca.motivo_abandono = '" . $db->escape($puntoAbandono) . "'";
+}
+
+$puntosAbandono = $db->query("
+    SELECT DISTINCT motivo_abandono
+    FROM carrito_abandonado
+    WHERE motivo_abandono IS NOT NULL
+      AND motivo_abandono <> ''
+    ORDER BY motivo_abandono ASC
+");
+
 $listado = $db->query("
     SELECT
         ca.*,
@@ -21,6 +60,7 @@ $listado = $db->query("
     FROM carrito_abandonado ca
     LEFT JOIN cotizaciones_generadas cg
         ON cg.id_cotizaciones_generadas = ca.id_cotizacion
+    WHERE {$where}
     ORDER BY ca.fecha_respuesta DESC, ca.id DESC
 ");
 
@@ -35,6 +75,37 @@ require_once('sistema_pre_contenido.php');
 </div>
 
 <div class="sep_titulo"></div>
+
+<form method="get" style="margin-bottom:20px;">
+    <input type="hidden" name="m" value="cab_l">
+
+    <input
+        type="text"
+        name="buscar"
+        placeholder="Buscar ID, cotización, teléfono, cliente, vehículo, respuesta..."
+        value="<?php echo_s($buscar); ?>"
+        style="width:420px;"
+    >
+
+    <select name="punto_abandono" style="width:280px;">
+        <option value="">Todos los puntos de abandono</option>
+
+        <?php if ($puntosAbandono) { ?>
+            <?php while ($pa = $db->fetch_array($puntosAbandono)) { ?>
+                <option
+                    value="<?php echo_s($pa['motivo_abandono']); ?>"
+                    <?php echo ($puntoAbandono === $pa['motivo_abandono']) ? 'selected' : ''; ?>
+                >
+                    <?php echo_s($pa['motivo_abandono']); ?>
+                </option>
+            <?php } ?>
+        <?php } ?>
+    </select>
+
+    <button type="submit" class="btn">Buscar</button>
+
+    <a href="?m=cab_l" class="btn">Limpiar</a>
+</form>
 
 <table class="table table-hover">
     <thead>
