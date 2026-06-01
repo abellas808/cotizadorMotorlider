@@ -5080,21 +5080,11 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
     // CANCELAR desde botón final
     if ($buttonPayload === 'cancelar_agenda_final') {
 
-        $conv = wa_get_conversation($from);
-        $idConversacion = intval($conv['id'] ?? 0);
-
-        $idCotizacion = intval($userState['id_cotizacion'] ?? 0);
-
-        if ($idCotizacion > 0) {
-            wa_registrar_carrito_abandonado(
-                $idCotizacion,
-                $idConversacion,
-                $from,
-                'Cliente canceló la confirmación de agenda',
-                'NO_CONFIRMACION_AGENDA',
-                'CONFIRMACION_AGENDA'
-            );
-        }
+        $idCotizacion = wa_registrar_cancelacion_agenda_en_carrito(
+            $from,
+            $userState,
+            'CONFIRMACION_AGENDA'
+        );
 
         wa_set_user_state(
             $from,
@@ -5105,33 +5095,14 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
             ],
             'CERRADO',
             'BOT',
-            $profileName !== '' ? $profileName : null
+            $profileName !== '' ? $profileName : null,
+            null,
+            $idCotizacion > 0 ? $idCotizacion : null
         );
 
         twiml_message_and_save(
             $from,
             "Perfecto, cancelamos la solicitud de agenda.\n\nQuedamos a las órdenes por si querés retomarlo más adelante."
-        );
-
-        return;
-    }
-
-    // CANCELAR escrito
-    if (wa_es_cancelar_agenda($body)) {
-        $nuevoEstado = $userState;
-        $nuevoEstado['step'] = 'cerrado';
-
-        wa_set_user_state(
-            $from,
-            $nuevoEstado,
-            'CERRADO',
-            'BOT',
-            $profileName !== '' ? $profileName : null
-        );
-
-        twiml_message_and_save(
-            $from,
-            "Perfecto. Cancelé la agenda.\n\nGracias por comunicarte con Motorlider."
         );
 
         return;
@@ -5503,6 +5474,52 @@ function wa_obtener_contexto_completo_por_telefono(string $telefono): ?array
     return $row ?: null;
 }
 
+function wa_registrar_cancelacion_agenda_en_carrito(
+    string $from,
+    array $userState,
+    string $origen = 'CONFIRMACION_AGENDA'
+): int {
+    $conv = wa_get_conversation($from);
+    $idConversacion = intval($conv['id'] ?? 0);
+
+    $idCotizacion = wa_obtener_cotizacion_actual_para_agenda(
+        $from,
+        $userState,
+        intval($conv['id_cotizacion'] ?? 0)
+    );
+
+    if ($idCotizacion <= 0) {
+        $contexto = wa_obtener_contexto_completo_por_telefono($from);
+        $idCotizacion = intval($contexto['id_cotizaciones_generadas'] ?? 0);
+    }
+
+    if ($idCotizacion > 0) {
+        wa_registrar_carrito_abandonado(
+            $idCotizacion,
+            $idConversacion,
+            $from,
+            'Cliente canceló la confirmación de agenda',
+            'NO_CONFIRMACION_AGENDA',
+            $origen
+        );
+
+        wa_log('AGENDA_CANCELADA_CARRITO_OK', [
+            'from' => $from,
+            'id_cotizacion' => $idCotizacion,
+            'id_conversacion' => $idConversacion,
+            'origen' => $origen
+        ]);
+    } else {
+        wa_log('AGENDA_CANCELADA_CARRITO_SIN_COTIZACION', [
+            'from' => $from,
+            'userState' => $userState,
+            'conv_id_cotizacion' => intval($conv['id_cotizacion'] ?? 0),
+            'origen' => $origen
+        ]);
+    }
+
+    return $idCotizacion;
+}
 
 // =========================
 // DEFAULT
