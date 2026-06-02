@@ -244,6 +244,200 @@ while ($regla = $db->fetch_array($reglas)) {
     echo "Insertados regla {$idRegla}: {$insertadosRegla}\n\n";
 }
 
+/**
+ * =========================================================
+ * 4. DETECTAR AGENDA SIN CONFIRMAR / CANCELAR
+ * =========================================================
+ */
+echo "-------------------------------------\n";
+echo "Detectando agendas pendientes sin respuesta...\n";
+echo "-------------------------------------\n";
+
+$horasEsperaAgenda = 3; // Configurable: horas que se espera una confirmación de agenda antes de marcar como abandonada
+
+$mensajeCierreAgenda = "Como no recibimos confirmación para la agenda, dejamos cerrada esta solicitud por ahora.\n\n"
+    . "Si querés coordinar nuevamente, respondé AGENDAR.";
+
+$sqlAgendaPendiente = "
+    SELECT
+        wc.id AS id_conversacion,
+        wc.telefono,
+        wc.nombre,
+        wc.email,
+        wc.id_cotizacion,
+        wc.datos_json,
+        wc.fecha_mod,
+
+        c.id_cotizaciones_generadas,
+        c.nombre AS cot_nombre,
+        c.email AS cot_email,
+        c.marca,
+        c.familia AS modelo,
+        c.anio,
+        c.kilometros,
+        c.tasacion_final
+
+    FROM whatsapp_conversaciones wc
+
+    LEFT JOIN cotizaciones_generadas c
+        ON c.id_cotizaciones_generadas = wc.id_cotizacion
+
+    WHERE wc.datos_json LIKE '%\"step\":\"agenda_confirmar\"%'
+      AND wc.fecha_mod <= DATE_SUB(NOW(), INTERVAL " . intval($horasEsperaAgenda) . " HOUR)
+
+      AND NOT EXISTS (
+          SELECT 1
+          FROM whatsapp_conversacion_mensajes mi
+          WHERE mi.telefono = wc.telefono
+            AND mi.direccion = 'ENTRANTE'
+            AND mi.fecha > wc.fecha_mod
+      )
+
+      AND NOT EXISTS (
+          SELECT 1
+          FROM carrito_abandonado ca
+          WHERE ca.id_cotizacion = wc.id_cotizacion
+            AND ca.motivo_abandono = 'NO_CONFIRMACION_AGENDA_AUTO'
+      )
+";
+
+$rsAgenda = $db->query($sqlAgendaPendiente);
+
+if (!$rsAgenda) {
+    echo "Error consultando agendas pendientes.\n";
+} else {
+
+    $insertadosAgenda = 0;
+
+    while ($row = $db->fetch_array($rsAgenda)) {
+
+        $idConversacion = intval($row['id_conversacion']);
+        $telefono = (string)$row['telefono'];
+        $datosJson = json_decode((string)$row['datos_json'], true);
+        if (!is_array($datosJson)) {
+            $datosJson = [];
+        }
+
+        $idCotizacion = intval($row['id_cotizacion'] ?? 0);
+
+        if ($idCotizacion <= 0) {
+            echo "Omitido teléfono {$telefono}: no se pudo resolver id_cotizacion.\n";
+            continue;
+        }
+
+        echo "Agenda abandonada detectada | Cotización {$idCotizacion} | Tel {$telefono}\n";
+
+        $sqlInsertAgenda = "
+            INSERT INTO carrito_abandonado
+            (
+                id_cotizacion,
+                id_conversacion,
+                telefono,
+                nombre,
+                email,
+                marca,
+                modelo,
+                anio,
+                kilometros,
+                tasacion_final,
+                mensaje_cliente,
+                motivo_abandono,
+                origen_abandono,
+                fecha_respuesta,
+                usuario,
+                estado,
+                observaciones,
+                fecha_ultima_gestion,
+                usuario_ultima_gestion,
+                fecha_alta
+            )
+            VALUES
+            (
+                " . intval($idCotizacion) . ",
+                " . intval($idConversacion) . ",
+                '" . esc($telefono) . "',
+                '" . esc($row['cot_nombre'] ?: $row['nombre']) . "',
+                '" . esc($row['cot_email'] ?: $row['email']) . "',
+                '" . esc($row['marca']) . "',
+                '" . esc($row['modelo']) . "',
+                " . intval($row['anio']) . ",
+                " . intval($row['kilometros']) . ",
+                " . floatval($row['tasacion_final']) . ",
+                'Cliente no confirmó ni canceló la agenda',
+                'NO_CONFIRMACION_AGENDA_AUTO',
+                'CONFIRMACION_AGENDA_AUTO',
+                NOW(),
+                'CRON',
+                'PENDIENTE',
+                '',
+                NULL,
+                '',
+                NOW()
+            )
+        ";
+
+        $okInsertAgenda = $db->query($sqlInsertAgenda);
+
+        if (!$okInsertAgenda) {
+            echo "ERROR insertando carrito agenda cotización {$idCotizacion}\n";
+            continue;
+        }
+
+        $nuevoJson = $datosJson;
+        $nuevoJson['step'] = 'cerrado';
+        $nuevoJson['sub_step'] = 'agenda_cerrada_por_inactividad';
+        $nuevoJson['id_cotizacion'] = $idCotizacion;
+
+        $sqlUpdateConv = "
+            UPDATE whatsapp_conversaciones
+            SET
+                estado = 'CERRADO',
+                modo_atencion = 'BOT',
+                datos_json = '" . esc(json_encode($nuevoJson, JSON_UNESCAPED_UNICODE)) . "',
+                ultima_respuesta_bot = '" . esc($mensajeCierreAgenda) . "',
+                fecha_mod = NOW()
+            WHERE id = " . intval($idConversacion) . "
+            LIMIT 1
+        ";
+
+        $db->query($sqlUpdateConv);
+
+        $sqlInsertMsg = "
+            INSERT INTO whatsapp_conversacion_mensajes
+            (
+                id_conversacion,
+                telefono,
+                direccion,
+                emisor,
+                mensaje,
+                meta_json,
+                sid_mensaje,
+                fecha
+            )
+            VALUES
+            (
+                " . intval($idConversacion) . ",
+                '" . esc($telefono) . "',
+                'SALIENTE',
+                'BOT',
+                '" . esc($mensajeCierreAgenda) . "',
+                '" . esc(json_encode(['origen' => 'cron_carrito_abandonado_agenda'], JSON_UNESCAPED_UNICODE)) . "',
+                NULL,
+                NOW()
+            )
+        ";
+
+        $db->query($sqlInsertMsg);
+
+        $insertadosAgenda++;
+        $totalInsertados++;
+
+        echo "OK agenda enviada a carrito_abandonado\n";
+    }
+
+    echo "Insertados agenda automática: {$insertadosAgenda}\n\n";
+}
+
 echo "=====================================\n";
 echo "TOTAL INSERTADOS: {$totalInsertados}\n";
 echo "=====================================\n";
