@@ -2678,6 +2678,17 @@ $currentEstado = (string)($currentConv['estado'] ?? 'INICIO');
 $buttonPayload = trim((string)($_POST['ButtonPayload'] ?? ''));
 $buttonPayloadAgenda = trim((string)($_POST['ButtonPayload'] ?? ''));
 
+if ($buttonPayload === 'confirmar_agenda_final' || $buttonPayload === 'cancelar_agenda_final') {
+
+    if (($userState['step'] ?? '') !== 'agenda_confirmar') {
+        twiml_message_and_save(
+            $from,
+            "Esta solicitud de agenda ya fue procesada anteriormente."
+        );
+        return;
+    }
+}
+
 if (
     $buttonPayloadAgenda === 'asistencia__agenda_si' ||
     $buttonPayloadAgenda === 'asistencia_agenda_no'
@@ -5113,6 +5124,43 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
         $buttonPayload === 'confirmar_agenda_final'
         || in_array($respuestaNorm, ['confirmar', '.confirmar', 'si', 'ok'], true);
 
+
+    $convPrevia = wa_get_conversation($from);
+
+    $idCotizacionPrevia = wa_obtener_cotizacion_actual_para_agenda(
+        $from,
+        $userState,
+        (int)($convPrevia['id_cotizacion'] ?? 0)
+    );
+
+    if ($idCotizacionPrevia <= 0) {
+        $contextoPrevio = wa_obtener_contexto_completo_por_telefono($from);
+        $idCotizacionPrevia = (int)($contextoPrevio['id_cotizaciones_generadas'] ?? 0);
+    }
+
+    if (
+        ($buttonPayload === 'confirmar_agenda_final' || $buttonPayload === 'cancelar_agenda_final')
+        && $idCotizacionPrevia > 0
+    ) {
+        $agendaProcesada = wa_agenda_ya_procesada_por_cotizacion($idCotizacionPrevia);
+
+        if ($agendaProcesada !== null) {
+            if ($agendaProcesada['estado'] === 'CANCELADO') {
+                twiml_message_and_save(
+                    $from,
+                    "Esta solicitud de agenda ya fue cancelada anteriormente."
+                );
+                return;
+            }
+
+            twiml_message_and_save(
+                $from,
+                "Esta solicitud de agenda ya fue confirmada anteriormente."
+            );
+            return;
+        }
+    }
+
     if (!$esConfirmacionAgenda) {
         twiml_message_and_save(
             $from,
@@ -5519,6 +5567,69 @@ function wa_registrar_cancelacion_agenda_en_carrito(
     }
 
     return $idCotizacion;
+}
+
+function wa_agenda_ya_procesada_por_cotizacion(int $idCotizacion): ?array
+{
+    if ($idCotizacion <= 0) {
+        return null;
+    }
+
+    $cn = wa_db();
+
+    $sql = "
+        SELECT
+            id_agenda,
+            fecha,
+            hora,
+            cancelado,
+            finalizada,
+            confirmacion_asistencia
+        FROM agendas
+        WHERE id_cotizacion = ?
+        ORDER BY id_agenda DESC
+        LIMIT 1
+    ";
+
+    $st = $cn->prepare($sql);
+    if (!$st) {
+        wa_log('AGENDA_YA_PROCESADA_PREPARE_ERROR', [
+            'id_cotizacion' => $idCotizacion,
+            'error' => $cn->error
+        ]);
+        $cn->close();
+        return null;
+    }
+
+    $st->bind_param('i', $idCotizacion);
+    $st->execute();
+    $rs = $st->get_result();
+    $row = $rs ? $rs->fetch_assoc() : null;
+
+    if ($rs) {
+        $rs->free();
+    }
+
+    $st->close();
+    $cn->close();
+
+    if (!$row) {
+        return null;
+    }
+
+    $confirmacion = strtoupper(trim((string)($row['confirmacion_asistencia'] ?? '')));
+
+    if ((int)$row['cancelado'] === 1 || $confirmacion === 'CANCELADO') {
+        return [
+            'estado' => 'CANCELADO',
+            'agenda' => $row
+        ];
+    }
+
+    return [
+        'estado' => 'AGENDADO',
+        'agenda' => $row
+    ];
 }
 
 // =========================
