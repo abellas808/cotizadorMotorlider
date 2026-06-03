@@ -2763,21 +2763,50 @@ if (
                 'INFO'
             );
 
+            $conv = wa_get_conversation($from);
+            $idConversacion = intval($conv['id'] ?? 0);
+
+            $idCotizacion = intval($agendaPendiente['id_cotizacion'] ?? 0);
+
+            if ($idCotizacion <= 0) {
+                $idCotizacion = intval($conv['id_cotizacion'] ?? 0);
+            }
+
+            if ($idCotizacion <= 0) {
+                $contexto = wa_obtener_contexto_completo_por_telefono($from);
+                $idCotizacion = intval($contexto['id_cotizaciones_generadas'] ?? 0);
+            }
+
+            if ($idCotizacion > 0) {
+                wa_registrar_carrito_abandonado(
+                    $idCotizacion,
+                    $idConversacion,
+                    $from,
+                    $body !== '' ? $body : 'Cliente canceló asistencia mediante botón',
+                    'NO_CONFIRMACION_AGENDA',
+                    'CONFIRMACION_AUTOMATICA_AGENDA'
+                );
+
+                wa_log('AGENDA_ASISTENCIA_NO_CARRITO_OK', [
+                    'from' => $from,
+                    'id_agenda' => intval($agendaPendiente['id_agenda'] ?? 0),
+                    'id_cotizacion' => $idCotizacion,
+                    'id_conversacion' => $idConversacion
+                ]);
+            } else {
+                wa_log('AGENDA_ASISTENCIA_NO_CARRITO_SIN_COTIZACION', [
+                    'from' => $from,
+                    'agenda' => $agendaPendiente,
+                    'conv_id_cotizacion' => intval($conv['id_cotizacion'] ?? 0)
+                ]);
+            }
+
             twiml_message_and_save(
                 $from,
                 "Perfecto. Tu agenda del "
                 . wa_formatear_fecha_chat((string)$agendaPendiente['fecha'])
                 . " a las " . substr((string)$agendaPendiente['hora'], 0, 5)
                 . " fue cancelada. Si querés coordinar una nueva fecha, respondé AGENDAR."
-            );
-
-            wa_registrar_carrito_abandonado(
-                $idCotizacion,
-                $idConversacion,
-                $from,
-                $body !== '' ? $body : 'Canceló agenda',
-                'CANCELO_RECORDATORIO_AGENDA',
-                'RECORDATORIO_AGENDA'
             );
 
             return;
@@ -5208,7 +5237,7 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
         (int)($conv['id_cotizacion'] ?? 0)
     );
 
-    $contexto = wa_obtener_contexto_completo_por_telefono($from);
+    $contexto = wa_obtener_contexto_completo_por_cotizacion($idCotizacion);
 
     wa_log('AGENDA_CONTEXTO_RESUMEN', [
         'telefono' => $from,
