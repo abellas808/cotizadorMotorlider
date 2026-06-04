@@ -2896,11 +2896,53 @@ if ($step === 'resultado_enviado' && $subStep === 'esperando_agenda') {
             $lineas[] = $nro . " = " . wa_formatear_fecha_chat($fecha);
         }
 
+        $convActual = wa_get_conversation($from);
+
+        $originalSid = trim((string)($_POST['OriginalRepliedMessageSid'] ?? ''));
+
+        $idCotizacionAgenda = wa_obtener_id_cotizacion_desde_mensaje_respondido($originalSid);
+
+        if ($idCotizacionAgenda <= 0) {
+            $idCotizacionAgenda = intval($userState['id_cotizacion'] ?? 0);
+        }
+
+        if ($idCotizacionAgenda <= 0) {
+            $idCotizacionAgenda = intval($userState['api_result']['id_cotizacion'] ?? 0);
+        }
+
+        if ($idCotizacionAgenda <= 0) {
+            $idCotizacionAgenda = intval($userState['api_result']['post_cotizacion']['id_cotizacion'] ?? 0);
+        }
+
+        if ($idCotizacionAgenda <= 0) {
+            wa_log('SI_AGENDAR_SIN_ID_COTIZACION', [
+                'telefono' => $from,
+                'original_sid' => $originalSid,
+                'userState' => $userState
+            ]);
+
+            twiml_message_and_save(
+                $from,
+                "No pude identificar la cotización para agendar. Un asesor te va a ayudar."
+            );
+
+            return;
+        }
+
+        if ($idCotizacionAgenda <= 0) {
+            twiml_message_and_save(
+                $from,
+                "No pude identificar la cotización para agendar. Un asesor te va a ayudar."
+            );
+            return;
+        }
+
         $nuevoEstado = $userState;
         $nuevoEstado['step'] = 'agenda_dia';
         $nuevoEstado['sub_step'] = 'seleccionando_dia';
         $nuevoEstado['agenda_location'] = $location;
         $nuevoEstado['agenda_dias_opciones'] = $opciones;
+        $nuevoEstado['id_cotizacion'] = $idCotizacionAgenda;
 
         unset(
             $nuevoEstado['agenda_fecha'],
@@ -2913,7 +2955,9 @@ if ($step === 'resultado_enviado' && $subStep === 'esperando_agenda') {
             $nuevoEstado,
             'ESPERANDO_FECHA',
             'BOT',
-            $profileName !== '' ? $profileName : null
+            $profileName !== '' ? $profileName : null,
+            null,
+            $idCotizacionAgenda
         );
 
         twiml_message_and_save(
@@ -5085,8 +5129,20 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
         $respuestaNorm = wa_normalizar_texto($buttonPayload);
     }
 
-    // ATRÁS: vuelve a selección de hora
+    // ID real de la cotización del flujo actual
+    $idCotizacion = intval($userState['id_cotizacion'] ?? 0);
+
+    if ($idCotizacion <= 0) {
+        $idCotizacion = intval($userState['api_result']['id_cotizacion'] ?? 0);
+    }
+
+    if ($idCotizacion <= 0) {
+        $idCotizacion = intval($userState['api_result']['post_cotizacion']['id_cotizacion'] ?? 0);
+    }
+
+    // ATRÁS
     if (wa_es_atras($body)) {
+
         $nuevoEstado = $userState;
         $nuevoEstado['step'] = 'agenda_hora';
         unset($nuevoEstado['agenda_hora']);
@@ -5096,7 +5152,9 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
             $nuevoEstado,
             'ESPERANDO_HORA',
             'BOT',
-            $profileName !== '' ? $profileName : null
+            $profileName !== '' ? $profileName : null,
+            null,
+            $idCotizacion > 0 ? $idCotizacion : null
         );
 
         $horasOpciones = $nuevoEstado['agenda_horas_opciones'] ?? [];
@@ -5117,10 +5175,10 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
         return;
     }
 
-    // CANCELAR desde botón final
+    // CANCELAR
     if ($buttonPayload === 'cancelar_agenda_final') {
 
-        $idCotizacion = wa_registrar_cancelacion_agenda_en_carrito(
+        $idCotizacionCancelada = wa_registrar_cancelacion_agenda_en_carrito(
             $from,
             $userState,
             'CONFIRMACION_AGENDA'
@@ -5131,13 +5189,13 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
             [
                 'step' => 'cerrado',
                 'sub_step' => 'agenda_cancelada_final',
-                'id_cotizacion' => $idCotizacion
+                'id_cotizacion' => $idCotizacionCancelada
             ],
             'CERRADO',
             'BOT',
             $profileName !== '' ? $profileName : null,
             null,
-            $idCotizacion > 0 ? $idCotizacion : null
+            $idCotizacionCancelada > 0 ? $idCotizacionCancelada : null
         );
 
         twiml_message_and_save(
@@ -5148,52 +5206,29 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
         return;
     }
 
-    // CONFIRMAR agenda
+    // Confirmación válida
     $esConfirmacionAgenda =
         $buttonPayload === 'confirmar_agenda_final'
         || in_array($respuestaNorm, ['confirmar', '.confirmar', 'si', 'ok'], true);
-
-
-    $convPrevia = wa_get_conversation($from);
-
-    $idCotizacionPrevia = wa_obtener_cotizacion_actual_para_agenda(
-        $from,
-        $userState,
-        (int)($convPrevia['id_cotizacion'] ?? 0)
-    );
-
-    if ($idCotizacionPrevia <= 0) {
-        $contextoPrevio = wa_obtener_contexto_completo_por_telefono($from);
-        $idCotizacionPrevia = (int)($contextoPrevio['id_cotizaciones_generadas'] ?? 0);
-    }
-
-    if (
-        ($buttonPayload === 'confirmar_agenda_final' || $buttonPayload === 'cancelar_agenda_final')
-        && $idCotizacionPrevia > 0
-    ) {
-        $agendaProcesada = wa_agenda_ya_procesada_por_cotizacion($idCotizacionPrevia);
-
-        if ($agendaProcesada !== null) {
-            if ($agendaProcesada['estado'] === 'CANCELADO') {
-                twiml_message_and_save(
-                    $from,
-                    "Esta solicitud de agenda ya fue cancelada anteriormente."
-                );
-                return;
-            }
-
-            twiml_message_and_save(
-                $from,
-                "Esta solicitud de agenda ya fue confirmada anteriormente."
-            );
-            return;
-        }
-    }
 
     if (!$esConfirmacionAgenda) {
         twiml_message_and_save(
             $from,
             "Para agendar, respondé CONFIRMAR.\nTambién podés tocar el botón CONFIRMAR."
+        );
+
+        return;
+    }
+
+    if ($idCotizacion <= 0) {
+        wa_log('AGENDA_CONFIRMAR_SIN_ID_COTIZACION', [
+            'telefono' => $from,
+            'userState' => $userState
+        ]);
+
+        twiml_message_and_save(
+            $from,
+            "No pude identificar la cotización para confirmar la agenda. Un asesor te va a ayudar."
         );
 
         return;
@@ -5212,6 +5247,24 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
         return;
     }
 
+    // $agendaProcesada = wa_agenda_ya_procesada_por_cotizacion($idCotizacion);
+
+    // if ($agendaProcesada !== null) {
+    //     if ($agendaProcesada['estado'] === 'CANCELADO') {
+    //         twiml_message_and_save(
+    //             $from,
+    //             "Esta solicitud de agenda ya fue cancelada anteriormente."
+    //         );
+    //         return;
+    //     }
+
+    //     twiml_message_and_save(
+    //         $from,
+    //         "Esta solicitud de agenda ya fue confirmada anteriormente."
+    //     );
+    //     return;
+    // }
+
     $respHorariosValidacion = wa_obtener_horarios_agenda($location, $fecha);
     $horasValidacion = [];
 
@@ -5227,32 +5280,25 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
         );
 
         return;
-    }    
+    }
 
     $conv = wa_get_conversation($from);
 
-    $idCotizacion = wa_obtener_cotizacion_actual_para_agenda(
-        $from,
-        $userState,
-        (int)($conv['id_cotizacion'] ?? 0)
-    );
+    // Se usa contexto SOLO por idCotizacion, nunca por teléfono
+    $contexto = wa_obtener_contexto_completo_por_cotizacion($idCotizacion);
 
-    $contexto = wa_obtener_contexto_completo_por_telefono($from);
+    if (!$contexto || intval($contexto['id_cotizaciones_generadas'] ?? 0) <= 0) {
+        wa_log('AGENDA_CONTEXTO_NO_ENCONTRADO', [
+            'telefono' => $from,
+            'id_cotizacion' => $idCotizacion
+        ]);
 
-    wa_log('AGENDA_CONTEXTO_RESUMEN', [
-        'telefono' => $from,
-        'id_cotizacion' => $contexto['id_cotizaciones_generadas'] ?? null,
-        'marca' => $contexto['marca'] ?? null,
-        'modelo' => $contexto['familia'] ?? null,
-        'anio' => $contexto['anio'] ?? null,
-        'auto' => $contexto['auto'] ?? null,
-        'agenda_id' => $contexto['agenda_id_agenda'] ?? null,
-        'agenda_fecha' => $contexto['agenda_fecha'] ?? null,
-        'agenda_hora' => $contexto['agenda_hora'] ?? null
-    ]);
+        twiml_message_and_save(
+            $from,
+            "No pude obtener los datos de la cotización para confirmar la agenda. Un asesor te va a ayudar."
+        );
 
-    if ((int)($contexto['id_cotizaciones_generadas'] ?? 0) > 0) {
-        $idCotizacion = (int)$contexto['id_cotizaciones_generadas'];
+        return;
     }
 
     $marca = (string)($contexto['marca'] ?? '');
@@ -5260,28 +5306,13 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
     $anio = (string)($contexto['anio'] ?? '');
     $auto = (string)($contexto['auto'] ?? '');
 
-    // if ($idCotizacion > 0) {
-    //     wa_marcar_cotizacion_comunicarse_cliente($idCotizacion);
-    // }
-
-    wa_log('ANTES_MARCAR_COTIZACION_AGENDADO', [
-        'id_cotizacion' => $idCotizacion
-    ]);
-
-    if ($idCotizacion > 0) {
-        wa_marcar_cotizacion_agendado($idCotizacion);
-    }
-
     wa_log('AGENDA_ID_COTIZACION_RESUELTO', [
         'telefono' => $from,
-        'id_cotizacion_conv' => (int)($conv['id_cotizacion'] ?? 0),
         'id_cotizacion_final' => $idCotizacion,
-        'auto_user_state' => [
-            'marca' => $userState['marca'] ?? '',
-            'modelo' => $userState['modelo'] ?? '',
-            'anio' => $userState['anio'] ?? '',
-            'version' => $userState['version'] ?? ''
-        ]
+        'marca' => $marca,
+        'modelo' => $modelo,
+        'anio' => $anio,
+        'auto' => $auto
     ]);
 
     $payload = [
@@ -5316,6 +5347,9 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
         return;
     }
 
+    // Agenda creada OK: marcar cotización como AGENDADO
+    wa_marcar_cotizacion_agendado($idCotizacion);
+
     $nuevoEstado = $userState;
     $nuevoEstado['step'] = 'agendado';
     $nuevoEstado['id_cotizacion'] = $idCotizacion;
@@ -5327,7 +5361,7 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
         'BOT',
         $profileName !== '' ? $profileName : null,
         (string)($conv['email'] ?? ''),
-        $idCotizacion > 0 ? $idCotizacion : null
+        $idCotizacion
     );
 
     twiml_message_and_save(
@@ -5559,6 +5593,92 @@ function wa_obtener_contexto_completo_por_telefono(string $telefono): ?array
     return $row ?: null;
 }
 
+function wa_obtener_contexto_completo_por_cotizacion(int $idCotizacion): ?array
+{
+    if ($idCotizacion <= 0) {
+        return null;
+    }
+
+    $cn = wa_db();
+
+    $sql = "
+        SELECT
+            cg.*,
+
+            a.id_agenda AS agenda_id_agenda,
+            a.id_sucursal AS agenda_id_sucursal,
+            a.fecha AS agenda_fecha,
+            a.hora AS agenda_hora,
+            a.modelo AS agenda_modelo,
+            a.marca AS agenda_marca,
+            a.anio AS agenda_anio,
+            a.familia AS agenda_familia,
+            a.auto AS agenda_auto,
+            a.nombre AS agenda_nombre,
+            a.ci AS agenda_ci,
+            a.email AS agenda_email,
+            a.telefono AS agenda_telefono,
+            a.rand_string AS agenda_rand_string,
+            a.direccion AS agenda_direccion,
+            a.inspeccion_domiciliaria AS agenda_inspeccion_domiciliaria,
+            a.id_cotizacion AS agenda_id_cotizacion,
+            a.cancelado AS agenda_cancelado,
+            a.finalizada AS agenda_finalizada,
+            a.fecha_finalizacion AS agenda_fecha_finalizacion,
+            a.detalle_estado AS agenda_detalle_estado,
+            a.motivo_cancelacion AS agenda_motivo_cancelacion,
+            a.fecha_cancelacion AS agenda_fecha_cancelacion,
+            a.confirmacion_asistencia AS agenda_confirmacion_asistencia,
+            a.fecha_confirmacion_asistencia AS agenda_fecha_confirmacion_asistencia
+
+        FROM cotizaciones_generadas cg
+
+        LEFT JOIN agendas a
+            ON a.id_agenda = (
+                SELECT ag.id_agenda
+                FROM agendas ag
+                WHERE ag.id_cotizacion = cg.id_cotizaciones_generadas
+                ORDER BY ag.id_agenda DESC
+                LIMIT 1
+            )
+
+        WHERE cg.id_cotizaciones_generadas = ?
+        LIMIT 1
+    ";
+
+    $st = $cn->prepare($sql);
+
+    if (!$st) {
+        wa_log('CONTEXTO_COMPLETO_COT_PREPARE_ERROR', [
+            'id_cotizacion' => $idCotizacion,
+            'error' => $cn->error
+        ]);
+
+        $cn->close();
+        return null;
+    }
+
+    $st->bind_param('i', $idCotizacion);
+    $st->execute();
+
+    $rs = $st->get_result();
+    $row = $rs ? $rs->fetch_assoc() : null;
+
+    if ($rs) {
+        $rs->free();
+    }
+
+    $st->close();
+    $cn->close();
+
+    wa_log('CONTEXTO_COMPLETO_COT_OBTENIDO', [
+        'id_cotizacion' => $idCotizacion,
+        'id_agenda' => $row['agenda_id_agenda'] ?? null
+    ]);
+
+    return $row ?: null;
+}
+
 function wa_registrar_cancelacion_agenda_en_carrito(
     string $from,
     array $userState,
@@ -5717,6 +5837,78 @@ function wa_marcar_cotizacion_agendado(int $idCotizacion): bool
     $cn->close();
 
     return $ok;
+}
+
+function wa_obtener_id_cotizacion_desde_mensaje_respondido(string $originalSid): int
+{
+    if ($originalSid === '') {
+        return 0;
+    }
+
+    $cn = wa_db();
+
+    $sql = "
+        SELECT meta_json, mensaje
+        FROM whatsapp_conversacion_mensajes
+        WHERE sid_mensaje = ?
+        LIMIT 1
+    ";
+
+    $st = $cn->prepare($sql);
+
+    if (!$st) {
+        wa_log('COT_DESDE_SID_PREPARE_ERROR', [
+            'sid' => $originalSid,
+            'error' => $cn->error
+        ]);
+
+        $cn->close();
+        return 0;
+    }
+
+    $st->bind_param('s', $originalSid);
+    $st->execute();
+
+    $rs = $st->get_result();
+    $row = $rs ? $rs->fetch_assoc() : null;
+
+    $st->close();
+    $cn->close();
+
+    if (!$row) {
+        wa_log('COT_DESDE_SID_NO_ENCONTRADO', [
+            'sid' => $originalSid
+        ]);
+
+        return 0;
+    }
+
+    $meta = json_decode((string)($row['meta_json'] ?? ''), true);
+
+    if (!is_array($meta)) {
+        wa_log('COT_DESDE_SID_META_INVALIDO', [
+            'sid' => $originalSid,
+            'meta_json' => $row['meta_json'] ?? ''
+        ]);
+
+        return 0;
+    }
+
+    $idCotizacion = intval(
+        $meta['id_cotizacion']
+        ?? $meta['id_cotizaciones_generadas']
+        ?? $meta['cotizacion_id']
+        ?? $meta['post_cotizacion']['id_cotizacion']
+        ?? 0
+    );
+
+    wa_log('COT_DESDE_SID_RESULTADO', [
+        'sid' => $originalSid,
+        'id_cotizacion' => $idCotizacion,
+        'meta' => $meta
+    ]);
+
+    return $idCotizacion;
 }
 
 // =========================

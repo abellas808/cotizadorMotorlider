@@ -11,7 +11,47 @@ if ($_SESSION[$config['codigo_unico']]['login_permisos']['age'] > 1) {
             $id = intval($item);
 
             if ($id > 0) {
-                $db->query('DELETE FROM agendas WHERE id_agenda = "' . $id . '";');
+
+                $logFile = __DIR__ . '/age_eliminar_agenda.log';
+
+                $agenda = $db->query_first('
+                    SELECT id_cotizacion
+                    FROM agendas
+                    WHERE id_agenda = "' . intval($id) . '"
+                    LIMIT 1
+                ');
+
+                file_put_contents(
+                    $logFile,
+                    date('Y-m-d H:i:s') . " Agenda {$id}: " . print_r($agenda, true) . "\n",
+                    FILE_APPEND
+                );
+
+                if ($agenda && intval($agenda['id_cotizacion']) > 0) {
+
+                    $idCotizacion = intval($agenda['id_cotizacion']);
+
+                    $sqlUpdate = "
+                        UPDATE cotizaciones_generadas
+                        SET
+                            estado_id = 3, 
+                            estado = 'COTIZADO_PRELIMINAR',
+                            detalle_estado = 'Agenda eliminada desde módulo de agendas',
+                            fecha_mod = NOW()
+                        WHERE id_cotizaciones_generadas = {$idCotizacion}
+                        LIMIT 1
+                    ";
+
+                    $ok = $db->query($sqlUpdate);
+
+                    file_put_contents(
+                        $logFile,
+                        date('Y-m-d H:i:s') . " Cotización {$idCotizacion}: " . ($ok ? "OK" : "ERROR") . "\n{$sqlUpdate}\n",
+                        FILE_APPEND
+                    );
+                }
+
+                $db->query('DELETE FROM agendas WHERE id_agenda = "' . intval($id) . '";');
             }
         }
     }
