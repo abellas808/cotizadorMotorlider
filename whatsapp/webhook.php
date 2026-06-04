@@ -5227,7 +5227,7 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
         );
 
         return;
-    }
+    }    
 
     $conv = wa_get_conversation($from);
 
@@ -5237,7 +5237,7 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
         (int)($conv['id_cotizacion'] ?? 0)
     );
 
-    $contexto = wa_obtener_contexto_completo_por_cotizacion($idCotizacion);
+    $contexto = wa_obtener_contexto_completo_por_telefono($from);
 
     wa_log('AGENDA_CONTEXTO_RESUMEN', [
         'telefono' => $from,
@@ -5260,8 +5260,16 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
     $anio = (string)($contexto['anio'] ?? '');
     $auto = (string)($contexto['auto'] ?? '');
 
+    // if ($idCotizacion > 0) {
+    //     wa_marcar_cotizacion_comunicarse_cliente($idCotizacion);
+    // }
+
+    wa_log('ANTES_MARCAR_COTIZACION_AGENDADO', [
+        'id_cotizacion' => $idCotizacion
+    ]);
+
     if ($idCotizacion > 0) {
-        wa_marcar_cotizacion_comunicarse_cliente($idCotizacion);
+        wa_marcar_cotizacion_agendado($idCotizacion);
     }
 
     wa_log('AGENDA_ID_COTIZACION_RESUELTO', [
@@ -5659,6 +5667,56 @@ function wa_agenda_ya_procesada_por_cotizacion(int $idCotizacion): ?array
         'estado' => 'AGENDADO',
         'agenda' => $row
     ];
+}
+
+function wa_marcar_cotizacion_agendado(int $idCotizacion): bool
+{
+    if ($idCotizacion <= 0) {
+        return false;
+    }
+
+    $cn = wa_db();
+
+    $estadoId = 8;
+    $estado = 'AGENDADO';
+    $detalle = 'Cliente confirmó agenda desde WhatsApp.';
+
+    $sql = "
+        UPDATE cotizaciones_generadas
+        SET estado_id = ?,
+            estado = ?,
+            detalle_estado = ?,
+            fecha_mod = NOW()
+        WHERE id_cotizaciones_generadas = ?
+        LIMIT 1
+    ";
+
+    $st = $cn->prepare($sql);
+
+    if (!$st) {
+        wa_log('COTIZACION_AGENDADO_PREPARE_ERROR', [
+            'id_cotizacion' => $idCotizacion,
+            'error' => $cn->error
+        ]);
+
+        $cn->close();
+        return false;
+    }
+
+    $st->bind_param('issi', $estadoId, $estado, $detalle, $idCotizacion);
+    $ok = $st->execute();
+
+    wa_log('COTIZACION_AGENDADO_UPDATE', [
+        'id_cotizacion' => $idCotizacion,
+        'ok' => $ok,
+        'affected_rows' => $st->affected_rows,
+        'error' => $st->error
+    ]);
+
+    $st->close();
+    $cn->close();
+
+    return $ok;
 }
 
 // =========================
