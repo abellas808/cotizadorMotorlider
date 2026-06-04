@@ -5178,11 +5178,32 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
     // CANCELAR
     if ($buttonPayload === 'cancelar_agenda_final') {
 
-        $idCotizacionCancelada = wa_registrar_cancelacion_agenda_en_carrito(
-            $from,
-            $userState,
-            'CONFIRMACION_AGENDA'
-        );
+        $idCotizacionCancelada = intval($userState['id_cotizacion'] ?? 0);
+
+        if ($idCotizacionCancelada <= 0) {
+            $idCotizacionCancelada = intval($userState['api_result']['id_cotizacion'] ?? 0);
+        }
+
+        if ($idCotizacionCancelada <= 0) {
+            $idCotizacionCancelada = intval($userState['api_result']['post_cotizacion']['id_cotizacion'] ?? 0);
+        }
+
+        wa_log('AGENDA_CANCELAR_ID_COTIZACION', [
+            'telefono' => $from,
+            'id_cotizacion' => $idCotizacionCancelada,
+            'userState' => $userState
+        ]);
+
+        if ($idCotizacionCancelada > 0) {
+            wa_registrar_carrito_abandonado(
+                $idCotizacionCancelada,
+                intval($conv['id'] ?? 0),
+                $from,
+                'Cliente canceló solicitud de agenda',
+                'NO_AGENDA_REVISION',
+                'WHATSAPP_BOT'
+            );
+        }
 
         wa_set_user_state(
             $from,
