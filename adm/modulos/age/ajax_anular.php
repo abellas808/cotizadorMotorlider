@@ -48,6 +48,39 @@ if (!empty($agenda['cancelado'])) {
     exit;
 }
 
+// Si la agenda está asociada a una cotización,
+// volverla a estado COT. PRELIMINAR (3)
+
+$idCotizacion = intval($agenda['id_cotizacion'] ?? 0);
+
+if ($idCotizacion > 0) {
+
+   $sqlCot = "
+        UPDATE cotizaciones_generadas
+        SET
+            estado_id = 3,
+            estado = 'COTIZADO_PRELIMINAR',
+            detalle_estado = 'Agenda anulada desde calendario',
+            fecha_mod = NOW()
+        WHERE id_cotizaciones_generadas = '{$idCotizacion}'
+        LIMIT 1
+    ";
+
+    $okCot = $db->query($sqlCot);
+
+    error_log(
+        '[AGENDA_ANULAR_COT_UPDATE] cotizacion=' . $idCotizacion .
+        ' ok=' . ($okCot ? '1' : '0') .
+        ' sql=' . $sqlCot
+    );
+
+}
+
+error_log(
+    '[AGENDA_ANULAR] agenda=' . $id .
+    ' cotizacion=' . $idCotizacion
+);
+
 $ok = $db->query("
     UPDATE agendas
     SET cancelado = 1,
