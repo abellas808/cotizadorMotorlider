@@ -243,10 +243,142 @@ while ($conv = $db->fetch_array($res)) {
 
     if ($ok) {
         $totalInsertados++;
+
         echo "OK INSERT conversación abandonada ID conversación: " . intval($conv['id']) . "\n";
+
+        $idCotizacion = intval($conv['id_cotizacion'] ?? 0);
+
+        if ($idCotizacion > 0) {
+
+            $agenda = $db->query_first("
+                SELECT id_agenda
+                FROM agendas
+                WHERE id_cotizacion = '" . intval($idCotizacion) . "'
+                AND cancelado = 0
+                AND finalizada = 0
+                ORDER BY id_agenda DESC
+                LIMIT 1
+            ");
+
+            $idAgenda = intval($agenda['id_agenda'] ?? 0);
+
+            if ($idAgenda > 0) {
+
+                wa_cancelar_agenda_automatica($idAgenda);
+
+                wa_marcar_cotizacion_preliminar_por_cancelacion_agenda($idCotizacion);
+
+                echo "Agenda cancelada automáticamente: {$idAgenda}\n";
+                echo "Cotización vuelta a preliminar: {$idCotizacion}\n";
+
+            } else {
+                echo "No se encontró agenda activa para cotización: {$idCotizacion}\n";
+            }
+
+        } else {
+            echo "Conversación sin id_cotizacion asociado, no se cancela agenda.\n";
+        }
+
     } else {
         echo "ERROR insertando conversación ID: " . intval($conv['id']) . "\n";
     }
+}
+
+function wa_marcar_cotizacion_preliminar_por_cancelacion_agenda(int $idCotizacion): bool
+{
+    if ($idCotizacion <= 0) {
+        return false;
+    }
+
+    $cn = wa_db();
+
+    $estadoId = 3;
+    $estado = 'COTIZADO_PRELIMINAR';
+    $detalle = 'Agenda cancelada automáticamente por falta de respuesta al recordatorio.';
+
+    $sql = "
+        UPDATE cotizaciones_generadas
+        SET estado_id = ?,
+            estado = ?,
+            detalle_estado = ?,
+            fecha_mod = NOW()
+        WHERE id_cotizaciones_generadas = ?
+        LIMIT 1
+    ";
+
+    $st = $cn->prepare($sql);
+
+    if (!$st) {
+        wa_log('COTIZACION_PRELIMINAR_PREPARE_ERROR', [
+            'id_cotizacion' => $idCotizacion,
+            'error' => $cn->error
+        ]);
+
+        $cn->close();
+        return false;
+    }
+
+    $st->bind_param('issi', $estadoId, $estado, $detalle, $idCotizacion);
+    $ok = $st->execute();
+
+    wa_log('COTIZACION_PRELIMINAR_UPDATE', [
+        'id_cotizacion' => $idCotizacion,
+        'ok' => $ok,
+        'affected_rows' => $st->affected_rows,
+        'error' => $st->error
+    ]);
+
+    $st->close();
+    $cn->close();
+
+    return $ok;
+}
+
+function wa_cancelar_agenda_automatica(int $idAgenda): bool
+{
+    if ($idAgenda <= 0) {
+        return false;
+    }
+
+    $cn = wa_db();
+
+    $sql = "
+        UPDATE agendas
+        SET cancelado = 1,
+            motivo_cancelacion = 'Cancelada automáticamente por falta de respuesta al recordatorio de agenda',
+            fecha_cancelacion = NOW()
+        WHERE id_agenda = ?
+          AND cancelado = 0
+          AND finalizada = 0
+        LIMIT 1
+    ";
+
+    $st = $cn->prepare($sql);
+
+    if (!$st) {
+        wa_log('AGENDA_CANCEL_AUTO_PREPARE_ERROR', [
+            'id_agenda' => $idAgenda,
+            'error' => $cn->error
+        ]);
+
+        $cn->close();
+        return false;
+    }
+
+    $st->bind_param('i', $idAgenda);
+    $ok = $st->execute();
+
+    wa_log('AGENDA_CANCEL_AUTO_UPDATE', [
+        'id_agenda' => $idAgenda,
+        'ok' => $ok,
+        'affected_rows' => $st->affected_rows,
+        'error' => $st->error
+    ]);
+
+    $st->close();
+    $cn->close();
+
+    return $ok;
 }
 
 echo "\n=====================================\n";
