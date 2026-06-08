@@ -5,12 +5,6 @@
  *
  * Debe registrar solo chats donde el cliente abandonó en pasos previos:
  * inicio, marca, modelo, año, versión, ficha, kilómetros, tipo venta, valor pretendido.
- *
- * NO debe registrar:
- * - conversaciones que ya tienen cotización
- * - mensajes enviados desde cot/v
- * - casos PENDIENTE_RESPUESTA_HUMANA
- * - casos donde ya se generó una cotización
  */
 
 error_reporting(E_ALL & ~E_NOTICE & ~E_WARNING & ~E_DEPRECATED);
@@ -36,12 +30,8 @@ echo "=====================================\n";
 echo " DETECTOR CONVERSACIONES ABANDONADAS\n";
 echo "=====================================\n\n";
 
-$HORAS_ESPERA = 24;
+$HORAS_ESPERA = 12;
 
-/**
- * SOLO estos pasos pueden ir a conversaciones perdidas.
- * Todo lo demás queda afuera.
- */
 $stepsAbandono = [
     'inicio',
     'marca',
@@ -81,25 +71,28 @@ foreach ($stepsAbandono as $s) {
 }
 
 /**
- * Query:
- * 1) Último mensaje real del teléfono debe ser SALIENTE del bot.
- * 2) Deben haber pasado X horas.
- * 3) El step debe estar dentro de los pasos previos a cotizar.
- * 4) No debe tener id_cotizacion.
- * 5) No debe existir cotización generada para ese teléfono después del inicio de la conversación.
- * 6) No debe existir ya como pendiente/en gestión en conversaciones abandonadas.
+ * IMPORTANTE:
+ * Primero se toma datos_json.step.
+ * Si no existe, recién ahí se usa wc.step_actual.
+ *
+ * Esto evita que step_actual = resultado_enviado tape el step real del flujo,
+ * por ejemplo datos_json = {"step":"marca"}.
  */
+$stepRealSql = "
+    LOWER(TRIM(
+        COALESCE(
+            NULLIF(JSON_UNQUOTE(JSON_EXTRACT(wc.datos_json, '$.step')), ''),
+            NULLIF(wc.step_actual, ''),
+            ''
+        )
+    ))
+";
+
 $sql = "
     SELECT
         wc.*,
 
-        LOWER(TRIM(
-            COALESCE(
-                NULLIF(wc.step_actual, ''),
-                JSON_UNQUOTE(JSON_EXTRACT(wc.datos_json, '$.step')),
-                ''
-            )
-        )) AS step_real,
+        {$stepRealSql} AS step_real,
 
         ult.fecha AS fecha_ultimo_mensaje_real,
         ult.mensaje AS ultimo_mensaje_real,
@@ -112,7 +105,7 @@ $sql = "
         SELECT m1.*
         FROM whatsapp_conversacion_mensajes m1
         INNER JOIN (
-            SELECT 
+            SELECT
                 telefono,
                 MAX(id) AS max_id
             FROM whatsapp_conversacion_mensajes
@@ -123,26 +116,11 @@ $sql = "
     ) ult
         ON ult.telefono = wc.telefono
 
-    WHERE (wc.id_cotizacion IS NULL OR wc.id_cotizacion = 0)
-
-      AND ult.direccion = 'SALIENTE'
+    WHERE ult.direccion = 'SALIENTE'
 
       AND ult.fecha <= DATE_SUB(NOW(), INTERVAL " . intval($HORAS_ESPERA) . " HOUR)
 
-      AND LOWER(TRIM(
-            COALESCE(
-                NULLIF(wc.step_actual, ''),
-                JSON_UNQUOTE(JSON_EXTRACT(wc.datos_json, '$.step')),
-                ''
-            )
-          )) IN (" . implode(',', $stepsSql) . ")
-
-      AND NOT EXISTS (
-          SELECT 1
-          FROM cotizaciones_generadas cg
-          WHERE cg.telefono = wc.telefono
-            AND cg.fecha >= DATE(wc.fecha_alta)
-      )
+      AND {$stepRealSql} IN (" . implode(',', $stepsSql) . ")
 
       AND NOT EXISTS (
           SELECT 1
@@ -273,5 +251,5 @@ while ($conv = $db->fetch_array($res)) {
 
 echo "\n=====================================\n";
 echo "TOTAL INSERTADOS: {$totalInsertados}\n";
-echo "\n=====================================\n";
+echo "=====================================\n";
 echo "</pre>";

@@ -10,6 +10,51 @@ function ca_tel_formateado($telefono) {
     return $telefono;
 }
 
+function ca_badge_punto_abandono($punto) {
+
+    $punto = trim((string)$punto);
+
+    if ($punto === '') {
+        return '<span>-</span>';
+    }
+
+    $clase = 'ca-badge-default';
+
+    switch ($punto) {
+
+        case 'NO_AGENDA_REVISION':
+            $clase = 'ca-badge-fucsia';
+            break;
+
+        case 'NO_RESPONDE_PRETASACION':
+        case 'NO_RESPONDE_PRETASACION_FINAL':
+            $clase = 'ca-badge-amarillo';
+            break;
+
+        case 'NO_CONFIRMACION_AGENDA':
+            $clase = 'ca-badge-rojo';
+            break;
+
+        case 'NO_CONFIRMA_AGENDA':
+            $clase = 'ca-badge-turquesa';
+            break;
+
+        case 'NO_ASISTIO_AGENDA':
+            $clase = 'ca-badge-rojo';
+            break;
+
+        case 'TASACION_FINAL_RECHAZADA':
+            $clase = 'ca-badge-fucsia';
+            break;
+
+        case 'NO_RESPONDE_TASACION_FINAL':
+            $clase = 'ca-badge-amarillo';
+            break;
+    }
+
+    return '<span class="ca-badge ' . $clase . '">' . htmlspecialchars($punto, ENT_QUOTES, 'UTF-8') . '</span>';
+}
+
 $buscar = trim((string)($_GET['buscar'] ?? ''));
 $puntoAbandono = trim((string)($_GET['punto_abandono'] ?? ''));
 
@@ -68,6 +113,47 @@ require_once('sistema_cabezal.php');
 require_once('sistema_pre_contenido.php');
 
 ?>
+
+<style>
+    .ca-badge {
+        display: inline-block;
+        padding: 5px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: bold;
+        line-height: 1.2;
+        color: #fff;
+        text-align: center;
+        white-space: normal;
+        max-width: 210px;
+        word-break: break-word;
+    }
+
+    .ca-badge-fucsia {
+        background: #e83e8c;
+        color: #fff;
+    }
+
+    .ca-badge-amarillo {
+        background: #ffc107;
+        color: #333;
+    }
+
+    .ca-badge-rojo {
+        background: #dc3545;
+        color: #fff;
+    }
+
+    .ca-badge-turquesa {
+        background: #20c997;
+        color: #fff;
+    }
+
+    .ca-badge-default {
+        background: #6c757d;
+        color: #fff;
+    }
+</style>
 
 <div id="contenido_cabezal">
     <h4 class="titulo"><?php echo_s($modulo['nombre']); ?></h4>
@@ -130,6 +216,16 @@ require_once('sistema_pre_contenido.php');
 
         <?php while ($row = $db->fetch_array($listado)) { ?>
 
+            <?php
+            $puntoMostrar = '';
+
+            if (!empty($row['motivo_abandono'])) {
+                $puntoMostrar = $row['motivo_abandono'];
+            } elseif (!empty($row['origen_abandono'])) {
+                $puntoMostrar = $row['origen_abandono'];
+            }
+            ?>
+
             <tr>
                 <td><?php echo_s($row['id']); ?></td>
                 <td><?php echo_s($row['fecha_respuesta']); ?></td>
@@ -164,15 +260,7 @@ require_once('sistema_pre_contenido.php');
                 <td><?php echo_s($row['mensaje_cliente']); ?></td>
 
                 <td>
-                    <?php
-                    if (!empty($row['motivo_abandono'])) {
-                        echo_s($row['motivo_abandono']);
-                    } elseif (!empty($row['origen_abandono'])) {
-                        echo_s($row['origen_abandono']);
-                    } else {
-                        echo_s('-');
-                    }
-                    ?>
+                    <?php echo ca_badge_punto_abandono($puntoMostrar); ?>
                 </td>
 
                 <td><?php echo_s($row['estado']); ?></td>

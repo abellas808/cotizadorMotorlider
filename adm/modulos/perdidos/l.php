@@ -148,7 +148,7 @@ $listado = $db->query("
 
                 <tr>
                     <td>
-                <?php echo_s($row['nombre'] ?: '-'); ?>
+                        <?php echo_s($row['nombre'] ?: '-'); ?>
                     </td>
 
                     <td>
@@ -202,13 +202,22 @@ $listado = $db->query("
                         <?php echo_s($row['estado']); ?>
                     </td>
 
-                    <td class="tc">
+                    <td class="tc" style="white-space:nowrap;">
                         <a
                             href="?m=perdidos_v&i=<?php echo intval($row['id']); ?>"
                             class="btn btn-default"
                         >
                             Ver conversación
                         </a>
+
+                        <button
+                            type="button"
+                            class="btn btn-danger btn-rechazar-perdido"
+                            data-id="<?php echo intval($row['id']); ?>"
+                            style="margin-left:5px;"
+                        >
+                            Rechazar compra
+                        </button>
                     </td>
                 </tr>
 
@@ -224,5 +233,37 @@ $listado = $db->query("
     </tbody>
 </table>
 </div>
+
+<script>
+$(document).on('click', '.btn-rechazar-perdido', function(){
+
+    if (!confirm('¿Enviar mensaje de rechazo de compra a este contacto?')) {
+        return;
+    }
+
+    var id = $(this).data('id');
+
+    $.ajax({
+        url: '/adm/modulos/perdidos/ajax_rechazar_compra.php',
+        type: 'POST',
+        dataType: 'json',
+        data: {
+            id: id
+        },
+        success: function(resp) {
+            if (resp && resp.ok) {
+                alert('Mensaje enviado correctamente.');
+                location.reload();
+            } else {
+                alert((resp && resp.mensaje) ? resp.mensaje : 'No se pudo enviar el mensaje.');
+            }
+        },
+        error: function(xhr) {
+            alert('Error AJAX:\n' + xhr.status + '\n' + xhr.responseText);
+        }
+    });
+
+});
+</script>
 
 <?php require_once('sistema_post_contenido.php'); ?>

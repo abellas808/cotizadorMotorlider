@@ -1519,9 +1519,10 @@ function wa_obtener_modelos_catalogo_por_marca(int $idMarca): array
         SELECT id, id_marca, id_model, nombre, prioridad
         FROM act_modelo
         WHERE id_marca = " . (int)$idMarca . "
-          AND nombre IS NOT NULL
-          AND nombre <> ''
-        ORDER BY prioridad DESC, nombre ASC
+        AND prioridad = 1
+        AND nombre IS NOT NULL
+        AND nombre <> ''
+        ORDER BY nombre ASC
     ";
 
     $rs = $cn->query($sql);
@@ -2793,6 +2794,29 @@ if (
                     'id_cotizacion' => $idCotizacion,
                     'id_conversacion' => $idConversacion
                 ]);
+
+                //Pasar Cotizacion a estado COT. PRELIMINAR
+                $cnEstado = wa_db();
+
+                $stEstado = $cnEstado->prepare("
+                    UPDATE cotizaciones_generadas
+                    SET
+                        estado_id = 3,
+                        estado = 'COTIZADO_PRELIMINAR',
+                        detalle_estado = 'Cliente respondió NO al recordatorio de agenda por WhatsApp',
+                        fecha_mod = NOW()
+                    WHERE id_cotizaciones_generadas = ?
+                    LIMIT 1
+                ");
+
+                if ($stEstado) {
+                    $stEstado->bind_param('i', $idCotizacion);
+                    $stEstado->execute();
+                    $stEstado->close();
+                }
+
+                $cnEstado->close();
+                
             } else {
                 wa_log('AGENDA_ASISTENCIA_NO_CARRITO_SIN_COTIZACION', [
                     'from' => $from,
@@ -3271,6 +3295,27 @@ Te estaremos enviando un recordatorio antes de la inspección."
                 'NO_CONFIRMACION_AGENDA',
                 'CONFIRMACION_AGENDA'
             );
+
+            $cnEstado = wa_db();
+
+            $stEstado = $cnEstado->prepare("
+                UPDATE cotizaciones_generadas
+                SET
+                    estado_id = 3,
+                    estado = 'COTIZADO_PRELIMINAR',
+                    detalle_estado = 'Cliente respondió NO al recordatorio de agenda por WhatsApp',
+                    fecha_mod = NOW()
+                WHERE id_cotizaciones_generadas = ?
+                LIMIT 1
+            ");
+
+            if ($stEstado) {
+                $stEstado->bind_param('i', $idCotizacion);
+                $stEstado->execute();
+                $stEstado->close();
+            }
+
+            $cnEstado->close();
 
             wa_log('AGENDA_CANCELADA_CARRITO_OK', [
                 'from' => $from,
@@ -5203,6 +5248,27 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
                 'NO_AGENDA_REVISION',
                 'WHATSAPP_BOT'
             );
+
+            $cnEstado = wa_db();
+
+            $stEstado = $cnEstado->prepare("
+                UPDATE cotizaciones_generadas
+                SET
+                    estado_id = 3,
+                    estado = 'COTIZADO_PRELIMINAR',
+                    detalle_estado = 'Cliente respondió NO al recordatorio de agenda por WhatsApp',
+                    fecha_mod = NOW()
+                WHERE id_cotizaciones_generadas = ?
+                LIMIT 1
+            ");
+
+            if ($stEstado) {
+                $stEstado->bind_param('i', $idCotizacion);
+                $stEstado->execute();
+                $stEstado->close();
+            }
+
+            $cnEstado->close();
         }
 
         wa_set_user_state(
