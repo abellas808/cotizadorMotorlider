@@ -156,4 +156,55 @@ class ConversationService
 
         return $ok;
     }
+
+    public static function asociarCotizacion(int $idConversacion, int $idCotizacion): bool
+    {
+        if ($idConversacion <= 0 || $idCotizacion <= 0) {
+            wa_log('CONVERSATION_SERVICE_ASOCIAR_SKIP', [
+                'id_conversacion' => $idConversacion,
+                'id_cotizacion' => $idCotizacion
+            ]);
+            return false;
+        }
+
+        $cn = wa_db();
+
+        $sql = "
+            UPDATE whatsapp_conversaciones
+            SET
+                id_cotizacion = ?,
+                fecha_mod = NOW()
+            WHERE id = ?
+            LIMIT 1
+        ";
+
+        $st = $cn->prepare($sql);
+
+        if (!$st) {
+            wa_log('CONVERSATION_SERVICE_ASOCIAR_PREPARE_ERROR', [
+                'id_conversacion' => $idConversacion,
+                'id_cotizacion' => $idCotizacion,
+                'error' => $cn->error
+            ]);
+
+            $cn->close();
+            return false;
+        }
+
+        $st->bind_param('ii', $idCotizacion, $idConversacion);
+        $ok = $st->execute();
+
+        wa_log('CONVERSATION_SERVICE_ASOCIAR_COTIZACION', [
+            'id_conversacion' => $idConversacion,
+            'id_cotizacion' => $idCotizacion,
+            'ok' => $ok,
+            'affected_rows' => $st->affected_rows,
+            'error' => $st->error
+        ]);
+
+        $st->close();
+        $cn->close();
+
+        return $ok;
+    }
 }

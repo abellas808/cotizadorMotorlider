@@ -581,6 +581,28 @@ function wa_finalizar_cotizacion_desde_estado(string $from, string $profileName,
             ?? $apiResult['cotizacion_id']
             ?? null;
 
+
+        //ASOCIAR COTIZACIÓN CON CONVERSACIÓN ACTIVA
+
+        $idCotizacion = intval($idCotizacion);
+        $idConversacionActiva = intval($userState['id_conversacion'] ?? 0);
+
+        if ($idConversacionActiva > 0 && $idCotizacion > 0) {
+
+            ConversationService::asociarCotizacion(
+                $idConversacionActiva,
+                $idCotizacion
+            );
+
+            $estadoFinalData['id_conversacion'] = $idConversacionActiva;
+            $estadoFinalData['id_cotizacion'] = $idCotizacion;
+
+            wa_log('CONVERSACION_ASOCIADA_COTIZACION_FINAL', [
+                'id_conversacion' => $idConversacionActiva,
+                'id_cotizacion' => $idCotizacion
+            ]);
+        }
+
         // --- NUEVA LÓGICA DE ESTADOS ---
         if ($idCotizacion) {
             $db = wa_db(); 
@@ -4929,6 +4951,7 @@ if (($userState['step'] ?? '') === 'valor_pretendido') {
 
     $nuevoEstado = [
         'step' => 'pendiente_humano',
+        'id_conversacion' => intval($userState['id_conversacion'] ?? 0),
         'marca' => $marca,
         'id_marca' => $userState['id_marca'] ?? null,
         'modelo' => $modelo,
