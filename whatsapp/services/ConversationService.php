@@ -86,4 +86,74 @@ class ConversationService
 
         return $id;
     }
+
+    public static function actualizarCampos(string $telefono, array $fields): bool
+    {
+        if (empty($fields)) {
+            return true;
+        }
+
+        $idConversacion = intval($fields['id_conversacion'] ?? 0);
+        unset($fields['id_conversacion']);
+
+        $cn = wa_db();
+
+        $sets = [];
+        $values = [];
+        $types = '';
+
+        foreach ($fields as $campo => $valor) {
+            $sets[] = $campo . ' = ?';
+            $values[] = $valor;
+            $types .= 's';
+        }
+
+        if ($idConversacion > 0) {
+            $sql = "UPDATE whatsapp_conversaciones SET " . implode(', ', $sets) . " WHERE id = ?";
+            $types .= 'i';
+            $values[] = $idConversacion;
+        } else {
+            $sql = "UPDATE whatsapp_conversaciones SET " . implode(', ', $sets) . " WHERE telefono = ?";
+            $types .= 's';
+            $values[] = $telefono;
+        }
+
+        $st = $cn->prepare($sql);
+
+        if (!$st) {
+            wa_log('CONVERSATION_SERVICE_UPDATE_PREPARE_ERROR', [
+                'telefono' => $telefono,
+                'id_conversacion' => $idConversacion,
+                'error' => $cn->error
+            ]);
+
+            $cn->close();
+            return false;
+        }
+
+        $bind = [];
+        $bind[] = &$types;
+
+        foreach ($values as $k => $v) {
+            $bind[] = &$values[$k];
+        }
+
+        call_user_func_array([$st, 'bind_param'], $bind);
+
+        $ok = $st->execute();
+
+        wa_log('CONVERSATION_SERVICE_UPDATE', [
+            'telefono' => $telefono,
+            'id_conversacion' => $idConversacion,
+            'ok' => $ok,
+            'affected_rows' => $st->affected_rows,
+            'fields' => array_keys($fields),
+            'error' => $st->error
+        ]);
+
+        $st->close();
+        $cn->close();
+
+        return $ok;
+    }
 }

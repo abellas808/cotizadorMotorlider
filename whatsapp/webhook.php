@@ -749,42 +749,44 @@ function wa_insert_conversation_message(
 
 function wa_update_conversation_fields(string $telefono, array $fields): void
 {
-    if (empty($fields)) {
-        return;
-    }
 
-    $cn = wa_db();
+    ConversationService::actualizarCampos($telefono, $fields);
+    // if (empty($fields)) {
+    //     return;
+    // }
 
-    $sets = [];
-    $values = [];
-    $types = '';
+    // $cn = wa_db();
 
-    foreach ($fields as $campo => $valor) {
-        $sets[] = $campo . ' = ?';
-        $values[] = $valor;
-        $types .= 's';
-    }
+    // $sets = [];
+    // $values = [];
+    // $types = '';
 
-    $sql = "UPDATE whatsapp_conversaciones SET " . implode(', ', $sets) . " WHERE telefono = ?";
-    $st = $cn->prepare($sql);
+    // foreach ($fields as $campo => $valor) {
+    //     $sets[] = $campo . ' = ?';
+    //     $values[] = $valor;
+    //     $types .= 's';
+    // }
 
-    if (!$st) {
-        throw new RuntimeException('Error prepare wa_update_conversation_fields: ' . $cn->error);
-    }
+    // $sql = "UPDATE whatsapp_conversaciones SET " . implode(', ', $sets) . " WHERE telefono = ?";
+    // $st = $cn->prepare($sql);
 
-    $types .= 's';
-    $values[] = $telefono;
+    // if (!$st) {
+    //     throw new RuntimeException('Error prepare wa_update_conversation_fields: ' . $cn->error);
+    // }
 
-    $bind = [];
-    $bind[] = &$types;
-    foreach ($values as $k => $v) {
-        $bind[] = &$values[$k];
-    }
+    // $types .= 's';
+    // $values[] = $telefono;
 
-    call_user_func_array([$st, 'bind_param'], $bind);
-    $st->execute();
-    $st->close();
-    $cn->close();
+    // $bind = [];
+    // $bind[] = &$types;
+    // foreach ($values as $k => $v) {
+    //     $bind[] = &$values[$k];
+    // }
+
+    // call_user_func_array([$st, 'bind_param'], $bind);
+    // $st->execute();
+    // $st->close();
+    // $cn->close();
 }
 
 
@@ -951,6 +953,10 @@ function wa_set_user_state(
         $campos['id_cotizacion'] = (string)$idCotizacion;
     }
 
+    if (!empty($data['id_conversacion'])) {
+        $campos['id_conversacion'] = intval($data['id_conversacion']);
+    }
+    
     wa_update_conversation_fields($telefono, $campos);
 
     wa_log('STATE_SET_DB', [
