@@ -1,0 +1,89 @@
+<!-- Responsable de: -->
+ <!-- crearConversacionNueva()
+obtenerConversacionActiva()
+cerrarConversacion()
+asociarCotizacion()
+actualizarEstado() -->
+
+<!-- Si empieza nuevo flujo COTIZAR, crear nueva conversación.
+Si ya existe flujo abierto sin cotización, continuar esa.
+Si la anterior tiene cotización o está cerrada, crear nueva. -->
+
+
+<?php
+
+class ConversationService
+{
+    public static function crearNueva(string $telefono, string $nombre = ''): int
+    {
+        $cn = wa_db();
+
+        $estado = 'INICIO';
+        $modo = 'BOT';
+        $fecha = date('Y-m-d H:i:s');
+
+        $datosJson = json_encode([
+            'step' => 'inicio',
+            'sub_step' => 'nueva_cotizacion'
+        ], JSON_UNESCAPED_UNICODE);
+
+        $sql = "
+            INSERT INTO whatsapp_conversaciones
+            (
+                telefono,
+                nombre,
+                estado,
+                step_actual,
+                sub_step_actual,
+                modo_atencion,
+                id_cotizacion,
+                datos_json,
+                fecha_ultima_interaccion,
+                fecha_alta,
+                fecha_mod
+            )
+            VALUES
+            (?, ?, ?, 'inicio', 'nueva_cotizacion', ?, NULL, ?, ?, ?, ?)
+        ";
+
+        $st = $cn->prepare($sql);
+
+        if (!$st) {
+            wa_log('CONVERSATION_SERVICE_CREAR_PREPARE_ERROR', [
+                'telefono' => $telefono,
+                'error' => $cn->error
+            ]);
+
+            $cn->close();
+            return 0;
+        }
+
+        $st->bind_param(
+            'ssssssss',
+            $telefono,
+            $nombre,
+            $estado,
+            $modo,
+            $datosJson,
+            $fecha,
+            $fecha,
+            $fecha
+        );
+
+        $ok = $st->execute();
+        $id = $ok ? intval($cn->insert_id) : 0;
+
+        wa_log('CONVERSATION_SERVICE_CREAR_NUEVA', [
+            'telefono' => $telefono,
+            'nombre' => $nombre,
+            'ok' => $ok,
+            'id_conversacion' => $id,
+            'error' => $st->error
+        ]);
+
+        $st->close();
+        $cn->close();
+
+        return $id;
+    }
+}

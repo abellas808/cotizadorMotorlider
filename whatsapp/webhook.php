@@ -15,6 +15,9 @@ date_default_timezone_set('America/Montevideo');
  * 6. vuelve BOT y sigue agenda
  */
 
+
+require_once(__DIR__ . '/services/ConversationService.php');
+
 // =========================
 // CONFIG
 // =========================
@@ -3378,13 +3381,27 @@ if (
 }
 
 if ($bodyNorm === 'cotizar') {
+
+    $idNuevaConversacion = ConversationService::crearNueva(
+        $from,
+        $profileName !== '' ? $profileName : ''
+    );
+
     wa_set_user_state(
         $from,
-        ['step' => 'marca'],
+        [
+            'step' => 'marca',
+            'id_conversacion' => $idNuevaConversacion
+        ],
         'ESPERANDO_MARCA',
         'BOT',
         $profileName !== '' ? $profileName : null
     );
+
+    wa_log('NUEVA_CONVERSACION_COTIZACION', [
+        'telefono' => $from,
+        'id_conversacion' => $idNuevaConversacion
+    ]);
 
     twiml_message_and_save(
         $from,
