@@ -523,6 +523,7 @@ function wa_finalizar_cotizacion_desde_estado(string $from, string $profileName,
 
     $estadoFinalData = [
         'step' => 'pendiente_humano',
+        'id_conversacion' => intval($userState['id_conversacion'] ?? 0),
         'marca' => $marca,
         'id_marca' => $idMarca > 0 ? $idMarca : null,
         'modelo' => $modelo,
@@ -955,6 +956,15 @@ function wa_set_user_state(
     $modoFinal = $modoAtencion ?? (($estadoFinal === 'PENDIENTE_RESPUESTA_HUMANA' || $estadoFinal === 'HUMANO_EN_CONVERSACION') ? 'HUMANO' : 'BOT');
     $fecha = date('Y-m-d H:i:s');
 
+    if (empty($data['id_conversacion'])) {
+        $convActual = wa_get_conversation($telefono);
+        $idConvActual = intval($convActual['id'] ?? 0);
+
+        if ($idConvActual > 0) {
+            $data['id_conversacion'] = $idConvActual;
+        }
+    }
+
     $campos = [
         'estado' => $estadoFinal,
         'modo_atencion' => $modoFinal,
@@ -986,7 +996,8 @@ function wa_set_user_state(
         'estado'   => $estadoFinal,
         'modo'     => $modoFinal,
         'step'     => $step,
-        'data'     => $data
+        'data'     => $data,
+        'id_conversacion' => $data['id_conversacion'] ?? null,
     ]);
 }
 

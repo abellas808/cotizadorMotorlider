@@ -113,7 +113,7 @@ class ConversationService
             $types .= 'i';
             $values[] = $idConversacion;
         } else {
-            $sql = "UPDATE whatsapp_conversaciones SET " . implode(', ', $sets) . " WHERE telefono = ?";
+            $sql = "UPDATE whatsapp_conversaciones SET " . implode(', ', $sets) . " WHERE telefono = ? ORDER BY ID DESC LIMIT 1";
             $types .= 's';
             $values[] = $telefono;
         }

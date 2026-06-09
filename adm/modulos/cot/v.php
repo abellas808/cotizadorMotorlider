@@ -218,66 +218,33 @@ function formatoTelefonoUy($telefono) {
 
 if (isset($db)) {
 
-	$telefonoCot = trim((string)($elemento['telefono'] ?? ''));
+	$idCotizacionActual = intval($elemento['id_cotizaciones_generadas']);
 
-	if ($telefonoCot !== '') {
+	$sqlMensajes = "
+		SELECT 
+			m.id,
+			m.id_conversacion,
+			m.telefono,
+			m.direccion,
+			m.emisor,
+			m.id_usuario,
+			m.nombre_usuario,
+			m.mensaje,
+			m.meta_json,
+			m.sid_mensaje,
+			m.fecha
+		FROM whatsapp_conversacion_mensajes m
+		INNER JOIN whatsapp_conversaciones c
+			ON c.id = m.id_conversacion
+		WHERE c.id_cotizacion = {$idCotizacionActual}
+		ORDER BY m.fecha ASC, m.id ASC
+	";
 
-		$telefonosBuscar = array();
+	$qMensajes = $db->query($sqlMensajes);
 
-		// Teléfono tal cual viene en la cotización
-		$telefonosBuscar[] = $telefonoCot;
-
-		// Solo números
-		$soloNumeros = preg_replace('/[^0-9]/', '', $telefonoCot);
-
-		if ($soloNumeros !== '') {
-			$telefonosBuscar[] = $soloNumeros;
-			$telefonosBuscar[] = '+' . $soloNumeros;
-			$telefonosBuscar[] = 'whatsapp:+' . $soloNumeros;
-
-			// Si está guardado como 098..., armar formato Uruguay
-			if (strlen($soloNumeros) == 9 && substr($soloNumeros, 0, 1) == '0') {
-				$uy = '598' . substr($soloNumeros, 1);
-				$telefonosBuscar[] = $uy;
-				$telefonosBuscar[] = '+' . $uy;
-				$telefonosBuscar[] = 'whatsapp:+' . $uy;
-			}
-		}
-
-		$telefonosBuscar = array_unique(array_filter($telefonosBuscar));
-
-		$whereTelefonos = array();
-		foreach ($telefonosBuscar as $tel) {
-			$whereTelefonos[] = 'telefono = "' . addslashes($tel) . '"';
-		}
-
-		if (!empty($whereTelefonos)) {
-
-			$sqlMensajes = '
-				SELECT 
-					id,
-					id_conversacion,
-					telefono,
-					direccion,
-					emisor,
-					id_usuario,
-					nombre_usuario,
-					mensaje,
-					meta_json,
-					sid_mensaje,
-					fecha
-				FROM whatsapp_conversacion_mensajes
-				WHERE (' . implode(' OR ', $whereTelefonos) . ')
-				ORDER BY fecha ASC, id ASC
-			';
-
-			$qMensajes = $db->query($sqlMensajes);
-
-			if ($qMensajes) {
-				while ($rowMsg = $db->fetch_array($qMensajes)) {
-					$convMensajes[] = $rowMsg;
-				}
-			}
+	if ($qMensajes) {
+		while ($rowMsg = $db->fetch_array($qMensajes)) {
+			$convMensajes[] = $rowMsg;
 		}
 	}
 }
