@@ -44,7 +44,7 @@ function ca_badge_punto_abandono($punto) {
             break;
 
         case 'TASACION_FINAL_RECHAZADA':
-            $clase = 'ca-badge-fucsia';
+            $clase = 'ca-badge-naranja';
             break;
 
         case 'NO_RESPONDE_TASACION_FINAL':
@@ -152,6 +152,11 @@ require_once('sistema_pre_contenido.php');
     .ca-badge-default {
         background: #6c757d;
         color: #fff;
+    }
+
+    .ca-badge-naranja{
+        background:#ff8c00;
+        color:#fff;
     }
 </style>
 

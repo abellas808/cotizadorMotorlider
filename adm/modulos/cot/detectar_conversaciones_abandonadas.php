@@ -25,12 +25,36 @@ date_default_timezone_set('America/Montevideo');
 
 global $db;
 
+function obtener_parametro_sistema($grupo, $clave, $default)
+{
+    global $db;
+
+    $row = $db->query_first("
+        SELECT valor
+        FROM parametros_sistema
+        WHERE grupo = '" . $db->escape($grupo) . "'
+          AND clave = '" . $db->escape($clave) . "'
+          AND activo = 1
+        LIMIT 1
+    ");
+
+    if (!$row || trim((string)$row['valor']) === '') {
+        return $default;
+    }
+
+    return $row['valor'];
+}
+
 echo "<pre>";
 echo "=====================================\n";
 echo " DETECTOR CONVERSACIONES ABANDONADAS\n";
 echo "=====================================\n\n";
 
-$HORAS_ESPERA = 12;
+$HORAS_ESPERA = intval(obtener_parametro_sistema(
+    'whatsapp',
+    'horas_conversacion_abandonada',
+    12
+));
 
 $stepsAbandono = [
     'inicio',
@@ -106,15 +130,15 @@ $sql = "
         FROM whatsapp_conversacion_mensajes m1
         INNER JOIN (
             SELECT
-                telefono,
+                id_conversacion,
                 MAX(id) AS max_id
             FROM whatsapp_conversacion_mensajes
-            GROUP BY telefono
+            GROUP BY id_conversacion
         ) x
-            ON x.telefono = m1.telefono
-           AND x.max_id = m1.id
+            ON x.id_conversacion = m1.id_conversacion
+        AND x.max_id = m1.id
     ) ult
-        ON ult.telefono = wc.telefono
+        ON ult.id_conversacion = wc.id
 
     WHERE ult.direccion = 'SALIENTE'
 

@@ -2826,7 +2826,7 @@ if (
                     $idConversacion,
                     $from,
                     $body !== '' ? $body : 'Cliente canceló asistencia mediante botón',
-                    'NO_CONFIRMACION_AGENDA',
+                    'NO_CONFIRMA_AGENDA',
                     'CONFIRMACION_AUTOMATICA_AGENDA'
                 );
 
@@ -3334,7 +3334,7 @@ Te estaremos enviando un recordatorio antes de la inspección."
                 $idConversacion,
                 $from,
                 'Cliente canceló la confirmación de agenda',
-                'NO_CONFIRMACION_AGENDA',
+                'NO_CONFIRMA_AGENDA',
                 'CONFIRMACION_AGENDA'
             );
 
@@ -5848,7 +5848,7 @@ function wa_registrar_cancelacion_agenda_en_carrito(
             $idConversacion,
             $from,
             'Cliente canceló la confirmación de agenda',
-            'NO_CONFIRMACION_AGENDA',
+            'NO_CONFIRMA_AGENDA',
             $origen
         );
 
