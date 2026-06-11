@@ -577,11 +577,7 @@ function wa_finalizar_cotizacion_desde_estado(string $from, string $profileName,
         $estadoFinalData['api_result'] = $apiResult;
         $estadoFinalData['step'] = 'pendiente_humano';
 
-        $idCotizacion = $apiResult['id_cotizacion']
-            ?? $apiResult['cotizacion']
-            ?? $apiResult['cotizacion_id']
-            ?? null;
-
+        $idCotizacion = wa_extraer_id_cotizacion_api($apiResult);
 
         //ASOCIAR COTIZACIÓN CON CONVERSACIÓN ACTIVA
 
@@ -6053,6 +6049,29 @@ function wa_obtener_id_cotizacion_desde_mensaje_respondido(string $originalSid):
     ]);
 
     return $idCotizacion;
+}
+
+function wa_extraer_id_cotizacion_api(array $apiResult): int
+{
+    $id = intval(
+        $apiResult['id_cotizacion']
+        ?? $apiResult['cotizacion']
+        ?? $apiResult['cotizacion_id']
+        ?? $apiResult['post_cotizacion']['id_cotizacion']
+        ?? 0
+    );
+
+    if ($id > 0) {
+        return $id;
+    }
+
+    $raw = (string)($apiResult['raw'] ?? '');
+
+    if ($raw !== '' && preg_match('/"id_cotizacion"\s*:\s*([0-9]+)/', $raw, $m)) {
+        return intval($m[1]);
+    }
+
+    return 0;
 }
 
 // =========================
