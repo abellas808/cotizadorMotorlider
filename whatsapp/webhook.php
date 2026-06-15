@@ -20,6 +20,7 @@ require_once(__DIR__ . '/services/ConversationService.php');
 require_once(__DIR__ . '/services/ParametroSistemaService.php');
 require_once(__DIR__ . '/services/TwilioMessageService.php');
 require_once __DIR__ . '/services/AgendaEstadoService.php';
+require_once __DIR__ . '/services/NotificacionPendienteService.php';
 
 // =========================
 // CONFIG
@@ -2717,8 +2718,77 @@ $bodyNorm = wa_normalizar_texto($body);
 $userState = wa_get_user_data($from);
 $currentConv = wa_get_conversation($from);
 $currentEstado = (string)($currentConv['estado'] ?? 'INICIO');
-$buttonPayload = trim((string)($_POST['ButtonPayload'] ?? ''));
 $buttonPayloadAgenda = trim((string)($_POST['ButtonPayload'] ?? ''));
+
+
+// MOTIVOS NO AGENDAR PRE-COTIZACION
+if (
+    in_array($buttonPayloadAgenda, [
+        'motivo_no_agenda_otro_momento',
+        'motivo_no_agenda_mayor_valor',
+        'motivo_no_agenda_probando'
+    ], true)
+) {
+    $conv = wa_get_conversation($from);
+
+    $idConversacion = intval($conv['id'] ?? 0);
+
+    $idCotizacion = intval($userState['id_cotizacion'] ?? 0);
+
+    if ($idCotizacion <= 0) {
+        $idCotizacion = intval($conv['id_cotizacion'] ?? 0);
+    }
+
+    $motivoAbandono = 'SIN_DEFINIR';
+    $mensajeCliente = $body !== '' ? $body : $buttonPayload;
+
+    switch ($buttonPayloadAgenda) {
+        case 'motivo_no_agenda_otro_momento':
+            $motivoAbandono = 'ME_QUIERO_AGENDAR_EN_OTRO_MOMENTO';
+            break;
+
+        case 'motivo_no_agenda_mayor_valor':
+            $motivoAbandono = 'ESPERABA_MAYOR_VALOR';
+            break;
+
+        case 'motivo_no_agenda_probando':
+            $motivoAbandono = 'ESTABA_PROBANDO';
+            break;
+    }
+
+    wa_registrar_carrito_abandonado(
+        $idCotizacion,
+        $idConversacion,
+        $from,
+        $mensajeCliente,
+        $motivoAbandono,
+        'PRETASACION',
+        'Alan'
+    );
+
+    $nuevoEstado = $userState;
+    $nuevoEstado['step'] = 'cerrado';
+    $nuevoEstado['sub_step'] = 'carrito_abandonado';
+    $nuevoEstado['motivo_abandono'] = $motivoAbandono;
+
+    wa_set_user_state(
+        $from,
+        $nuevoEstado,
+        'CERRADO',
+        'BOT',
+        $profileName !== '' ? $profileName : null,
+        null,
+        $idCotizacion > 0 ? $idCotizacion : null
+    );
+
+    twiml_message_and_save(
+        $from,
+        'Gracias por tu respuesta. Si más adelante querés retomar el proceso, estamos a las órdenes 👍'
+    );
+
+    return;
+}
+
 
 if ($buttonPayload === 'confirmar_agenda_final' || $buttonPayload === 'cancelar_agenda_final') {
 
@@ -2908,6 +2978,8 @@ if (
     }
 }
 
+
+
 // =========================
 // CONTROL SEGURO: NO AGENDAR DESDE PENDIENTE HUMANO
 // =========================
@@ -3033,6 +3105,20 @@ if ($step === 'resultado_enviado' && $subStep === 'esperando_agenda') {
             $nuevoEstado['agenda_horas_opciones']
         );
 
+           wa_log('PRE_CANCELAR_RECORDATORIO', [
+    'id_cotizacion' => $idCotizacion
+]);
+
+        NotificacionPendienteService::cancelarPorCotizacionYTipo(
+            $idCotizacion,
+            'RECORDATORIO_PRECOTIZACION_24HS',
+            'Cliente respondió Sí, agendar antes del recordatorio'
+        );
+
+        wa_log('POST_CANCELAR_RECORDATORIO', [
+    'id_cotizacion' => $idCotizacion
+]);
+
         wa_set_user_state(
             $from,
             $nuevoEstado,
@@ -3047,12 +3133,12 @@ if ($step === 'resultado_enviado' && $subStep === 'esperando_agenda') {
             $from,
             "🗓️ ¡Genial! Seleccioná el día que te quede mejor:\n\n"
             . implode("\n", $lineas)
-        );
+        );       
 
         return;
     }
 
-    // EN OTRO MOMENTO
+   // EN OTRO MOMENTO / NO ME QUIERO AGENDAR
     if (
         $payload === 'tasacion_finalizar_no' ||
         in_array($bodyLower, ['en otro momento', 'no', 'ahora no'], true)
@@ -3067,33 +3153,43 @@ if ($step === 'resultado_enviado' && $subStep === 'esperando_agenda') {
             $idCotizacion = intval($conv['id_cotizacion'] ?? 0);
         }
 
-        wa_registrar_carrito_abandonado(
-            $idCotizacion,
-            $idConversacion,
-            $from,
-            $body !== '' ? $body : 'En otro momento',
-            'NO_AGENDA_REVISION',
-            'PRETASACION'
-        );
+        // IMPORTANTE:
+        // Ya no registramos carrito abandonado acá.
+        // Primero pedimos el motivo mediante template.
 
         $nuevoEstado = $userState;
-        $nuevoEstado['step'] = 'cerrado';
-        $nuevoEstado['sub_step'] = 'no_agenda';
+        $nuevoEstado['step'] = 'esperando_motivo_no_agendar_precotizacion';
+        $nuevoEstado['sub_step'] = 'motivo_no_agendar';
+        $nuevoEstado['id_cotizacion'] = $idCotizacion;
+        $nuevoEstado['id_conversacion'] = $idConversacion;
+        $nuevoEstado['origen_abandono'] = 'PRETASACION';
+        $nuevoEstado['motivo_base'] = 'NO_AGENDA_REVISION';
+
+        wa_log('PRE_CANCELAR_RECORDATORIO', [
+    'id_cotizacion' => $idCotizacion
+]);
+
+        NotificacionPendienteService::cancelarPorCotizacionYTipo(
+            $idCotizacion,
+            'RECORDATORIO_PRECOTIZACION_24HS',
+            'Cliente respondió Sí, agendar antes del recordatorio'
+        );
+
+        wa_log('POST_CANCELAR_RECORDATORIO', [
+    'id_cotizacion' => $idCotizacion
+]);
 
         wa_set_user_state(
             $from,
             $nuevoEstado,
-            'CERRADO',
+            'ESPERANDO_MOTIVO_NO_AGENDAR_PRE_COTIZACION',
             'BOT',
             $profileName !== '' ? $profileName : null,
             null,
             $idCotizacion > 0 ? $idCotizacion : null
         );
 
-        twiml_message_and_save(
-            $from,
-            "Perfecto, cuando quieras retomar estamos a las órdenes 👍"
-        );
+        TwilioMessageService::enviarTemplateMotivoNoAgendar($from);
 
         return;
     }
@@ -3140,6 +3236,12 @@ if ($buttonPayload === 'tasacion_finalizar_si') {
             'respuesta' => 'SI',
             'id_cotizacion' => $idCotizacion
         ]
+    );
+
+    NotificacionPendienteService::cancelarPorCotizacionYTipo(
+        $idCotizacion,
+        'RECORDATORIO_PRECOTIZACION_24HS',
+        'Cliente respondió antes del recordatorio'
     );
 
     return;

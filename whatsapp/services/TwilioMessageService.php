@@ -49,12 +49,20 @@ class TwilioMessageService
 
         $url = 'https://api.twilio.com/2010-04-01/Accounts/' . $accountSid . '/Messages.json';
 
-        $postFields = http_build_query([
+        $params = [
             'From' => $from,
             'To' => $to,
-            'ContentSid' => $contentSid,
-            'ContentVariables' => json_encode($variables, JSON_UNESCAPED_UNICODE)
-        ]);
+            'ContentSid' => $contentSid
+        ];
+
+        if (!empty($variables)) {
+            $params['ContentVariables'] = json_encode(
+                (object)$variables,
+                JSON_UNESCAPED_UNICODE
+            );
+        }
+
+        $postFields = http_build_query($params);
 
         $ch = curl_init($url);
 

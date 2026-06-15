@@ -9,6 +9,7 @@ if (!isset($config['db_tablePrefix'])) {
 
 require_once(__DIR__ . '/../../includes/database.php');
 require_once(__DIR__ . '/../../includes/funciones.php');
+require_once(__DIR__ . '/../../../whatsapp/services/NotificacionPendienteService.php');
 
 session_start();
 require_once(__DIR__ . '/../../includes/chk_login.php');
@@ -457,6 +458,29 @@ registrar_mensaje_whatsapp_backend(
 );
 
 actualizar_conversacion_post_pre_tasacion($telefono, $id);
+
+$vehiculo = trim(
+    (string)($elemento['marca'] ?? '') . ' ' .
+    (string)($elemento['modelo'] ?? '')
+);
+
+if ($vehiculo === '') {
+    $vehiculo = 'tu vehículo';
+}
+
+NotificacionPendienteService::crear(
+    intval($id),
+    null,
+    $telefono,
+    'RECORDATORIO_PRECOTIZACION_24HS',
+    'PRETASACION',
+    date('Y-m-d H:i:s', strtotime('+24 hours')),
+    [
+        'nombre' => $nombreCliente,
+        'vehiculo' => $vehiculo
+    ],
+    'Recordatorio 24 hs luego de enviar pre-cotización'
+);
 
 $db->query("
 	INSERT INTO cotizaciones_usuarios_historial
