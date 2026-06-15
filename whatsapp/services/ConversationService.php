@@ -207,4 +207,20 @@ class ConversationService
 
         return $ok;
     }
+
+    public static function procesarNoQuiereAgendar(
+        int $idCotizacion,
+        int $idConversacion,
+        string $telefono
+    ): bool
+    {
+        // Actualizar estado conversación
+
+        // Enviar template motivos
+        TwilioMessageService::enviarTemplateMotivoNoAgendar(
+            $telefono
+        );
+
+        return true;
+    }
 }

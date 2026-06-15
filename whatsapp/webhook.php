@@ -17,6 +17,9 @@ date_default_timezone_set('America/Montevideo');
 
 
 require_once(__DIR__ . '/services/ConversationService.php');
+require_once(__DIR__ . '/services/ParametroSistemaService.php');
+require_once(__DIR__ . '/services/TwilioMessageService.php');
+require_once __DIR__ . '/services/AgendaEstadoService.php';
 
 // =========================
 // CONFIG
@@ -2776,6 +2779,15 @@ if (
                 . ".Te estaremos enviando un recordatorio antes de la inspección."
             );
 
+            //HISTORICO AGENDAS
+            AgendaEstadoService::registrar(
+                $conn,
+                $id_agenda,
+                14,  //AGENDADO
+                'Agenda creada desde flujo WhatsApp',
+                'Alan'
+            );
+
             return;
         }
 
@@ -2869,6 +2881,15 @@ if (
                 . wa_formatear_fecha_chat((string)$agendaPendiente['fecha'])
                 . " a las " . substr((string)$agendaPendiente['hora'], 0, 5)
                 . " fue cancelada. Si querés coordinar una nueva fecha, respondé AGENDAR."
+            );
+
+            //HISTORICO AGENDAS
+            AgendaEstadoService::registrar(
+                $conn,
+                $id_agenda,
+                14, //NO QUIERE AGENDAR
+                'Agenda creada desde flujo WhatsApp',
+                'Alan'
             );
 
             return;
@@ -4281,7 +4302,7 @@ if (($userState['step'] ?? '') === 'km') {
         $opcionesTexto = [];
         $opcionesEstado = [];
 
-        $maxVersiones = min(10, count($versionesDisponibles));
+        $maxVersiones = min(20, count($versionesDisponibles));
 
         for ($i = 0; $i < $maxVersiones; $i++) {
             $nro = (string)($i + 1);
@@ -5504,12 +5525,10 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
         $idCotizacion
     );
 
-    twiml_message_and_save(
+    TwilioMessageService::enviarTemplateDatosFinalesAgendaConfirmacion(
         $from,
-        "¡Agenda confirmada! ✅\n\n"
-        . "Fecha: " . wa_formatear_fecha_chat($fecha) . "\n"
-        . "Hora: " . substr($hora, 0, 5) . "\n\n"
-        . "Te esperamos en Av. de las Américas 7868."
+        wa_formatear_fecha_chat($fecha),
+        substr($hora, 0, 5)
     );
 
     return;
