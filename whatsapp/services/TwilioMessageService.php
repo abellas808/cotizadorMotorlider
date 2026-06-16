@@ -125,4 +125,26 @@ class TwilioMessageService
             'Gracias por tu respuesta, nos gustaría saber el motivo de tu decisión.'
         );
     }
+
+    public static function enviarTemplateRecordatorioPrecotizacion24Hs(
+        string $to,
+        string $nombre,
+        string $vehiculo
+    ): bool {
+        $contentSid = ParametroSistemaService::obtener(
+            'twilio',
+            'template_recordatorio_precotizacion_24hs'
+        );
+
+        return self::enviarTemplate(
+            $to,
+            $contentSid,
+            [
+                "1" => $nombre,
+                "2" => $vehiculo
+            ],
+            'template_recordatorio_precotizacion_24hs',
+            "Recordatorio 24 hs pre-cotización para {$nombre} - {$vehiculo}"
+        );
+    }
 }
