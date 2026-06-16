@@ -93,7 +93,7 @@ class TwilioMessageService
             return false;
         }
 
-        if ($mensajeHistorial !== '') {
+        if ($mensajeHistorial !== '' && function_exists('wa_save_last_bot_message')) {
             wa_save_last_bot_message(
                 $to,
                 $mensajeHistorial,

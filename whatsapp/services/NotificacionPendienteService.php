@@ -2,6 +2,30 @@
 
 class NotificacionPendienteService
 {
+    private static function db(): mysqli
+    {
+        global $db;
+
+        if (isset($db) && is_object($db) && isset($db->link_id) && $db->link_id instanceof mysqli) {
+            return $db->link_id;
+        }
+
+        if (function_exists('wa_db')) {
+            return wa_db();
+        }
+
+        throw new RuntimeException('No se pudo obtener conexión MySQL para NotificacionPendienteService');
+    }
+
+    private static function log(string $tag, array $data = []): void
+    {
+        if (function_exists('wa_log')) {
+            wa_log($tag, $data);
+        } else {
+            error_log($tag . ' ' . json_encode($data, JSON_UNESCAPED_UNICODE));
+        }
+    }
+
     public static function crear(
         ?int $idCotizacion,
         ?int $idAgenda,
@@ -12,28 +36,34 @@ class NotificacionPendienteService
         array $payload = [],
         string $observaciones = ''
     ): bool {
-        global $db;
+        $cn = self::db();
 
         $payloadJson = !empty($payload)
             ? json_encode($payload, JSON_UNESCAPED_UNICODE)
             : null;
 
-        // Evita duplicar el mismo pendiente
-        $existe = $db->query_first("
+        $sqlExiste = "
             SELECT id
             FROM whatsapp_notificaciones_pendientes
             WHERE estado = 'PENDIENTE'
-            AND tipo_notificacion = '" . $db->escape($tipoNotificacion) . "'
+            AND tipo_notificacion = '" . $cn->real_escape_string($tipoNotificacion) . "'
             AND id_cotizacion " . ($idCotizacion !== null ? "= " . intval($idCotizacion) : "IS NULL") . "
             AND id_agenda " . ($idAgenda !== null ? "= " . intval($idAgenda) : "IS NULL") . "
             LIMIT 1
-        ");
+        ";
 
-        if (!empty($existe)) {
+        $rsExiste = $cn->query($sqlExiste);
+
+        if ($rsExiste && $rsExiste->num_rows > 0) {
+            self::log('NOTIFICACION_PENDIENTE_YA_EXISTE', [
+                'id_cotizacion' => $idCotizacion,
+                'tipo' => $tipoNotificacion
+            ]);
+            //$cn->close();
             return true;
         }
 
-        $db->query("
+        $sqlInsert = "
             INSERT INTO whatsapp_notificaciones_pendientes
             (
                 id_cotizacion,
@@ -51,18 +81,30 @@ class NotificacionPendienteService
             (
                 " . ($idCotizacion !== null ? intval($idCotizacion) : "NULL") . ",
                 " . ($idAgenda !== null ? intval($idAgenda) : "NULL") . ",
-                '" . $db->escape($telefono) . "',
-                '" . $db->escape($tipoNotificacion) . "',
-                '" . $db->escape($origen) . "',
-                " . ($payloadJson !== null ? "'" . $db->escape($payloadJson) . "'" : "NULL") . ",
-                '" . $db->escape($fechaProgramada) . "',
+                '" . $cn->real_escape_string($telefono) . "',
+                '" . $cn->real_escape_string($tipoNotificacion) . "',
+                '" . $cn->real_escape_string($origen) . "',
+                " . ($payloadJson !== null ? "'" . $cn->real_escape_string($payloadJson) . "'" : "NULL") . ",
+                '" . $cn->real_escape_string($fechaProgramada) . "',
                 'PENDIENTE',
-                '" . $db->escape($observaciones) . "',
+                '" . $cn->real_escape_string($observaciones) . "',
                 NOW()
             )
-        ");
+        ";
 
-        return true;
+        $ok = $cn->query($sqlInsert);
+
+        self::log('NOTIFICACION_PENDIENTE_CREAR', [
+            'ok' => $ok,
+            'id_insertado' => $cn->insert_id,
+            'id_cotizacion' => $idCotizacion,
+            'tipo' => $tipoNotificacion,
+            'error' => $cn->error
+        ]);
+
+        // $cn->close();
+
+        return (bool)$ok;
     }
 
     public static function cancelarPorCotizacionYTipo(
@@ -70,8 +112,7 @@ class NotificacionPendienteService
         string $tipoNotificacion,
         string $observacion = ''
     ): bool {
-       
-        $cn = wa_db();
+        $cn = self::db();
 
         $sql = "
             UPDATE whatsapp_notificaciones_pendientes
@@ -86,41 +127,71 @@ class NotificacionPendienteService
 
         $ok = $cn->query($sql);
 
-        $cn->close();
+        self::log('NOTIFICACION_PENDIENTE_CANCELAR', [
+            'ok' => $ok,
+            'id_cotizacion' => $idCotizacion,
+            'tipo' => $tipoNotificacion,
+            'affected_rows' => $cn->affected_rows,
+            'error' => $cn->error
+        ]);
+
+        // $cn->close();
 
         return (bool)$ok;
     }
 
     public static function marcarProcesada(int $id): bool
     {
-        global $db;
+        $cn = self::db();
 
-        $db->query("
+        $sql = "
             UPDATE whatsapp_notificaciones_pendientes
             SET
                 estado = 'PROCESADA',
                 fecha_procesada = NOW()
             WHERE id = " . intval($id) . "
             LIMIT 1
-        ");
+        ";
 
-        return true;
+        $ok = $cn->query($sql);
+
+        self::log('NOTIFICACION_PENDIENTE_PROCESADA', [
+            'ok' => $ok,
+            'id' => $id,
+            'affected_rows' => $cn->affected_rows,
+            'error' => $cn->error
+        ]);
+
+        // $cn->close();
+
+        return (bool)$ok;
     }
 
     public static function marcarError(int $id, string $error): bool
     {
-        global $db;
+        $cn = self::db();
 
-        $db->query("
+        $sql = "
             UPDATE whatsapp_notificaciones_pendientes
             SET
                 estado = 'ERROR',
                 fecha_procesada = NOW(),
-                observaciones = CONCAT(IFNULL(observaciones,''), '\n', '" . $db->escape($error) . "')
+                observaciones = CONCAT(IFNULL(observaciones,''), '\n', '" . $cn->real_escape_string($error) . "')
             WHERE id = " . intval($id) . "
             LIMIT 1
-        ");
+        ";
 
-        return true;
+        $ok = $cn->query($sql);
+
+        self::log('NOTIFICACION_PENDIENTE_ERROR', [
+            'ok' => $ok,
+            'id' => $id,
+            'error_msg' => $error,
+            'db_error' => $cn->error
+        ]);
+
+        // $cn->close();
+
+        return (bool)$ok;
     }
 }

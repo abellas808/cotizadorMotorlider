@@ -190,7 +190,21 @@ while ($row = $rs->fetch_assoc()) {
                 continue 2;
         }
 
+        wa_log('RUNNER_RESULTADO_ENVIO', [
+    'id' => $id,
+    'tipo' => $tipo,
+    'ok' => $ok
+]);
+
     if ($ok) {
+
+        wa_log('RUNNER_OK_CREANDO_ABANDONO_3HS', [
+            'id_original' => $id,
+            'id_cotizacion' => intval($row['id_cotizacion']),
+            'telefono' => $telefono,
+            'payload' => $payload
+        ]);
+
         NotificacionPendienteService::marcarProcesada($id);
 
         NotificacionPendienteService::crear(
@@ -203,6 +217,7 @@ while ($row = $rs->fetch_assoc()) {
             $payload,
             'Control interno: si no responde luego del recordatorio 24 hs, enviar a carrito abandonado'
         );
+
     } else {
         NotificacionPendienteService::marcarError(
             $id,
