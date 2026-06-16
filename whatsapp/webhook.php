@@ -21,6 +21,7 @@ require_once(__DIR__ . '/services/ParametroSistemaService.php');
 require_once(__DIR__ . '/services/TwilioMessageService.php');
 require_once __DIR__ . '/services/AgendaEstadoService.php';
 require_once __DIR__ . '/services/NotificacionPendienteService.php';
+require_once __DIR__ . '/services/CarritoAbandonadoService.php';
 
 // =========================
 // CONFIG
@@ -2389,147 +2390,6 @@ function wa_respuesta_tasacion_final_no(string $texto): bool
     ], true) || strpos($v, 'por ahora no') !== false;
 }
 
-function wa_registrar_carrito_abandonado(
-    int $idCotizacion,
-    int $idConversacion,
-    string $telefono,
-    string $mensajeCliente,
-    string $motivoAbandono = 'SIN_DEFINIR',
-    string $origenAbandono = 'WHATSAPP_BOT',
-    string $usuario = ''
-): void {
-
-    wa_log('CARRITO_INTENTO', [
-        'id_cotizacion' => $idCotizacion,
-        'id_conversacion' => $idConversacion,
-        'telefono' => $telefono,
-        'mensaje_cliente' => $mensajeCliente,
-        'motivo_abandono' => $motivoAbandono,
-        'origen_abandono' => $origenAbandono
-    ]);
-
-    $cn = wa_db();
-    $cn->set_charset("utf8mb4");
-
-    $cot = null;
-
-    if ($idCotizacion > 0) {
-        $sqlCot = "
-            SELECT
-                nombre,
-                email,
-                marca,
-                familia AS modelo,
-                anio,
-                kilometros,
-                tasacion_final
-            FROM cotizaciones_generadas
-            WHERE id_cotizaciones_generadas = ?
-            LIMIT 1
-        ";
-
-        $stCot = $cn->prepare($sqlCot);
-
-        if ($stCot) {
-            $stCot->bind_param('i', $idCotizacion);
-            $stCot->execute();
-            $resCot = $stCot->get_result();
-            $cot = $resCot ? $resCot->fetch_assoc() : null;
-            $stCot->close();
-        } else {
-            wa_log('CARRITO_COT_PREPARE_ERROR', [
-                'error' => $cn->error,
-                'sql' => $sqlCot
-            ]);
-        }
-    }
-
-    $nombre = (string)($cot['nombre'] ?? '');
-    $email = (string)($cot['email'] ?? '');
-    $marca = (string)($cot['marca'] ?? '');
-    $modelo = (string)($cot['modelo'] ?? '');
-    $anio = intval($cot['anio'] ?? 0);
-    $kilometros = intval($cot['kilometros'] ?? 0);
-    $tasacionFinal = floatval($cot['tasacion_final'] ?? 0);
-
-    $idExistente = 0;
-
-    $sql = "
-        INSERT INTO carrito_abandonado
-        (
-            id_cotizacion,
-            id_conversacion,
-            telefono,
-            nombre,
-            email,
-            marca,
-            modelo,
-            anio,
-            kilometros,
-            tasacion_final,
-            mensaje_cliente,
-            motivo_abandono,
-            origen_abandono,
-            fecha_respuesta,
-            usuario,
-            estado,
-            observaciones,
-            fecha_ultima_gestion,
-            usuario_ultima_gestion,
-            fecha_alta
-        )
-        VALUES
-        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, 'PENDIENTE', '', NULL, '', NOW())
-    ";
-
-    $st = $cn->prepare($sql);
-
-    if (!$st) {
-        wa_log('CARRITO_INSERT_PREPARE_ERROR', [
-            'error' => $cn->error,
-            'sql' => $sql
-        ]);
-        $cn->close();
-        return;
-    }
-
-    $st->bind_param(
-        'iisssssiidssss',
-        $idCotizacion,
-        $idConversacion,
-        $telefono,
-        $nombre,
-        $email,
-        $marca,
-        $modelo,
-        $anio,
-        $kilometros,
-        $tasacionFinal,
-        $mensajeCliente,
-        $motivoAbandono,
-        $origenAbandono,
-        $usuario
-    );
-
-    if (!$st->execute()) {
-        wa_log('CARRITO_INSERT_ERROR', [
-            'error' => $st->error,
-            'errno' => $st->errno,
-            'id_cotizacion' => $idCotizacion,
-            'telefono' => $telefono
-        ]);
-    } else {
-        wa_log('CARRITO_INSERT_OK', [
-            'id_insertado' => $st->insert_id,
-            'id_cotizacion' => $idCotizacion,
-            'telefono' => $telefono
-        ]);
-    }
-
-    $st->close();
-    $cn->close();
-}
-
 function wa_obtener_cotizacion_actual_para_agenda(string $telefono, array $userState, int $idConvCotizacion): int
 {
     $cn = wa_db();
@@ -2756,14 +2616,13 @@ if (
             break;
     }
 
-    wa_registrar_carrito_abandonado(
+    CarritoAbandonadoService::registrar(
         $idCotizacion,
         $idConversacion,
         $from,
         $mensajeCliente,
         $motivoAbandono,
-        'PRETASACION',
-        'Alan'
+        'PRETASACION'
     );
 
     $nuevoEstado = $userState;
@@ -2899,21 +2758,14 @@ if (
             }
 
             if ($idCotizacion > 0) {
-                wa_registrar_carrito_abandonado(
+                CarritoAbandonadoService::registrar(
                     $idCotizacion,
                     $idConversacion,
                     $from,
-                    $body !== '' ? $body : 'Cliente canceló asistencia mediante botón',
-                    'NO_CONFIRMA_AGENDA',
-                    'CONFIRMACION_AUTOMATICA_AGENDA'
+                    $mensajeCliente,
+                    $motivoAbandono !== '' ? $motivoAbandono : 'Cliente canceló asistencia mediante botón',
+                    'NO_CONFIRMA_AGENDA'
                 );
-
-                wa_log('AGENDA_ASISTENCIA_NO_CARRITO_OK', [
-                    'from' => $from,
-                    'id_agenda' => intval($agendaPendiente['id_agenda'] ?? 0),
-                    'id_cotizacion' => $idCotizacion,
-                    'id_conversacion' => $idConversacion
-                ]);
 
                 //Pasar Cotizacion a estado COT. PRELIMINAR
                 $cnEstado = wa_db();
@@ -3003,14 +2855,95 @@ if ($stepActual === 'pendiente_humano') {
 }
 
 
-// =========================
-// RESPUESTA PRE TASACION
-// =========================
+
 $step = (string)($userState['step'] ?? '');
 $subStep = (string)($userState['sub_step'] ?? '');
 $payload = trim((string)($_POST['ButtonPayload'] ?? ''));
 $bodyLower = strtolower(trim((string)($_POST['Body'] ?? '')));
 
+// =========================
+// RESPUESTA RECORDATORIO PRE-COTIZACION 24HS
+// =========================
+if (
+    in_array($payload, [
+        'recordatorio_precotizacion_24hs_si',
+        'recordatorio_precotizacion_24hs_no'
+    ], true)
+) {
+    $conv = wa_get_conversation($from);
+
+    $idCotizacion = intval($userState['id_cotizacion'] ?? 0);
+
+    if ($idCotizacion <= 0) {
+        $idCotizacion = intval($conv['id_cotizacion'] ?? 0);
+    }
+
+    if ($payload === 'recordatorio_precotizacion_24hs_si') {
+
+        // Reutilizamos el mismo flujo de "Sí, agendar"
+        $userState['step'] = 'resultado_enviado';
+        $userState['sub_step'] = 'esperando_agenda';
+        $userState['id_cotizacion'] = $idCotizacion;
+
+        $_POST['ButtonPayload'] = 'si_agendar';
+
+        $payload = 'si_agendar';
+        $step = 'resultado_enviado';
+        $subStep = 'esperando_agenda';
+
+        // No hacemos return para que siga y entre al bloque normal de SI, AGENDAR
+    }
+
+    if ($payload === 'recordatorio_precotizacion_24hs_no') {
+
+        $conv = wa_get_conversation($from);
+
+        $idConversacion = intval($conv['id'] ?? 0);
+
+        $idCotizacion = intval($userState['id_cotizacion'] ?? 0);
+
+        if ($idCotizacion <= 0) {
+            $idCotizacion = intval($conv['id_cotizacion'] ?? 0);
+        }
+
+        CarritoAbandonadoService::registrar(
+            $idCotizacion,
+            $idConversacion,
+            $from,
+            $mensajeCliente !== '' ? $mensajeCliente : 'No quiero agendar',
+            $motivoAbandono,
+            'PRETASACION'
+        );
+
+        $nuevoEstado = $userState;
+        $nuevoEstado['step'] = 'cerrado';
+        $nuevoEstado['sub_step'] = 'carrito_abandonado_recordatorio_24hs';
+        $nuevoEstado['id_cotizacion'] = $idCotizacion;
+        $nuevoEstado['motivo_abandono'] = 'NO_AGENDA_REVISION';
+        $nuevoEstado['origen_abandono'] = 'PRETASACION';
+
+        wa_set_user_state(
+            $from,
+            $nuevoEstado,
+            'CERRADO',
+            'BOT',
+            $profileName !== '' ? $profileName : null,
+            null,
+            $idCotizacion > 0 ? $idCotizacion : null
+        );
+
+        twiml_message_and_save(
+            $from,
+            "Gracias por tu respuesta. Si más adelante querés retomar el proceso, estamos a las órdenes 👍"
+        );
+
+        return;
+    }
+}
+
+// =========================
+// RESPUESTA PRE TASACION
+// =========================
 if ($step === 'resultado_enviado' && $subStep === 'esperando_agenda') {
 
     // SI, AGENDAR
@@ -3106,17 +3039,17 @@ if ($step === 'resultado_enviado' && $subStep === 'esperando_agenda') {
         );
 
            wa_log('PRE_CANCELAR_RECORDATORIO', [
-    'id_cotizacion' => $idCotizacion
+    'id_cotizacion' => $idCotizacionAgenda
 ]);
 
         NotificacionPendienteService::cancelarPorCotizacionYTipo(
-            $idCotizacion,
+            $idCotizacionAgenda,
             'RECORDATORIO_PRECOTIZACION_24HS',
             'Cliente respondió Sí, agendar antes del recordatorio'
         );
 
         wa_log('POST_CANCELAR_RECORDATORIO', [
-    'id_cotizacion' => $idCotizacion
+    'id_cotizacion' => $idCotizacionAgenda
 ]);
 
         wa_set_user_state(
@@ -3166,8 +3099,8 @@ if ($step === 'resultado_enviado' && $subStep === 'esperando_agenda') {
         $nuevoEstado['motivo_base'] = 'NO_AGENDA_REVISION';
 
         wa_log('PRE_CANCELAR_RECORDATORIO', [
-    'id_cotizacion' => $idCotizacion
-]);
+            'id_cotizacion' => $idCotizacion
+        ]);
 
         NotificacionPendienteService::cancelarPorCotizacionYTipo(
             $idCotizacion,
@@ -3176,8 +3109,8 @@ if ($step === 'resultado_enviado' && $subStep === 'esperando_agenda') {
         );
 
         wa_log('POST_CANCELAR_RECORDATORIO', [
-    'id_cotizacion' => $idCotizacion
-]);
+            'id_cotizacion' => $idCotizacion
+        ]);
 
         wa_set_user_state(
             $from,
@@ -3238,11 +3171,19 @@ if ($buttonPayload === 'tasacion_finalizar_si') {
         ]
     );
 
+    wa_log('PRE_CANCELAR_RECORDATORIO_2', [
+            'id_cotizacion' => $idCotizacion
+        ]);
+
     NotificacionPendienteService::cancelarPorCotizacionYTipo(
         $idCotizacion,
         'RECORDATORIO_PRECOTIZACION_24HS',
         'Cliente respondió antes del recordatorio'
     );
+
+    wa_log('PRE_CANCELAR_RECORDATORIO_2', [
+            'id_cotizacion' => $idCotizacion
+        ]);
 
     return;
 }
@@ -3274,24 +3215,16 @@ if ($buttonPayload === 'tasacion_finalizar_no') {
         ";
 
         $okEstado = $cnEstado->query($sqlEstado);
-
-        wa_log('TASACION_FINAL_NO_ESTADO_INSPECCION_REALIZADA', [
-            'id_cotizacion' => $idCotizacion,
-            'ok' => $okEstado,
-            'affected_rows' => $cnEstado->affected_rows,
-            'error' => $cnEstado->error
-        ]);
-
         $cnEstado->close();
     }
 
-    wa_registrar_carrito_abandonado(
+    CarritoAbandonadoService::registrar(
         $idCotizacion,
         $idConversacion,
         $from,
-        $body !== '' ? $body : 'Por ahora no ❌',
-        'TASACION_FINAL_RECHAZADA',
-        'TASACION_FINAL'
+        $mensajeCliente !== '' ? $mensajeCliente : 'Por ahora no ❌',
+        $motivoAbandono,
+        'TASACION_FINAL_RECHAZADA'
     );
 
     $userState['step'] = 'cerrado';
@@ -3322,10 +3255,6 @@ if ($buttonPayload === 'tasacion_finalizar_no') {
 try {
     $agendaPendienteConfirmacionGlobal = wa_obtener_agenda_pendiente_confirmacion($from);
 } catch (Throwable $e) {
-    wa_log('AGENDA_CONFIRMACION_LOOKUP_ERROR_GLOBAL', [
-        'from' => $from,
-        'error' => $e->getMessage()
-    ]);
     $agendaPendienteConfirmacionGlobal = null;
 }
 
@@ -3448,13 +3377,13 @@ Te estaremos enviando un recordatorio antes de la inspección."
         }
 
         if ($idCotizacion > 0) {
-            wa_registrar_carrito_abandonado(
+            CarritoAbandonadoService::registrar(
                 $idCotizacion,
                 $idConversacion,
                 $from,
-                'Cliente canceló la confirmación de agenda',
-                'NO_CONFIRMA_AGENDA',
-                'CONFIRMACION_AGENDA'
+                $mensajeCliente !== '' ? $mensajeCliente : 'Cliente canceló la agenda respondiendo NO por WhatsApp',
+                $motivoAbandono,
+                'NO_CONFIRMA_AGENDA'
             );
 
             $cnEstado = wa_db();
@@ -3478,11 +3407,6 @@ Te estaremos enviando un recordatorio antes de la inspección."
 
             $cnEstado->close();
 
-            wa_log('AGENDA_CANCELADA_CARRITO_OK', [
-                'from' => $from,
-                'id_cotizacion' => $idCotizacion,
-                'id_conversacion' => $idConversacion
-            ]);
         } else {
             wa_log('AGENDA_CANCELADA_CARRITO_SIN_COTIZACION', [
                 'from' => $from,
@@ -3667,24 +3591,16 @@ if (
             ";
 
             $okEstado = $cnEstado->query($sqlEstado);
-
-            wa_log('TASACION_FINAL_NO_ESTADO_INSPECCION_REALIZADA', [
-                'id_cotizacion' => $idCotizacion,
-                'ok' => $okEstado,
-                'affected_rows' => $cnEstado->affected_rows,
-                'error' => $cnEstado->error
-            ]);
-
             $cnEstado->close();
         }
 
-        wa_registrar_carrito_abandonado(
+        CarritoAbandonadoService::registrar(
             $idCotizacion,
             $idConversacion,
             $from,
-            $body !== '' ? $body : 'Por ahora no ❌',
-            'TASACION_FINAL_RECHAZADA',
-            'TASACION_FINAL'
+            $mensajeCliente !== '' ? $mensajeCliente : 'Por ahora no ❌',
+            $motivoAbandono,
+            'TASACION_FINAL_RECHAZADA'
         );
 
         $userState['step'] = 'cerrado';
@@ -5409,20 +5325,15 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
             $idCotizacionCancelada = intval($userState['api_result']['post_cotizacion']['id_cotizacion'] ?? 0);
         }
 
-        wa_log('AGENDA_CANCELAR_ID_COTIZACION', [
-            'telefono' => $from,
-            'id_cotizacion' => $idCotizacionCancelada,
-            'userState' => $userState
-        ]);
-
         if ($idCotizacionCancelada > 0) {
-            wa_registrar_carrito_abandonado(
-                $idCotizacionCancelada,
-                intval($conv['id'] ?? 0),
+
+            CarritoAbandonadoService::registrar(
+                $idCotizacion,
+                $idConversacion,
                 $from,
-                'Cliente canceló solicitud de agenda',
-                'NO_AGENDA_REVISION',
-                'WHATSAPP_BOT'
+                $mensajeCliente = 'Cliente canceló solicitud de agenda',
+                $motivoAbandono,
+                'NO_AGENDA_REVISION'
             );
 
             $cnEstado = wa_db();
@@ -5960,21 +5871,15 @@ function wa_registrar_cancelacion_agenda_en_carrito(
     }
 
     if ($idCotizacion > 0) {
-        wa_registrar_carrito_abandonado(
+        
+        CarritoAbandonadoService::registrar(
             $idCotizacion,
             $idConversacion,
             $from,
-            'Cliente canceló la confirmación de agenda',
-            'NO_CONFIRMA_AGENDA',
-            $origen
+            $mensajeCliente = 'Cliente canceló la confirmación de agenda',
+            $motivoAbandono,
+            'NO_CONFIRMA_AGENDA'
         );
-
-        wa_log('AGENDA_CANCELADA_CARRITO_OK', [
-            'from' => $from,
-            'id_cotizacion' => $idCotizacion,
-            'id_conversacion' => $idConversacion,
-            'origen' => $origen
-        ]);
     } else {
         wa_log('AGENDA_CANCELADA_CARRITO_SIN_COTIZACION', [
             'from' => $from,

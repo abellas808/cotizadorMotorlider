@@ -47,7 +47,7 @@ $sql = "
     SELECT *
     FROM whatsapp_notificaciones_pendientes
     WHERE estado = 'PENDIENTE'
-    AND fecha_programada <= NOW() and id=1
+    AND fecha_programada <= NOW() 
     ORDER BY fecha_programada ASC
     LIMIT 20
 ";
@@ -102,16 +102,107 @@ while ($row = $rs->fetch_assoc()) {
 
             break;
 
-        default:
-            NotificacionPendienteService::marcarError(
-                $id,
-                'Tipo de notificación no soportado: ' . $tipo
+        case 'ABANDONO_PRECOTIZACION_POST_RECORDATORIO_3HS':
+
+            $idCotizacion = intval($row['id_cotizacion'] ?? 0);
+
+            if ($idCotizacion <= 0) {
+                NotificacionPendienteService::marcarError(
+                    $id,
+                    'No se pudo procesar abandono: id_cotizacion vacío'
+                );
+                continue 2;
+            }
+
+            $cnAbandono = wa_db();
+
+            $sqlConv = "
+                SELECT id, datos_json
+                FROM whatsapp_conversaciones
+                WHERE telefono = '" . $cnAbandono->real_escape_string($telefono) . "'
+                ORDER BY id DESC
+                LIMIT 1
+            ";
+
+            $rsConv = $cnAbandono->query($sqlConv);
+            $conv = $rsConv ? $rsConv->fetch_assoc() : null;
+
+            $idConversacion = intval($conv['id'] ?? 0);
+
+            $datos = [];
+            if (!empty($conv['datos_json'])) {
+                $tmp = json_decode($conv['datos_json'], true);
+                if (is_array($tmp)) {
+                    $datos = $tmp;
+                }
+            }
+
+            $stepActual = (string)($datos['step'] ?? '');
+
+            if (in_array($stepActual, ['agenda_dia', 'pendiente_humano', 'cerrado'], true)) {
+                NotificacionPendienteService::marcarProcesada($id);
+                $cnAbandono->close();
+                continue 2;
+            }
+
+            $mensajeCliente = 'Sin respuesta luego del recordatorio 24 hs';
+
+            CarritoAbandonadoService::registrar(
+                $idCotizacion,
+                $idConversacion,
+                $telefono,
+                'Sin respuesta luego del recordatorio 24 hs',
+                'SIN_RESPUESTA_RECORDATORIO_24HS',
+                'PRETASACION',
+                'Alan'
             );
+
+            $nuevoDatos = $datos;
+            $nuevoDatos['step'] = 'cerrado';
+            $nuevoDatos['sub_step'] = 'carrito_abandonado_sin_respuesta_recordatorio';
+            $nuevoDatos['id_cotizacion'] = $idCotizacion;
+            $nuevoDatos['motivo_abandono'] = 'SIN_RESPUESTA_RECORDATORIO_24HS';
+            $nuevoDatos['origen_abandono'] = 'PRETASACION';
+
+            $sqlUpdateConv = "
+                UPDATE whatsapp_conversaciones
+                SET
+                    estado = 'CERRADO',
+                    modo_atencion = 'BOT',
+                    datos_json = '" . $cnAbandono->real_escape_string(json_encode($nuevoDatos, JSON_UNESCAPED_UNICODE)) . "',
+                    fecha_mod = NOW()
+                WHERE id = " . intval($idConversacion) . "
+                LIMIT 1
+            ";
+
+            $cnAbandono->query($sqlUpdateConv);
+            $cnAbandono->close();
+
+            NotificacionPendienteService::marcarProcesada($id);
+
             continue 2;
-    }
+            
+            default:
+                NotificacionPendienteService::marcarError(
+                    $id,
+                    'Tipo de notificación no soportado: ' . $tipo
+                );
+                continue 2;
+        }
 
     if ($ok) {
         NotificacionPendienteService::marcarProcesada($id);
+
+        NotificacionPendienteService::crear(
+            intval($row['id_cotizacion']),
+            null,
+            $telefono,
+            'ABANDONO_PRECOTIZACION_POST_RECORDATORIO_3HS',
+            'PRETASACION',
+            date('Y-m-d H:i:s', strtotime('+3 hours')),
+            $payload,
+            'Control interno: si no responde luego del recordatorio 24 hs, enviar a carrito abandonado'
+        );
     } else {
         NotificacionPendienteService::marcarError(
             $id,
