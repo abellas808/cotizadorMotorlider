@@ -13,6 +13,14 @@ config/config.inc.php
 adm/config/config.inc.php
 
 config.php
+apicotizador/.env
+apicotizador/src/db.php
+whatsapp/storage.json
+
+# Runtime and generated data on the server
+excels/
+backups/
+whatsapp/logs/
 
 # Compiled Java class files
 *.class
@@ -54,4 +62,3 @@ Thumbs.db
 *.flv
 *.mov
 *.wmv
-

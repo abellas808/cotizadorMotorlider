@@ -1,0 +1,29 @@
+---
+deployment:
+  tasks:
+    - export DEPLOYPATH=/homeX/marcos2022/public_html/
+    - /bin/cp -R adm $DEPLOYPATH
+    - /bin/cp -R apicotizador $DEPLOYPATH
+    - /bin/cp -R config $DEPLOYPATH
+    - /bin/cp -R cron $DEPLOYPATH
+    - /bin/cp -R img $DEPLOYPATH
+    - /bin/cp -R ml $DEPLOYPATH
+    - /bin/cp -R old $DEPLOYPATH
+    - /bin/cp -R tasacion $DEPLOYPATH
+    - /bin/cp -R tasacion-interna $DEPLOYPATH
+    - /bin/cp -R whatsapp $DEPLOYPATH
+    - /bin/cp -R ws $DEPLOYPATH
+    - /bin/cp README.md $DEPLOYPATH
+    - /bin/cp api_ml.php $DEPLOYPATH
+    - /bin/cp excel-export-ml.php $DEPLOYPATH
+    - /bin/cp excel-export.php $DEPLOYPATH
+    - /bin/cp excel.php $DEPLOYPATH
+    - /bin/cp excelV4.php $DEPLOYPATH
+    - /bin/cp excelV7.php $DEPLOYPATH
+    - /bin/cp headerCSV.php $DEPLOYPATH
+    - /bin/cp import_marcas.php $DEPLOYPATH
+    - /bin/cp import_modelov3.php $DEPLOYPATH
+    - /bin/cp index.php $DEPLOYPATH
+    - /bin/cp notas.txt $DEPLOYPATH
+    - /bin/cp querys.txt $DEPLOYPATH
+    - /bin/cp tst.txt $DEPLOYPATH
