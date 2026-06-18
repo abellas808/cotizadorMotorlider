@@ -2584,7 +2584,12 @@ if (
     in_array($buttonPayloadAgenda, [
         'motivo_no_agenda_otro_momento',
         'motivo_no_agenda_mayor_valor',
-        'motivo_no_agenda_probando'
+        'motivo_no_agenda_probando',
+        'motivo_no_agenda_otra_oferta',
+        'motivo_no_agenda_recibi_otra_oferta',
+        'motivo_no_agenda_auto_vendido',
+        'motivo_no_agenda_ya_vendi_auto',
+        'motivo_no_agenda_personales'
     ], true)
 ) {
     $conv = wa_get_conversation($from);
@@ -2612,21 +2617,49 @@ if (
         case 'motivo_no_agenda_probando':
             $motivoAbandono = 'ESTABA_PROBANDO';
             break;
+
+        case 'motivo_no_agenda_otra_oferta':
+        case 'motivo_no_agenda_recibi_otra_oferta':
+            $motivoAbandono = 'RECIBIO_OTRA_OFERTA';
+            break;
+
+        case 'motivo_no_agenda_auto_vendido':
+        case 'motivo_no_agenda_ya_vendi_auto':
+            $motivoAbandono = 'YA_VENDIO_EL_AUTO';
+            break;
+
+        case 'motivo_no_agenda_personales':
+            $motivoAbandono = 'MOTIVOS_PERSONALES';
+            break;
     }
 
-    CarritoAbandonadoService::registrar(
-        $idCotizacion,
-        $idConversacion,
-        $from,
-        $mensajeCliente,
-        $motivoAbandono,
-        'PRETASACION'
-    );
+    $origenAbandono = strtoupper(trim((string)($userState['origen_abandono'] ?? 'PRETASACION')));
+    $motivoActualizado = false;
+
+    if ($origenAbandono === 'AGENDA') {
+        $motivoActualizado = CarritoAbandonadoService::actualizarMotivoCancelacionAgenda(
+            $idCotizacion,
+            $mensajeCliente,
+            $motivoAbandono
+        );
+    }
+
+    if (!$motivoActualizado) {
+        CarritoAbandonadoService::registrar(
+            $idCotizacion,
+            $idConversacion,
+            $from,
+            $mensajeCliente,
+            $motivoAbandono,
+            $origenAbandono
+        );
+    }
 
     $nuevoEstado = $userState;
     $nuevoEstado['step'] = 'cerrado';
     $nuevoEstado['sub_step'] = 'carrito_abandonado';
     $nuevoEstado['motivo_abandono'] = $motivoAbandono;
+    $nuevoEstado['origen_abandono'] = $origenAbandono;
 
     wa_set_user_state(
         $from,
@@ -2695,13 +2728,15 @@ if (
             );
 
             //HISTORICO AGENDAS
+            $cnHistorialAgenda = wa_db();
             AgendaEstadoService::registrar(
-                $conn,
-                $id_agenda,
+                $cnHistorialAgenda,
+                (int)$agendaPendiente['id_agenda'],
                 14,  //AGENDADO
                 'Agenda creada desde flujo WhatsApp',
                 'Alan'
             );
+            $cnHistorialAgenda->close();
 
             return;
         }
@@ -2744,14 +2779,21 @@ if (
             }
 
             if ($idCotizacion > 0) {
-                CarritoAbandonadoService::registrar(
+                if (!CarritoAbandonadoService::existePendiente(
                     $idCotizacion,
-                    $idConversacion,
-                    $from,
-                    $mensajeCliente,
-                    $motivoAbandono !== '' ? $motivoAbandono : 'Cliente canceló asistencia mediante botón',
-                    'NO_CONFIRMA_AGENDA'
-                );
+                    'CANCELO_AGENDA_PENDIENTE_MOTIVO',
+                    'AGENDA'
+                )) {
+                    CarritoAbandonadoService::registrar(
+                        $idCotizacion,
+                        $idConversacion,
+                        $from,
+                        'Cliente canceló asistencia mediante botón',
+                        'CANCELO_AGENDA_PENDIENTE_MOTIVO',
+                        'AGENDA',
+                        'Alan'
+                    );
+                }
 
                 //Pasar Cotizacion a estado COT. PRELIMINAR
                 $cnEstado = wa_db();
@@ -2783,22 +2825,25 @@ if (
                 ]);
             }
 
-            twiml_message_and_save(
+            $nuevoEstado = $userState;
+            $nuevoEstado['step'] = 'esperando_motivo_cancelacion_agenda';
+            $nuevoEstado['sub_step'] = 'motivo_no_agendar';
+            $nuevoEstado['id_cotizacion'] = $idCotizacion;
+            $nuevoEstado['id_conversacion'] = $idConversacion;
+            $nuevoEstado['origen_abandono'] = 'AGENDA';
+            $nuevoEstado['motivo_base'] = 'CANCELO_AGENDA';
+
+            wa_set_user_state(
                 $from,
-                "Perfecto. Tu agenda del "
-                . wa_formatear_fecha_chat((string)$agendaPendiente['fecha'])
-                . " a las " . substr((string)$agendaPendiente['hora'], 0, 5)
-                . " fue cancelada. Si querés coordinar una nueva fecha, respondé AGENDAR."
+                $nuevoEstado,
+                'ESPERANDO_MOTIVO_CANCELACION_AGENDA',
+                'BOT',
+                $profileName !== '' ? $profileName : null,
+                null,
+                $idCotizacion > 0 ? $idCotizacion : null
             );
 
-            //HISTORICO AGENDAS
-            AgendaEstadoService::registrar(
-                $conn,
-                $id_agenda,
-                14, //NO QUIERE AGENDAR
-                'Agenda creada desde flujo WhatsApp',
-                'Alan'
-            );
+            TwilioMessageService::enviarTemplateMotivoCancelacionAgenda($from);
 
             return;
         }
@@ -3353,14 +3398,21 @@ Te estaremos enviando un recordatorio antes de la inspección."
         }
 
         if ($idCotizacion > 0) {
-            CarritoAbandonadoService::registrar(
+            if (!CarritoAbandonadoService::existePendiente(
                 $idCotizacion,
-                $idConversacion,
-                $from,
-                $mensajeCliente !== '' ? $mensajeCliente : 'Cliente canceló la agenda respondiendo NO por WhatsApp',
-                $motivoAbandono,
-                'NO_CONFIRMA_AGENDA'
-            );
+                'CANCELO_AGENDA_PENDIENTE_MOTIVO',
+                'AGENDA'
+            )) {
+                CarritoAbandonadoService::registrar(
+                    $idCotizacion,
+                    $idConversacion,
+                    $from,
+                    $mensajeCliente !== '' ? $mensajeCliente : 'Cliente canceló la agenda respondiendo NO por WhatsApp',
+                    'CANCELO_AGENDA_PENDIENTE_MOTIVO',
+                    'AGENDA',
+                    'Alan'
+                );
+            }
 
             $cnEstado = wa_db();
 
@@ -3390,14 +3442,25 @@ Te estaremos enviando un recordatorio antes de la inspección."
             ]);
         }
 
-        twiml_message_and_save(
+        $nuevoEstado = $userState;
+        $nuevoEstado['step'] = 'esperando_motivo_cancelacion_agenda';
+        $nuevoEstado['sub_step'] = 'motivo_no_agendar';
+        $nuevoEstado['id_cotizacion'] = $idCotizacion;
+        $nuevoEstado['id_conversacion'] = $idConversacion;
+        $nuevoEstado['origen_abandono'] = 'AGENDA';
+        $nuevoEstado['motivo_base'] = 'CANCELO_AGENDA';
+
+        wa_set_user_state(
             $from,
-            "Perfecto. Tu agenda del "
-            . wa_formatear_fecha_chat((string)$agendaPendienteConfirmacionGlobal['fecha'])
-            . " a las " . substr((string)$agendaPendienteConfirmacionGlobal['hora'], 0, 5)
-            . " fue cancelada.
-            Si querés coordinar una nueva fecha, respondé AGENDAR."
+            $nuevoEstado,
+            'ESPERANDO_MOTIVO_CANCELACION_AGENDA',
+            'BOT',
+            $profileName !== '' ? $profileName : null,
+            null,
+            $idCotizacion > 0 ? $idCotizacion : null
         );
+
+        TwilioMessageService::enviarTemplateMotivoCancelacionAgenda($from);
 
         return;
     }
@@ -4996,6 +5059,116 @@ if (($userState['step'] ?? '') === 'email') {
 }
 
 // =========================
+// NO ASISTIO - RECOORDINAR O CANCELAR
+// =========================
+$buttonPayloadNoAsistio = trim((string)($_POST['ButtonPayload'] ?? ''));
+
+if (
+    $buttonPayloadNoAsistio === 'no_asistio_recoordinar_confirmar' ||
+    $buttonPayloadNoAsistio === 'no_asistio_confirmar' ||
+    $buttonPayloadNoAsistio === 'no_asistio_recoordinar_cancelar' ||
+    $buttonPayloadNoAsistio === 'no_asistio_cancelar'
+) {
+    $convTmp = wa_get_conversation($from);
+    $idCotizacionTmp = intval($userState['id_cotizacion'] ?? 0);
+
+    if ($idCotizacionTmp <= 0) {
+        $idCotizacionTmp = intval($convTmp['id_cotizacion'] ?? 0);
+    }
+
+    if (
+        $buttonPayloadNoAsistio === 'no_asistio_recoordinar_cancelar' ||
+        $buttonPayloadNoAsistio === 'no_asistio_cancelar'
+    ) {
+        $nuevoEstado = $userState;
+        $nuevoEstado['step'] = 'esperando_motivo_cancelacion_no_asistio';
+        $nuevoEstado['sub_step'] = 'motivo_no_agendar';
+        $nuevoEstado['id_cotizacion'] = $idCotizacionTmp;
+        $nuevoEstado['id_conversacion'] = intval($convTmp['id'] ?? 0);
+        $nuevoEstado['origen_abandono'] = 'AGENDA';
+        $nuevoEstado['motivo_base'] = 'NO_ASISTIO_CANCELA_RECOORDINACION';
+
+        wa_set_user_state(
+            $from,
+            $nuevoEstado,
+            'ESPERANDO_MOTIVO_CANCELACION_AGENDA',
+            'BOT',
+            $profileName !== '' ? $profileName : null,
+            null,
+            $idCotizacionTmp > 0 ? $idCotizacionTmp : null
+        );
+
+        TwilioMessageService::enviarTemplateMotivoCancelacionAgenda($from);
+        return;
+    }
+
+    CarritoAbandonadoService::actualizarMotivoCancelacionAgenda(
+        $idCotizacionTmp,
+        'Cliente quiere recoordinar la agenda luego de no asistir',
+        'QUIERE_RECOORDINAR_AGENDA'
+    );
+
+    $location = wa_agenda_location_id();
+    $respDisponibilidad = wa_obtener_disponibilidad_agenda($location);
+
+    if (
+        ($respDisponibilidad['codigo'] ?? 500) != 200 ||
+        empty($respDisponibilidad['availability']) ||
+        !is_array($respDisponibilidad['availability'])
+    ) {
+        twiml_message_and_save(
+            $from,
+            "En este momento no encontré días disponibles para recoordinar. Un asesor lo estará coordinando a la brevedad."
+        );
+        return;
+    }
+
+    $opciones = [];
+    $lineas = [];
+    $fechas = $respDisponibilidad['availability'];
+    $max = min(7, count($fechas));
+
+    for ($i = 0; $i < $max; $i++) {
+        $nro = (string)($i + 1);
+        $fecha = (string)$fechas[$i]['fecha'];
+        $opciones[$nro] = ['fecha' => $fecha];
+        $lineas[] = $nro . ' = ' . wa_formatear_fecha_chat($fecha);
+    }
+
+    $nuevoEstado = $userState;
+    $nuevoEstado['step'] = 'agenda_dia';
+    $nuevoEstado['sub_step'] = 'recoordinando_no_asistio';
+    $nuevoEstado['agenda_location'] = $location;
+    $nuevoEstado['agenda_dias_opciones'] = $opciones;
+    $nuevoEstado['id_cotizacion'] = $idCotizacionTmp;
+    $nuevoEstado['origen_recoordinacion'] = 'NO_ASISTIO';
+
+    unset(
+        $nuevoEstado['agenda_fecha'],
+        $nuevoEstado['agenda_hora'],
+        $nuevoEstado['agenda_horas_opciones']
+    );
+
+    wa_set_user_state(
+        $from,
+        $nuevoEstado,
+        'QUIERE_RECOORDINAR_AGENDA',
+        'BOT',
+        $profileName !== '' ? $profileName : null,
+        null,
+        $idCotizacionTmp > 0 ? $idCotizacionTmp : null
+    );
+
+    twiml_message_and_save(
+        $from,
+        "¡Perfecto! Seleccioná el día que te quede mejor para la nueva agenda:\n\n"
+        . implode("\n", $lineas)
+    );
+
+    return;
+}
+
+// =========================
 // RECORDATORIO AGENDA 3HS - NORMALIZAR RESPUESTA
 // =========================
 $buttonPayloadRecordatorioAgenda = trim((string)($_POST['ButtonPayload'] ?? ''));
@@ -5112,6 +5285,32 @@ if (
     }
 
     if ($buttonPayloadRecordatorioAgenda === 'recordatorio_agenda_cancelar') {
+        $idConversacionTmp = intval($convTmp['id'] ?? 0);
+        $carritoPreparado = CarritoAbandonadoService::actualizarMotivoCancelacionAgenda(
+            $idCotizacionTmp,
+            'Cliente canceló la agenda desde un recordatorio',
+            'CANCELO_AGENDA_PENDIENTE_MOTIVO'
+        );
+
+        if (
+            $idCotizacionTmp > 0 &&
+            !$carritoPreparado &&
+            !CarritoAbandonadoService::existePendiente(
+                $idCotizacionTmp,
+                'CANCELO_AGENDA_PENDIENTE_MOTIVO',
+                'AGENDA'
+            )
+        ) {
+            CarritoAbandonadoService::registrar(
+                $idCotizacionTmp,
+                $idConversacionTmp,
+                $from,
+                'Cliente canceló la agenda desde un recordatorio',
+                'CANCELO_AGENDA_PENDIENTE_MOTIVO',
+                'AGENDA',
+                'Alan'
+            );
+        }
 
         $nuevoEstado = $userState;
         $nuevoEstado['step'] = 'esperando_motivo_no_confirmacion_agenda';
@@ -5131,7 +5330,7 @@ if (
             $idCotizacionTmp > 0 ? $idCotizacionTmp : null
         );
 
-        TwilioMessageService::enviarTemplateMotivoNoAgendar($from);
+        TwilioMessageService::enviarTemplateMotivoCancelacionAgenda($from);
 
         return;
     }
@@ -5354,9 +5553,9 @@ if (($userState['step'] ?? '') === 'agenda_hora') {
             $idCotizacionAgenda,
             null,
             $from,
-            'RECORDATORIO_CONFIRMACION_AGENDA_3HS',
+            'RECORDATORIO_CONFIRMACION_AGENDA_10HS',
             'AGENDA',
-            date('Y-m-d H:i:s', strtotime('+3 hours')),
+            date('Y-m-d H:i:s', strtotime('+10 hours')),
             [
                 'id_cotizacion' => $idCotizacionAgenda,
                 'fecha' => (string)$nuevoEstado['agenda_fecha'],
@@ -5364,7 +5563,7 @@ if (($userState['step'] ?? '') === 'agenda_hora') {
                 'fecha_formateada' => $fechaFormateada,
                 'hora_formateada' => $horaFormateada
             ],
-            'Recordatorio 3 hs luego de enviar resumen de agenda sin confirmar'
+            'Recordatorio 10 hs luego de enviar resumen de agenda sin confirmar'
         );
 
         twiml_empty();
@@ -5443,15 +5642,24 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
         }
 
         if ($idCotizacionCancelada > 0) {
+            $convCancelacion = wa_get_conversation($from);
+            $idConversacionCancelacion = intval($convCancelacion['id'] ?? 0);
 
-            CarritoAbandonadoService::registrar(
-                $idCotizacion,
-                $idConversacion,
-                $from,
-                $mensajeCliente = 'Cliente canceló solicitud de agenda',
-                $motivoAbandono,
-                'NO_AGENDA_REVISION'
-            );
+            if (!CarritoAbandonadoService::existePendiente(
+                $idCotizacionCancelada,
+                'CANCELO_AGENDA_PENDIENTE_MOTIVO',
+                'AGENDA'
+            )) {
+                CarritoAbandonadoService::registrar(
+                    $idCotizacionCancelada,
+                    $idConversacionCancelacion,
+                    $from,
+                    'Cliente canceló la solicitud de agenda',
+                    'CANCELO_AGENDA_PENDIENTE_MOTIVO',
+                    'AGENDA',
+                    'Alan'
+                );
+            }
 
             $cnEstado = wa_db();
 
@@ -5467,7 +5675,7 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
             ");
 
             if ($stEstado) {
-                $stEstado->bind_param('i', $idCotizacion);
+                $stEstado->bind_param('i', $idCotizacionCancelada);
                 $stEstado->execute();
                 $stEstado->close();
             }
@@ -5478,20 +5686,23 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
         wa_set_user_state(
             $from,
             [
-                'step' => 'cerrado',
-                'sub_step' => 'agenda_cancelada_final',
-                'id_cotizacion' => $idCotizacionCancelada
+                'step' => 'esperando_motivo_cancelacion_agenda',
+                'sub_step' => 'motivo_no_agendar',
+                'id_cotizacion' => $idCotizacionCancelada,
+                'origen_abandono' => 'AGENDA',
+                'motivo_base' => 'CANCELO_AGENDA'
             ],
-            'CERRADO',
+            'ESPERANDO_MOTIVO_CANCELACION_AGENDA',
             'BOT',
             $profileName !== '' ? $profileName : null,
             null,
             $idCotizacionCancelada > 0 ? $idCotizacionCancelada : null
         );
 
-        twiml_message_and_save(
-            $from,
-            "Perfecto, cancelamos la solicitud de agenda.\n\nQuedamos a las órdenes por si querés retomarlo más adelante."
+        NotificacionPendienteService::cancelarPorCotizacionYTipo(
+            $idCotizacionCancelada,
+            'RECORDATORIO_CONFIRMACION_AGENDA_10HS',
+            'Cliente canceló agenda antes del recordatorio'
         );
 
         NotificacionPendienteService::cancelarPorCotizacionYTipo(
@@ -5499,6 +5710,8 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
             'RECORDATORIO_CONFIRMACION_AGENDA_3HS',
             'Cliente canceló agenda antes del recordatorio'
         );
+
+        TwilioMessageService::enviarTemplateMotivoCancelacionAgenda($from);
 
         return;
     }
@@ -5526,6 +5739,12 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
 
         return;
     }
+
+    NotificacionPendienteService::cancelarPorCotizacionYTipo(
+        $idCotizacion,
+        'RECORDATORIO_CONFIRMACION_AGENDA_10HS',
+        'Cliente confirmó agenda antes del recordatorio'
+    );
 
     NotificacionPendienteService::cancelarPorCotizacionYTipo(
         $idCotizacion,
@@ -5678,7 +5897,10 @@ function wa_obtener_payload_ultimo_recordatorio_agenda(int $idCotizacion): array
         SELECT payload_json
         FROM whatsapp_notificaciones_pendientes
         WHERE id_cotizacion = " . intval($idCotizacion) . "
-        AND tipo_notificacion = 'RECORDATORIO_CONFIRMACION_AGENDA_3HS'
+        AND tipo_notificacion IN (
+            'RECORDATORIO_CONFIRMACION_AGENDA_10HS',
+            'RECORDATORIO_CONFIRMACION_AGENDA_3HS'
+        )
         ORDER BY id DESC
         LIMIT 1
     ";
@@ -5996,9 +6218,10 @@ function wa_registrar_cancelacion_agenda_en_carrito(
             $idCotizacion,
             $idConversacion,
             $from,
-            $mensajeCliente = 'Cliente canceló la confirmación de agenda',
-            $motivoAbandono,
-            'NO_CONFIRMA_AGENDA'
+            'Cliente canceló la confirmación de agenda',
+            'CANCELO_AGENDA_PENDIENTE_MOTIVO',
+            'AGENDA',
+            'Alan'
         );
     } else {
         wa_log('AGENDA_CANCELADA_CARRITO_SIN_COTIZACION', [

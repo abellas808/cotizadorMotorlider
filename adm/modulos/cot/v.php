@@ -1221,7 +1221,7 @@ function marcarNoAsistio(checked) {
         return;
     }
 
-    if (!confirm('¿Confirmás marcar esta cotización como NO ASISTIÓ? Se enviará al listado de carritos abandonados.')) {
+    if (!confirm('¿Confirmás marcar esta cotización como NO ASISTIÓ? Se enviará a carritos abandonados y se consultará al cliente si quiere recoordinar.')) {
         $('#chk_no_asistio').prop('checked', false);
         return;
     }

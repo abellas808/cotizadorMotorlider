@@ -13,6 +13,7 @@ if (!isset($config['db_tablePrefix'])) {
 
 require_once(__DIR__ . '/../../includes/database.php');
 require_once(__DIR__ . '/../../includes/funciones.php');
+require_once(__DIR__ . '/../../../whatsapp/services/NotificacionPendienteService.php');
 
 session_start();
 
@@ -189,7 +190,71 @@ if (!$okCarrito) {
     ]);
 }
 
+$conversacion = $db->query_first("
+    SELECT id, datos_json
+    FROM whatsapp_conversaciones
+    WHERE telefono = '" . $db->escape($telefono) . "'
+      AND id_cotizacion = " . intval($idCotizacion) . "
+    ORDER BY id DESC
+    LIMIT 1
+");
+
+if (!$conversacion) {
+    $conversacion = $db->query_first("
+        SELECT id, datos_json
+        FROM whatsapp_conversaciones
+        WHERE telefono = '" . $db->escape($telefono) . "'
+        ORDER BY id DESC
+        LIMIT 1
+    ");
+}
+
+if ($conversacion) {
+    $datosConversacion = [];
+
+    if (!empty($conversacion['datos_json'])) {
+        $tmpDatos = json_decode((string)$conversacion['datos_json'], true);
+        if (is_array($tmpDatos)) {
+            $datosConversacion = $tmpDatos;
+        }
+    }
+
+    $datosConversacion['step'] = 'esperando_recoordinar_no_asistio';
+    $datosConversacion['sub_step'] = 'confirmar_recoordinacion';
+    $datosConversacion['id_cotizacion'] = $idCotizacion;
+    $datosConversacion['id_agenda_no_asistio'] = intval($agenda['id_agenda']);
+    $datosConversacion['origen_abandono'] = 'AGENDA';
+
+    $db->query("
+        UPDATE whatsapp_conversaciones
+        SET
+            estado = 'ESPERANDO_RECOORDINACION_NO_ASISTIO',
+            modo_atencion = 'BOT',
+            id_cotizacion = " . intval($idCotizacion) . ",
+            datos_json = '" . $db->escape(json_encode($datosConversacion, JSON_UNESCAPED_UNICODE)) . "',
+            fecha_mod = NOW()
+        WHERE id = " . intval($conversacion['id']) . "
+        LIMIT 1
+    ");
+}
+
+$notificacionCreada = NotificacionPendienteService::crear(
+    $idCotizacion,
+    intval($agenda['id_agenda']),
+    $telefono,
+    'NOTIFICACION_NO_ASISTIO_AGENDA',
+    'AGENDA',
+    date('Y-m-d H:i:s'),
+    [
+        'id_cotizacion' => $idCotizacion,
+        'id_agenda' => intval($agenda['id_agenda'])
+    ],
+    'Enviar inmediatamente consulta para recoordinar luego de marcar NO ASISTIÓ'
+);
+
 j([
     'ok' => true,
-    'mensaje' => 'Cotización marcada como NO ASISTIÓ y enviada a carritos abandonados.'
+    'mensaje' => $notificacionCreada
+        ? 'Cotización marcada como NO ASISTIÓ, enviada a carritos abandonados y notificación de re-coordinación encolada.'
+        : 'Cotización marcada como NO ASISTIÓ y enviada a carritos abandonados, pero no se pudo encolar la notificación.'
 ]);

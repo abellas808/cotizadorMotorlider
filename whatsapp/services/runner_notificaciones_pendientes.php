@@ -123,13 +123,14 @@ while ($row = $rs->fetch_assoc()) {
 
 
         case 'RECORDATORIO_CONFIRMACION_AGENDA_3HS':
+        case 'RECORDATORIO_CONFIRMACION_AGENDA_10HS':
 
             wa_log('RUNNER_RECORDATORIO_CONFIRMACION_AGENDA_INICIO', [
                 'id' => $id,
                 'telefono' => $telefono
             ]);
 
-            $ok = TwilioMessageService::enviarTemplateRecordatorioConfirmacionAgenda3Hs(
+            $ok = TwilioMessageService::enviarTemplateRecordatorioConfirmacionAgenda10Hs(
                 $telefono
             );
 
@@ -151,6 +152,21 @@ while ($row = $rs->fetch_assoc()) {
                     'id' => $id,
                     'telefono' => $telefono
                 ]);
+            } else {
+                NotificacionPendienteService::marcarError(
+                    $id,
+                    'Error al enviar notificación tipo ' . $tipo
+                );
+            }
+
+            continue 2;
+
+        case 'NOTIFICACION_NO_ASISTIO_AGENDA':
+
+            $ok = TwilioMessageService::enviarTemplateNoAsistioAgenda($telefono);
+
+            if ($ok) {
+                NotificacionPendienteService::marcarProcesada($id);
             } else {
                 NotificacionPendienteService::marcarError(
                     $id,

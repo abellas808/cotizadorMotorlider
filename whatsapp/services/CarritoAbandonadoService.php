@@ -2,6 +2,97 @@
 
 class CarritoAbandonadoService
 {
+    public static function actualizarMotivoCancelacionAgenda(
+        int $idCotizacion,
+        string $mensajeCliente,
+        string $motivoAbandono
+    ): bool {
+        if ($idCotizacion <= 0) {
+            return false;
+        }
+
+        $cn = wa_db();
+        $cn->set_charset("utf8mb4");
+
+        $sql = "
+            UPDATE carrito_abandonado
+            SET
+                mensaje_cliente = ?,
+                motivo_abandono = ?,
+                fecha_respuesta = NOW(),
+                observaciones = CONCAT(
+                    IFNULL(observaciones, ''),
+                    IF(IFNULL(observaciones, '') = '', '', '\n'),
+                    'Motivo informado por WhatsApp'
+                )
+            WHERE id_cotizacion = ?
+              AND origen_abandono = 'AGENDA'
+              AND estado = 'PENDIENTE'
+              AND motivo_abandono IN (
+                  'CANCELO_AGENDA_PENDIENTE_MOTIVO',
+                  'NO_RESPONDIO_CONFIRMACION_AGENDA',
+                  'NO_ASISTIO_AGENDA'
+              )
+            ORDER BY id DESC
+            LIMIT 1
+        ";
+
+        $st = $cn->prepare($sql);
+        if (!$st) {
+            $cn->close();
+            return false;
+        }
+
+        $st->bind_param('ssi', $mensajeCliente, $motivoAbandono, $idCotizacion);
+        $ok = $st->execute();
+        $actualizados = $st->affected_rows;
+
+        $st->close();
+        $cn->close();
+
+        return $ok && $actualizados > 0;
+    }
+
+    public static function existePendiente(
+        int $idCotizacion,
+        string $motivoAbandono,
+        string $origenAbandono = 'AGENDA'
+    ): bool {
+        if ($idCotizacion <= 0) {
+            return false;
+        }
+
+        $cn = wa_db();
+        $sql = "
+            SELECT id
+            FROM carrito_abandonado
+            WHERE id_cotizacion = ?
+              AND motivo_abandono = ?
+              AND origen_abandono = ?
+              AND estado = 'PENDIENTE'
+            LIMIT 1
+        ";
+
+        $st = $cn->prepare($sql);
+        if (!$st) {
+            $cn->close();
+            return false;
+        }
+
+        $st->bind_param('iss', $idCotizacion, $motivoAbandono, $origenAbandono);
+        $st->execute();
+        $rs = $st->get_result();
+        $existe = $rs && $rs->num_rows > 0;
+
+        if ($rs) {
+            $rs->free();
+        }
+        $st->close();
+        $cn->close();
+
+        return $existe;
+    }
+
     public static function registrar(
         int $idCotizacion,
         int $idConversacion,

@@ -164,4 +164,62 @@ class TwilioMessageService
             'Recordatorio 3 hs para confirmar agenda'
         );
     }
+
+    public static function enviarTemplateMotivoCancelacionAgenda(string $to): bool
+    {
+        $contentSid = ParametroSistemaService::obtener(
+            'twilio',
+            'template_motivo_cancelacion_agenda',
+            ParametroSistemaService::obtener(
+                'twilio',
+                'template_motivo_no_agendar'
+            )
+        );
+
+        return self::enviarTemplate(
+            $to,
+            $contentSid,
+            [],
+            'template_motivo_cancelacion_agenda',
+            'Gracias por tu respuesta, nos gustaría saber el motivo de tu decisión.'
+        );
+    }
+
+    public static function enviarTemplateRecordatorioConfirmacionAgenda10Hs(
+        string $to
+    ): bool {
+        $contentSid = ParametroSistemaService::obtener(
+            'twilio',
+            'template_recordatorio_confirmacion_agenda_10hs',
+            ParametroSistemaService::obtener(
+                'twilio',
+                'template_recordatorio_confirmacion_agenda_3hs'
+            )
+        );
+
+        return self::enviarTemplate(
+            $to,
+            $contentSid,
+            [],
+            'template_recordatorio_confirmacion_agenda_10hs',
+            '¡Hola! Noté que no llegaste a confirmar tu agenda para la revisión. ¿Querés continuar con ella?'
+        );
+    }
+
+    public static function enviarTemplateNoAsistioAgenda(
+        string $to
+    ): bool {
+        $contentSid = ParametroSistemaService::obtener(
+            'twilio',
+            'template_no_asistio_agenda'
+        );
+
+        return self::enviarTemplate(
+            $to,
+            $contentSid,
+            [],
+            'template_no_asistio_agenda',
+            '¡Hola! Noté que no asististe a tu agenda para la revisión. ¿Querés coordinar una nueva agenda?'
+        );
+    }
 }
