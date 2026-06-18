@@ -2580,8 +2580,6 @@ $currentConv = wa_get_conversation($from);
 $currentEstado = (string)($currentConv['estado'] ?? 'INICIO');
 $buttonPayloadAgenda = trim((string)($_POST['ButtonPayload'] ?? ''));
 
-
-// MOTIVOS NO AGENDAR PRE-COTIZACION
 if (
     in_array($buttonPayloadAgenda, [
         'motivo_no_agenda_otro_momento',
@@ -2646,18 +2644,6 @@ if (
     );
 
     return;
-}
-
-
-if ($buttonPayload === 'confirmar_agenda_final' || $buttonPayload === 'cancelar_agenda_final') {
-
-    if (($userState['step'] ?? '') !== 'agenda_confirmar') {
-        twiml_message_and_save(
-            $from,
-            "Esta solicitud de agenda ya fue procesada anteriormente."
-        );
-        return;
-    }
 }
 
 if (
@@ -3299,11 +3285,6 @@ if (
             );
         }
 
-        wa_log('AGENDA_CONFIRMADA_POR_CLIENTE_GLOBAL', [
-            'from' => $from,
-            'id_agenda' => (int)$agendaPendienteConfirmacionGlobal['id_agenda']
-        ]);
-
         twiml_message_and_save(
             $from,
             "Perfecto
@@ -3356,11 +3337,6 @@ Te estaremos enviando un recordatorio antes de la inspección."
                 "Ocurrió un problema cancelando tu agenda. Un asesor lo revisará a la brevedad."
             );
         }
-
-        wa_log('AGENDA_CANCELADA_POR_CLIENTE_GLOBAL', [
-            'from' => $from,
-            'id_agenda' => (int)$agendaPendienteConfirmacionGlobal['id_agenda']
-        ]);
 
         $conv = wa_get_conversation($from);
         $idConversacion = intval($conv['id'] ?? 0);
@@ -3505,12 +3481,6 @@ if (
 
     if ($stepActual === 'pendiente_humano') {
         if (wa_respuesta_es_si($body) || wa_es_agendar($body)) {
-
-            wa_log('PENDIENTE_HUMANO_BLOQUEADO', [
-                'telefono' => $from,
-                'body' => $body,
-                'step' => $stepActual
-            ]);
 
             twiml_message_and_save(
                 $from,
@@ -3659,11 +3629,6 @@ if (in_array($currentEstado, ['PENDIENTE_RESPUESTA_HUMANA', 'HUMANO_EN_CONVERSAC
                 );
             }
 
-            wa_log('AGENDA_CONFIRMADA_POR_CLIENTE', [
-                'from' => $from,
-                'id_agenda' => (int)$agendaPendienteConfirmacion['id_agenda']
-            ]);
-
             twiml_message_and_save(
                 $from,
                 "Perfecto\n\nTu agenda quedó confirmada para el "
@@ -3692,11 +3657,6 @@ if (in_array($currentEstado, ['PENDIENTE_RESPUESTA_HUMANA', 'HUMANO_EN_CONVERSAC
                     "Ocurrió un problema cancelando tu agenda. Un asesor lo revisará a la brevedad."
                 );
             }
-
-            wa_log('AGENDA_CANCELADA_POR_CLIENTE', [
-                'from' => $from,
-                'id_agenda' => (int)$agendaPendienteConfirmacion['id_agenda']
-            ]);
 
             twiml_message_and_save(
                 $from,
@@ -3777,12 +3737,6 @@ if (in_array($currentEstado, ['PENDIENTE_RESPUESTA_HUMANA', 'HUMANO_EN_CONVERSAC
         twiml_message_and_save($from, $msgCierre);
     }
 
-    wa_log('HUMAN_MODE_NO_AUTO_REPLY', [
-        'from' => $from,
-        'estado' => $currentEstado,
-        'body' => $body
-    ]);
-
     twiml_empty();
 }
 
@@ -3796,12 +3750,6 @@ $stepActual = (string)($userState['step'] ?? '');
 
 if ($stepActual === 'pendiente_humano') {
     if (wa_respuesta_es_si($body) || wa_es_agendar($body)) {
-
-        wa_log('PENDIENTE_HUMANO_BLOQUEADO', [
-            'telefono' => $from,
-            'body' => $body,
-            'step' => $stepActual
-        ]);
 
         twiml_message_and_save(
             $from,
@@ -5048,6 +4996,148 @@ if (($userState['step'] ?? '') === 'email') {
 }
 
 // =========================
+// RECORDATORIO AGENDA 3HS - NORMALIZAR RESPUESTA
+// =========================
+$buttonPayloadRecordatorioAgenda = trim((string)($_POST['ButtonPayload'] ?? ''));
+
+if (
+    $buttonPayloadRecordatorioAgenda === 'recordatorio_agenda_confirmar_pendiente' ||
+    $buttonPayloadRecordatorioAgenda === 'recordatorio_agenda_buscar_otro_dia' ||
+    $buttonPayloadRecordatorioAgenda === 'recordatorio_agenda_cancelar'
+) {
+    $convTmp = wa_get_conversation($from);
+
+    $idCotizacionTmp = intval($userState['id_cotizacion'] ?? 0);
+
+    if ($idCotizacionTmp <= 0) {
+        $idCotizacionTmp = intval($convTmp['id_cotizacion'] ?? 0);
+    }
+
+    $payloadRecordatorioAgenda = wa_obtener_payload_ultimo_recordatorio_agenda($idCotizacionTmp);
+
+    if (!empty($payloadRecordatorioAgenda)) {
+        if (!empty($payloadRecordatorioAgenda['fecha'])) {
+            $userState['agenda_fecha'] = $payloadRecordatorioAgenda['fecha'];
+        }
+
+        if (!empty($payloadRecordatorioAgenda['hora'])) {
+            $userState['agenda_hora'] = $payloadRecordatorioAgenda['hora'];
+        }
+
+        if (!empty($payloadRecordatorioAgenda['id_cotizacion'])) {
+            $userState['id_cotizacion'] = intval($payloadRecordatorioAgenda['id_cotizacion']);
+            $idCotizacionTmp = intval($payloadRecordatorioAgenda['id_cotizacion']);
+        }
+    }
+
+    NotificacionPendienteService::cancelarPorCotizacionYTipo(
+        $idCotizacionTmp,
+        'ABANDONO_AGENDA_POST_RECORDATORIO_3HS',
+        'Cliente respondió al recordatorio de confirmación de agenda'
+    );
+
+    $userState['id_cotizacion'] = $idCotizacionTmp;
+
+    if ($buttonPayloadRecordatorioAgenda === 'recordatorio_agenda_confirmar_pendiente') {
+        $userState['step'] = 'agenda_confirmar';
+
+        $_POST['ButtonPayload'] = 'confirmar_agenda_final';
+        $buttonPayloadAgenda = 'confirmar_agenda_final';
+        $buttonPayload = 'confirmar_agenda_final';
+    }
+
+    if ($buttonPayloadRecordatorioAgenda === 'recordatorio_agenda_buscar_otro_dia') {
+
+        $location = wa_agenda_location_id();
+        $respDisponibilidad = wa_obtener_disponibilidad_agenda($location);
+
+        if (
+            ($respDisponibilidad['codigo'] ?? 500) != 200 ||
+            empty($respDisponibilidad['availability']) ||
+            !is_array($respDisponibilidad['availability'])
+        ) {
+            twiml_message_and_save(
+                $from,
+                "En este momento no encontré días disponibles para agenda.\n\nUn asesor lo estará coordinando a la brevedad."
+            );
+            return;
+        }
+
+        $opciones = [];
+        $lineas = [];
+        $fechas = $respDisponibilidad['availability'];
+        $max = min(7, count($fechas));
+
+        for ($i = 0; $i < $max; $i++) {
+            $nro = (string)($i + 1);
+            $fecha = (string)$fechas[$i]['fecha'];
+
+            $opciones[$nro] = [
+                'fecha' => $fecha
+            ];
+
+            $lineas[] = $nro . " = " . wa_formatear_fecha_chat($fecha);
+        }
+
+        $nuevoEstado = $userState;
+        $nuevoEstado['step'] = 'agenda_dia';
+        $nuevoEstado['sub_step'] = 'seleccionando_dia';
+        $nuevoEstado['agenda_location'] = $location;
+        $nuevoEstado['agenda_dias_opciones'] = $opciones;
+        $nuevoEstado['id_cotizacion'] = $idCotizacionTmp;
+
+        unset(
+            $nuevoEstado['agenda_fecha'],
+            $nuevoEstado['agenda_hora'],
+            $nuevoEstado['agenda_horas_opciones']
+        );
+
+        wa_set_user_state(
+            $from,
+            $nuevoEstado,
+            'ESPERANDO_FECHA',
+            'BOT',
+            $profileName !== '' ? $profileName : null,
+            null,
+            $idCotizacionTmp > 0 ? $idCotizacionTmp : null
+        );
+
+        twiml_message_and_save(
+            $from,
+            "🗓️ ¡Genial! Seleccioná el día que te quede mejor:\n\n"
+            . implode("\n", $lineas)
+        );
+
+        return;
+    }
+
+    if ($buttonPayloadRecordatorioAgenda === 'recordatorio_agenda_cancelar') {
+
+        $nuevoEstado = $userState;
+        $nuevoEstado['step'] = 'esperando_motivo_no_confirmacion_agenda';
+        $nuevoEstado['sub_step'] = 'motivo_no_agendar';
+        $nuevoEstado['id_cotizacion'] = $idCotizacionTmp;
+        $nuevoEstado['id_conversacion'] = intval($convTmp['id'] ?? 0);
+        $nuevoEstado['origen_abandono'] = 'AGENDA';
+        $nuevoEstado['motivo_base'] = 'NO_CONFIRMACION_AGENDA';
+
+        wa_set_user_state(
+            $from,
+            $nuevoEstado,
+            'ESPERANDO_MOTIVO_NO_CONFIRMACION_AGENDA',
+            'BOT',
+            $profileName !== '' ? $profileName : null,
+            null,
+            $idCotizacionTmp > 0 ? $idCotizacionTmp : null
+        );
+
+        TwilioMessageService::enviarTemplateMotivoNoAgendar($from);
+
+        return;
+    }
+}
+
+// =========================
 // AGENDA - DIA
 // =========================
 if (($userState['step'] ?? '') === 'agenda_dia') {
@@ -5249,10 +5339,37 @@ if (($userState['step'] ?? '') === 'agenda_hora') {
     );
 
     if ($ok) {
+
+        $idCotizacionAgenda = intval($nuevoEstado['id_cotizacion'] ?? 0);
+
+        if ($idCotizacionAgenda <= 0) {
+            $idCotizacionAgenda = intval($nuevoEstado['api_result']['id_cotizacion'] ?? 0);
+        }
+
+        if ($idCotizacionAgenda <= 0) {
+            $idCotizacionAgenda = intval($nuevoEstado['api_result']['post_cotizacion']['id_cotizacion'] ?? 0);
+        }
+
+        NotificacionPendienteService::crear(
+            $idCotizacionAgenda,
+            null,
+            $from,
+            'RECORDATORIO_CONFIRMACION_AGENDA_3HS',
+            'AGENDA',
+            date('Y-m-d H:i:s', strtotime('+3 hours')),
+            [
+                'id_cotizacion' => $idCotizacionAgenda,
+                'fecha' => (string)$nuevoEstado['agenda_fecha'],
+                'hora' => $horaElegida,
+                'fecha_formateada' => $fechaFormateada,
+                'hora_formateada' => $horaFormateada
+            ],
+            'Recordatorio 3 hs luego de enviar resumen de agenda sin confirmar'
+        );
+
         twiml_empty();
     }
 }
-
 
 // =========================
 // AGENDA - CONFIRMAR
@@ -5377,6 +5494,12 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
             "Perfecto, cancelamos la solicitud de agenda.\n\nQuedamos a las órdenes por si querés retomarlo más adelante."
         );
 
+        NotificacionPendienteService::cancelarPorCotizacionYTipo(
+            $idCotizacionCancelada,
+            'RECORDATORIO_CONFIRMACION_AGENDA_3HS',
+            'Cliente canceló agenda antes del recordatorio'
+        );
+
         return;
     }
 
@@ -5395,10 +5518,6 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
     }
 
     if ($idCotizacion <= 0) {
-        wa_log('AGENDA_CONFIRMAR_SIN_ID_COTIZACION', [
-            'telefono' => $from,
-            'userState' => $userState
-        ]);
 
         twiml_message_and_save(
             $from,
@@ -5407,6 +5526,12 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
 
         return;
     }
+
+    NotificacionPendienteService::cancelarPorCotizacionYTipo(
+        $idCotizacion,
+        'RECORDATORIO_CONFIRMACION_AGENDA_3HS',
+        'Cliente confirmó agenda antes del recordatorio'
+    );
 
     $location = (int)($userState['agenda_location'] ?? wa_agenda_location_id());
     $fecha = (string)($userState['agenda_fecha'] ?? '');
@@ -5420,24 +5545,6 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
 
         return;
     }
-
-    // $agendaProcesada = wa_agenda_ya_procesada_por_cotizacion($idCotizacion);
-
-    // if ($agendaProcesada !== null) {
-    //     if ($agendaProcesada['estado'] === 'CANCELADO') {
-    //         twiml_message_and_save(
-    //             $from,
-    //             "Esta solicitud de agenda ya fue cancelada anteriormente."
-    //         );
-    //         return;
-    //     }
-
-    //     twiml_message_and_save(
-    //         $from,
-    //         "Esta solicitud de agenda ya fue confirmada anteriormente."
-    //     );
-    //     return;
-    // }
 
     $respHorariosValidacion = wa_obtener_horarios_agenda($location, $fecha);
     $horasValidacion = [];
@@ -5480,15 +5587,6 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
     $anio = (string)($contexto['anio'] ?? '');
     $auto = (string)($contexto['auto'] ?? '');
 
-    wa_log('AGENDA_ID_COTIZACION_RESUELTO', [
-        'telefono' => $from,
-        'id_cotizacion_final' => $idCotizacion,
-        'marca' => $marca,
-        'modelo' => $modelo,
-        'anio' => $anio,
-        'auto' => $auto
-    ]);
-
     $payload = [
         'location' => $location,
         'date' => $fecha,
@@ -5503,11 +5601,6 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
         'telefono' => $from,
         'id_cotizacion' => $idCotizacion
     ];
-
-    wa_log('AGENDA_PAYLOAD_FINAL', [
-        'payload' => $payload,
-        'userState' => $userState
-    ]);
 
     $respAgenda = wa_agendar_inspeccion($payload);
 
@@ -5576,6 +5669,33 @@ $subStep = $userState['sub_step'] ?? '';
 
 $payload = $_POST['ButtonPayload'] ?? '';
 $body = strtolower(trim($_POST['Body'] ?? ''));
+
+function wa_obtener_payload_ultimo_recordatorio_agenda(int $idCotizacion): array
+{
+    $cn = wa_db();
+
+    $sql = "
+        SELECT payload_json
+        FROM whatsapp_notificaciones_pendientes
+        WHERE id_cotizacion = " . intval($idCotizacion) . "
+        AND tipo_notificacion = 'RECORDATORIO_CONFIRMACION_AGENDA_3HS'
+        ORDER BY id DESC
+        LIMIT 1
+    ";
+
+    $rs = $cn->query($sql);
+    $row = $rs ? $rs->fetch_assoc() : null;
+
+    $cn->close();
+
+    if (!$row || empty($row['payload_json'])) {
+        return [];
+    }
+
+    $payload = json_decode($row['payload_json'], true);
+
+    return is_array($payload) ? $payload : [];
+}
 
 function wa_marcar_cotizacion_comunicarse_cliente(int $idCotizacion): bool
 {

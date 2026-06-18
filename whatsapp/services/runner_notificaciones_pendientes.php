@@ -8,6 +8,7 @@ require_once dirname(__DIR__, 2) . '/config.php';
 require_once __DIR__ . '/ParametroSistemaService.php';
 require_once __DIR__ . '/TwilioMessageService.php';
 require_once __DIR__ . '/NotificacionPendienteService.php';
+require_once __DIR__ . '/CarritoAbandonadoService.php';
 
 function wa_db(): mysqli
 {
@@ -77,8 +78,6 @@ while ($row = $rs->fetch_assoc()) {
         }
     }
 
-    $ok = false;
-
     switch ($tipo) {
 
         case 'RECORDATORIO_PRECOTIZACION_24HS':
@@ -87,7 +86,7 @@ while ($row = $rs->fetch_assoc()) {
             $vehiculo = trim((string)($payload['vehiculo'] ?? ''));
 
             if ($nombre === '') {
-                $nombre = '!';
+                $nombre = 'cliente';
             }
 
             if ($vehiculo === '') {
@@ -100,7 +99,67 @@ while ($row = $rs->fetch_assoc()) {
                 $vehiculo
             );
 
-            break;
+            if ($ok) {
+                NotificacionPendienteService::marcarProcesada($id);
+
+                NotificacionPendienteService::crear(
+                    intval($row['id_cotizacion'] ?? 0),
+                    null,
+                    $telefono,
+                    'ABANDONO_PRECOTIZACION_POST_RECORDATORIO_3HS',
+                    'PRETASACION',
+                    date('Y-m-d H:i:s', strtotime('+3 hours')),
+                    $payload,
+                    'Control interno: si no responde luego del recordatorio 24 hs, enviar a carrito abandonado'
+                );
+            } else {
+                NotificacionPendienteService::marcarError(
+                    $id,
+                    'Error al enviar notificación tipo ' . $tipo
+                );
+            }
+
+            continue 2;
+
+
+        case 'RECORDATORIO_CONFIRMACION_AGENDA_3HS':
+
+            wa_log('RUNNER_RECORDATORIO_CONFIRMACION_AGENDA_INICIO', [
+                'id' => $id,
+                'telefono' => $telefono
+            ]);
+
+            $ok = TwilioMessageService::enviarTemplateRecordatorioConfirmacionAgenda3Hs(
+                $telefono
+            );
+
+            if ($ok) {
+                NotificacionPendienteService::marcarProcesada($id);
+
+                NotificacionPendienteService::crear(
+                    intval($row['id_cotizacion'] ?? 0),
+                    null,
+                    $telefono,
+                    'ABANDONO_AGENDA_POST_RECORDATORIO_3HS',
+                    'AGENDA',
+                    date('Y-m-d H:i:s', strtotime('+3 hours')),
+                    $payload,
+                    'Control de abandono luego del recordatorio de confirmación de agenda'
+                );
+
+                wa_log('RUNNER_RECORDATORIO_CONFIRMACION_AGENDA_OK', [
+                    'id' => $id,
+                    'telefono' => $telefono
+                ]);
+            } else {
+                NotificacionPendienteService::marcarError(
+                    $id,
+                    'Error al enviar notificación tipo ' . $tipo
+                );
+            }
+
+            continue 2;
+
 
         case 'ABANDONO_PRECOTIZACION_POST_RECORDATORIO_3HS':
 
@@ -109,7 +168,7 @@ while ($row = $rs->fetch_assoc()) {
             if ($idCotizacion <= 0) {
                 NotificacionPendienteService::marcarError(
                     $id,
-                    'No se pudo procesar abandono: id_cotizacion vacío'
+                    'No se pudo procesar abandono pre-cotización: id_cotizacion vacío'
                 );
                 continue 2;
             }
@@ -145,8 +204,6 @@ while ($row = $rs->fetch_assoc()) {
                 continue 2;
             }
 
-            $mensajeCliente = 'Sin respuesta luego del recordatorio 24 hs';
-
             CarritoAbandonadoService::registrar(
                 $idCotizacion,
                 $idConversacion,
@@ -181,49 +238,94 @@ while ($row = $rs->fetch_assoc()) {
             NotificacionPendienteService::marcarProcesada($id);
 
             continue 2;
-            
-            default:
+
+
+        case 'ABANDONO_AGENDA_POST_RECORDATORIO_3HS':
+
+            $idCotizacion = intval($row['id_cotizacion'] ?? 0);
+
+            if ($idCotizacion <= 0) {
                 NotificacionPendienteService::marcarError(
                     $id,
-                    'Tipo de notificación no soportado: ' . $tipo
+                    'No se pudo procesar abandono agenda: id_cotizacion vacío'
                 );
                 continue 2;
-        }
+            }
 
-        wa_log('RUNNER_RESULTADO_ENVIO', [
-    'id' => $id,
-    'tipo' => $tipo,
-    'ok' => $ok
-]);
+            $cnAbandono = wa_db();
 
-    if ($ok) {
+            $sqlConv = "
+                SELECT id, datos_json
+                FROM whatsapp_conversaciones
+                WHERE telefono = '" . $cnAbandono->real_escape_string($telefono) . "'
+                ORDER BY id DESC
+                LIMIT 1
+            ";
 
-        wa_log('RUNNER_OK_CREANDO_ABANDONO_3HS', [
-            'id_original' => $id,
-            'id_cotizacion' => intval($row['id_cotizacion']),
-            'telefono' => $telefono,
-            'payload' => $payload
-        ]);
+            $rsConv = $cnAbandono->query($sqlConv);
+            $conv = $rsConv ? $rsConv->fetch_assoc() : null;
 
-        NotificacionPendienteService::marcarProcesada($id);
+            $idConversacion = intval($conv['id'] ?? 0);
 
-        NotificacionPendienteService::crear(
-            intval($row['id_cotizacion']),
-            null,
-            $telefono,
-            'ABANDONO_PRECOTIZACION_POST_RECORDATORIO_3HS',
-            'PRETASACION',
-            date('Y-m-d H:i:s', strtotime('+3 hours')),
-            $payload,
-            'Control interno: si no responde luego del recordatorio 24 hs, enviar a carrito abandonado'
-        );
+            $datos = [];
+            if (!empty($conv['datos_json'])) {
+                $tmp = json_decode($conv['datos_json'], true);
+                if (is_array($tmp)) {
+                    $datos = $tmp;
+                }
+            }
 
-    } else {
-        NotificacionPendienteService::marcarError(
-            $id,
-            'Error al enviar notificación tipo ' . $tipo
-        );
+            $stepActual = (string)($datos['step'] ?? '');
+
+            if (in_array($stepActual, ['pendiente_humano', 'cerrado'], true)) {
+                NotificacionPendienteService::marcarProcesada($id);
+                $cnAbandono->close();
+                continue 2;
+            }
+
+            CarritoAbandonadoService::registrar(
+                $idCotizacion,
+                $idConversacion,
+                $telefono,
+                'Sin respuesta luego del recordatorio de confirmación de agenda',
+                'NO_RESPONDIO_CONFIRMACION_AGENDA',
+                'AGENDA',
+                'Alan'
+            );
+
+            $nuevoDatos = $datos;
+            $nuevoDatos['step'] = 'cerrado';
+            $nuevoDatos['sub_step'] = 'carrito_abandonado_sin_confirmar_agenda';
+            $nuevoDatos['id_cotizacion'] = $idCotizacion;
+            $nuevoDatos['motivo_abandono'] = 'NO_RESPONDIO_CONFIRMACION_AGENDA';
+            $nuevoDatos['origen_abandono'] = 'AGENDA';
+
+            $sqlUpdateConv = "
+                UPDATE whatsapp_conversaciones
+                SET
+                    estado = 'CERRADO',
+                    modo_atencion = 'BOT',
+                    datos_json = '" . $cnAbandono->real_escape_string(json_encode($nuevoDatos, JSON_UNESCAPED_UNICODE)) . "',
+                    fecha_mod = NOW()
+                WHERE id = " . intval($idConversacion) . "
+                LIMIT 1
+            ";
+
+            $cnAbandono->query($sqlUpdateConv);
+            $cnAbandono->close();
+
+            NotificacionPendienteService::marcarProcesada($id);
+
+            continue 2;
+
+
+        default:
+
+            NotificacionPendienteService::marcarError(
+                $id,
+                'Tipo de notificación no soportado: ' . $tipo
+            );
+
+            continue 2;
     }
 }
-
-$cn->close();

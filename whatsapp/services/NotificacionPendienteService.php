@@ -194,4 +194,36 @@ class NotificacionPendienteService
 
         return (bool)$ok;
     }
+
+    public static function cancelarPorAgendaYTipo(
+        int $idAgenda,
+        string $tipoNotificacion,
+        string $observacion = ''
+    ): bool
+    {
+        $cn = self::db();
+
+        $sql = "
+            UPDATE whatsapp_notificaciones_pendientes
+            SET
+                estado = 'CANCELADA',
+                fecha_procesada = NOW(),
+                observaciones = CONCAT(IFNULL(observaciones,''), '\n', '" . $cn->real_escape_string($observacion) . "')
+            WHERE id_agenda = " . intval($idAgenda) . "
+            AND tipo_notificacion = '" . $cn->real_escape_string($tipoNotificacion) . "'
+            AND estado = 'PENDIENTE'
+        ";
+
+        $ok = $cn->query($sql);
+
+        self::log('NOTIFICACION_PENDIENTE_CANCELAR_AGENDA', [
+            'ok' => $ok,
+            'id_agenda' => $idAgenda,
+            'tipo' => $tipoNotificacion,
+            'affected_rows' => $cn->affected_rows,
+            'error' => $cn->error
+        ]);
+
+        return (bool)$ok;
+    }
 }

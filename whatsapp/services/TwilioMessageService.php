@@ -147,4 +147,21 @@ class TwilioMessageService
             "Recordatorio 24 hs pre-cotización para {$nombre} - {$vehiculo}"
         );
     }
+
+    public static function enviarTemplateRecordatorioConfirmacionAgenda3Hs(
+        string $to
+    ): bool {
+        $contentSid = ParametroSistemaService::obtener(
+            'twilio',
+            'template_recordatorio_confirmacion_agenda_3hs'
+        );
+
+        return self::enviarTemplate(
+            $to,
+            $contentSid,
+            [],
+            'template_recordatorio_confirmacion_agenda_3hs',
+            'Recordatorio 3 hs para confirmar agenda'
+        );
+    }
 }

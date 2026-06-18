@@ -464,6 +464,19 @@ $vehiculo = trim(
     (string)($elemento['modelo'] ?? '')
 );
 
+$cotTmp = $db->query_first("
+    SELECT auto, marca
+    FROM cotizaciones_generadas
+    WHERE id_cotizaciones_generadas = " . intval($id) . "
+    LIMIT 1
+");
+
+$vehiculo = trim((string)($cotTmp['auto'] ?? ''));
+
+if ($vehiculo === '') {
+    $vehiculo = trim((string)($cotTmp['marca'] ?? ''));
+}
+
 if ($vehiculo === '') {
     $vehiculo = 'tu vehículo';
 }
