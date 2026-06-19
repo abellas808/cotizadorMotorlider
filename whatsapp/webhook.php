@@ -2390,6 +2390,83 @@ function wa_respuesta_tasacion_final_no(string $texto): bool
     ], true) || strpos($v, 'por ahora no') !== false;
 }
 
+function wa_iniciar_rechazo_tasacion_final(
+    string $telefono,
+    string $profileName,
+    array $userState
+): void {
+    $conv = wa_get_conversation($telefono);
+    $idConversacion = intval($conv['id'] ?? 0);
+    $idCotizacion = intval($userState['id_cotizacion'] ?? 0);
+
+    if ($idCotizacion <= 0) {
+        $idCotizacion = intval($conv['id_cotizacion'] ?? 0);
+    }
+
+    if ($idCotizacion > 0) {
+        $cnEstado = wa_db();
+        $cnEstado->query("
+            UPDATE cotizaciones_generadas
+            SET
+                estado_id = 10,
+                estado = 'INSPECCIÓN REALIZADA',
+                detalle_estado = 'Cliente rechazó la tasación final',
+                fecha_mod = NOW()
+            WHERE id_cotizaciones_generadas = " . intval($idCotizacion) . "
+            LIMIT 1
+        ");
+        $cnEstado->close();
+
+        if (!CarritoAbandonadoService::existePendiente(
+            $idCotizacion,
+            'TASACION_FINAL_RECHAZADA',
+            'TASACION_FINAL'
+        )) {
+            CarritoAbandonadoService::registrar(
+                $idCotizacion,
+                $idConversacion,
+                $telefono,
+                'Cliente respondió: Por ahora no',
+                'TASACION_FINAL_RECHAZADA',
+                'TASACION_FINAL',
+                'Alan'
+            );
+        }
+    }
+
+    NotificacionPendienteService::cancelarPorCotizacionYTipo(
+        $idCotizacion,
+        'RECORDATORIO_TASACION_FINAL_24HS',
+        'Cliente respondió por ahora no'
+    );
+
+    NotificacionPendienteService::cancelarPorCotizacionYTipo(
+        $idCotizacion,
+        'ABANDONO_TASACION_FINAL_POST_RECORDATORIO_3HS',
+        'Cliente respondió por ahora no'
+    );
+
+    $nuevoEstado = $userState;
+    $nuevoEstado['step'] = 'esperando_motivo_rechazo_tasacion_final';
+    $nuevoEstado['sub_step'] = 'motivo_rechazo_tasacion_final';
+    $nuevoEstado['id_cotizacion'] = $idCotizacion;
+    $nuevoEstado['id_conversacion'] = $idConversacion;
+    $nuevoEstado['origen_abandono'] = 'TASACION_FINAL';
+    $nuevoEstado['motivo_base'] = 'TASACION_FINAL_RECHAZADA';
+
+    wa_set_user_state(
+        $telefono,
+        $nuevoEstado,
+        'ESPERANDO_MOTIVO_RECHAZO_TASACION_FINAL',
+        'BOT',
+        $profileName !== '' ? $profileName : null,
+        null,
+        $idCotizacion > 0 ? $idCotizacion : null
+    );
+
+    TwilioMessageService::enviarTemplateMotivoRechazoTasacionFinal($telefono);
+}
+
 function wa_obtener_cotizacion_actual_para_agenda(string $telefono, array $userState, int $idConvCotizacion): int
 {
     $cn = wa_db();
@@ -2579,6 +2656,109 @@ $userState = wa_get_user_data($from);
 $currentConv = wa_get_conversation($from);
 $currentEstado = (string)($currentConv['estado'] ?? 'INICIO');
 $buttonPayloadAgenda = trim((string)($_POST['ButtonPayload'] ?? ''));
+
+if (
+    in_array($buttonPayloadAgenda, [
+        'motivo_tasacion_final_otro_valor',
+        'motivo_tasacion_final_vender_mas_adelante',
+        'motivo_tasacion_final_personales'
+    ], true)
+) {
+    $conv = wa_get_conversation($from);
+    $idConversacion = intval($conv['id'] ?? 0);
+    $idCotizacion = intval($userState['id_cotizacion'] ?? 0);
+
+    if ($idCotizacion <= 0) {
+        $idCotizacion = intval($conv['id_cotizacion'] ?? 0);
+    }
+
+    $motivoAbandono = 'TASACION_FINAL_RECHAZADA';
+
+    switch ($buttonPayloadAgenda) {
+        case 'motivo_tasacion_final_otro_valor':
+            $motivoAbandono = 'ESPERABA_OTRO_VALOR';
+            break;
+
+        case 'motivo_tasacion_final_vender_mas_adelante':
+            $motivoAbandono = 'VENDERA_MAS_ADELANTE';
+            break;
+
+        case 'motivo_tasacion_final_personales':
+            $motivoAbandono = 'MOTIVOS_PERSONALES';
+            break;
+    }
+
+    $mensajeCliente = $body !== '' ? $body : $buttonPayloadAgenda;
+
+    $actualizado = CarritoAbandonadoService::actualizarMotivoPendiente(
+        $idCotizacion,
+        'TASACION_FINAL',
+        ['TASACION_FINAL_RECHAZADA', 'NO_RESPONDE_TASACION_FINAL'],
+        $mensajeCliente,
+        $motivoAbandono
+    );
+
+    if (!$actualizado) {
+        CarritoAbandonadoService::registrar(
+            $idCotizacion,
+            $idConversacion,
+            $from,
+            $mensajeCliente,
+            $motivoAbandono,
+            'TASACION_FINAL',
+            'Alan'
+        );
+    }
+
+    $nuevoEstado = $userState;
+    $nuevoEstado['step'] = 'cerrado';
+    $nuevoEstado['sub_step'] = 'tasacion_final_rechazada_con_motivo';
+    $nuevoEstado['motivo_abandono'] = $motivoAbandono;
+    $nuevoEstado['origen_abandono'] = 'TASACION_FINAL';
+
+    wa_set_user_state(
+        $from,
+        $nuevoEstado,
+        'CERRADO',
+        'BOT',
+        $profileName !== '' ? $profileName : null,
+        null,
+        $idCotizacion > 0 ? $idCotizacion : null
+    );
+
+    twiml_message_and_save(
+        $from,
+        'Gracias por tu respuesta. Quedamos a las órdenes por si querés retomarlo más adelante.'
+    );
+
+    return;
+}
+
+if (
+    $buttonPayloadAgenda === 'recordatorio_tasacion_final_avanzar' ||
+    $buttonPayloadAgenda === 'recordatorio_tasacion_final_por_ahora_no'
+) {
+    $convRecordatorio = wa_get_conversation($from);
+    $idCotizacionRecordatorio = intval($userState['id_cotizacion'] ?? 0);
+
+    if ($idCotizacionRecordatorio <= 0) {
+        $idCotizacionRecordatorio = intval($convRecordatorio['id_cotizacion'] ?? 0);
+    }
+
+    NotificacionPendienteService::cancelarPorCotizacionYTipo(
+        $idCotizacionRecordatorio,
+        'ABANDONO_TASACION_FINAL_POST_RECORDATORIO_3HS',
+        'Cliente respondió al recordatorio de tasación final'
+    );
+
+    if ($buttonPayloadAgenda === 'recordatorio_tasacion_final_avanzar') {
+        $_POST['ButtonPayload'] = 'tasacion_finalizar_si';
+        $buttonPayload = 'tasacion_finalizar_si';
+    } else {
+        $_POST['ButtonPayload'] = 'tasacion_finalizar_no';
+        $buttonPayload = 'tasacion_finalizar_no';
+    }
+}
 
 if (
     in_array($buttonPayloadAgenda, [
@@ -3208,75 +3388,21 @@ if ($buttonPayload === 'tasacion_finalizar_si') {
 
     NotificacionPendienteService::cancelarPorCotizacionYTipo(
         $idCotizacion,
-        'RECORDATORIO_PRECOTIZACION_24HS',
+        'RECORDATORIO_TASACION_FINAL_24HS',
         'Cliente respondió antes del recordatorio'
     );
 
-    wa_log('PRE_CANCELAR_RECORDATORIO_2', [
-            'id_cotizacion' => $idCotizacion
-        ]);
+    NotificacionPendienteService::cancelarPorCotizacionYTipo(
+        $idCotizacion,
+        'ABANDONO_TASACION_FINAL_POST_RECORDATORIO_3HS',
+        'Cliente respondió antes del control de abandono'
+    );
 
     return;
 }
 
 if ($buttonPayload === 'tasacion_finalizar_no') {
-
-    $conv = wa_get_conversation($from);
-
-    $idConversacion = intval($conv['id'] ?? 0);
-
-    $idCotizacion = intval($userState['id_cotizacion'] ?? 0);
-
-    if ($idCotizacion <= 0) {
-        $idCotizacion = intval($conv['id_cotizacion'] ?? 0);
-    }
-
-    if ($idCotizacion > 0) {
-        $cnEstado = wa_db();
-
-        $sqlEstado = "
-            UPDATE cotizaciones_generadas
-            SET
-                estado_id = 10,
-                estado = 'INSPECCIÓN REALIZADA',
-                detalle_estado = 'Cliente rechazó la tasación final',
-                fecha_mod = NOW()
-            WHERE id_cotizaciones_generadas = " . intval($idCotizacion) . "
-            LIMIT 1
-        ";
-
-        $okEstado = $cnEstado->query($sqlEstado);
-        $cnEstado->close();
-    }
-
-    CarritoAbandonadoService::registrar(
-        $idCotizacion,
-        $idConversacion,
-        $from,
-        $mensajeCliente !== '' ? $mensajeCliente : 'Por ahora no ❌',
-        $motivoAbandono,
-        'TASACION_FINAL_RECHAZADA'
-    );
-
-    $userState['step'] = 'cerrado';
-    $userState['sub_step'] = 'tasacion_final_rechazada';
-
-    wa_set_user_state(
-        $from,
-        $userState,
-        'CERRADO',
-        'BOT',
-        $profileName !== '' ? $profileName : null,
-        null,
-        $idCotizacion > 0 ? $idCotizacion : null
-    );
-
-    twiml_message_and_save(
-        $from,
-        "Perfecto, gracias por avisarnos.\n\n"
-        . "Quedamos a las órdenes por si querés retomarlo más adelante."
-    );
-
+    wa_iniciar_rechazo_tasacion_final($from, $profileName, $userState);
     return;
 }
 
@@ -3568,6 +3694,18 @@ if (
             wa_marcar_cotizacion_comunicarse_cliente($idCotizacion);
         }
 
+        NotificacionPendienteService::cancelarPorCotizacionYTipo(
+            $idCotizacion,
+            'RECORDATORIO_TASACION_FINAL_24HS',
+            'Cliente decidió avanzar'
+        );
+
+        NotificacionPendienteService::cancelarPorCotizacionYTipo(
+            $idCotizacion,
+            'ABANDONO_TASACION_FINAL_POST_RECORDATORIO_3HS',
+            'Cliente decidió avanzar'
+        );
+
         $userState['step'] = 'pendiente_humano';
         $userState['sub_step'] = 'tasacion_final_aceptada';
 
@@ -3598,63 +3736,7 @@ if (
     }
 
     if ($buttonPayload === 'tasacion_finalizar_no') {
-
-        $conv = wa_get_conversation($from);
-
-        $idConversacion = intval($conv['id'] ?? 0);
-
-        $idCotizacion = intval($userState['id_cotizacion'] ?? 0);
-
-        if ($idCotizacion <= 0) {
-            $idCotizacion = intval($conv['id_cotizacion'] ?? 0);
-        }
-
-        if ($idCotizacion > 0) {
-            $cnEstado = wa_db();
-
-            $sqlEstado = "
-                UPDATE cotizaciones_generadas
-                SET
-                    estado_id = 10,
-                    estado = 'INSPECCIÓN REALIZADA',
-                    detalle_estado = 'Cliente rechazó la tasación final',
-                    fecha_mod = NOW()
-                WHERE id_cotizaciones_generadas = " . intval($idCotizacion) . "
-                LIMIT 1
-            ";
-
-            $okEstado = $cnEstado->query($sqlEstado);
-            $cnEstado->close();
-        }
-
-        CarritoAbandonadoService::registrar(
-            $idCotizacion,
-            $idConversacion,
-            $from,
-            $mensajeCliente !== '' ? $mensajeCliente : 'Por ahora no ❌',
-            $motivoAbandono,
-            'TASACION_FINAL_RECHAZADA'
-        );
-
-        $userState['step'] = 'cerrado';
-        $userState['sub_step'] = 'tasacion_final_rechazada';
-
-        wa_set_user_state(
-            $from,
-            $userState,
-            'CERRADO',
-            'BOT',
-            $profileName !== '' ? $profileName : null,
-            null,
-            $idCotizacion > 0 ? $idCotizacion : null
-        );
-
-        twiml_message_and_save(
-            $from,
-            "Perfecto, gracias por avisarnos.\n\n"
-            . "Quedamos a las órdenes por si querés retomarlo más adelante."
-        );
-
+        wa_iniciar_rechazo_tasacion_final($from, $profileName, $userState);
         return;
     }
 }

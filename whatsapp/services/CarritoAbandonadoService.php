@@ -2,17 +2,24 @@
 
 class CarritoAbandonadoService
 {
-    public static function actualizarMotivoCancelacionAgenda(
+    public static function actualizarMotivoPendiente(
         int $idCotizacion,
+        string $origenAbandono,
+        array $motivosPendientes,
         string $mensajeCliente,
         string $motivoAbandono
     ): bool {
-        if ($idCotizacion <= 0) {
+        if ($idCotizacion <= 0 || empty($motivosPendientes)) {
             return false;
         }
 
         $cn = wa_db();
         $cn->set_charset("utf8mb4");
+
+        $motivosSql = [];
+        foreach ($motivosPendientes as $motivoPendiente) {
+            $motivosSql[] = "'" . $cn->real_escape_string((string)$motivoPendiente) . "'";
+        }
 
         $sql = "
             UPDATE carrito_abandonado
@@ -26,13 +33,9 @@ class CarritoAbandonadoService
                     'Motivo informado por WhatsApp'
                 )
             WHERE id_cotizacion = ?
-              AND origen_abandono = 'AGENDA'
+              AND origen_abandono = ?
               AND estado = 'PENDIENTE'
-              AND motivo_abandono IN (
-                  'CANCELO_AGENDA_PENDIENTE_MOTIVO',
-                  'NO_RESPONDIO_CONFIRMACION_AGENDA',
-                  'NO_ASISTIO_AGENDA'
-              )
+              AND motivo_abandono IN (" . implode(',', $motivosSql) . ")
             ORDER BY id DESC
             LIMIT 1
         ";
@@ -43,7 +46,14 @@ class CarritoAbandonadoService
             return false;
         }
 
-        $st->bind_param('ssi', $mensajeCliente, $motivoAbandono, $idCotizacion);
+        $st->bind_param(
+            'ssis',
+            $mensajeCliente,
+            $motivoAbandono,
+            $idCotizacion,
+            $origenAbandono
+        );
+
         $ok = $st->execute();
         $actualizados = $st->affected_rows;
 
@@ -51,6 +61,28 @@ class CarritoAbandonadoService
         $cn->close();
 
         return $ok && $actualizados > 0;
+    }
+
+    public static function actualizarMotivoCancelacionAgenda(
+        int $idCotizacion,
+        string $mensajeCliente,
+        string $motivoAbandono
+    ): bool {
+        if ($idCotizacion <= 0) {
+            return false;
+        }
+
+        return self::actualizarMotivoPendiente(
+            $idCotizacion,
+            'AGENDA',
+            [
+                'CANCELO_AGENDA_PENDIENTE_MOTIVO',
+                'NO_RESPONDIO_CONFIRMACION_AGENDA',
+                'NO_ASISTIO_AGENDA'
+            ],
+            $mensajeCliente,
+            $motivoAbandono
+        );
     }
 
     public static function existePendiente(

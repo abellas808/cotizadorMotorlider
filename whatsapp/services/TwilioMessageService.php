@@ -222,4 +222,42 @@ class TwilioMessageService
             '¡Hola! Noté que no asististe a tu agenda para la revisión. ¿Querés coordinar una nueva agenda?'
         );
     }
+
+    public static function enviarTemplateMotivoRechazoTasacionFinal(string $to): bool
+    {
+        $contentSid = ParametroSistemaService::obtener(
+            'twilio',
+            'template_motivo_rechazo_tasacion_final'
+        );
+
+        return self::enviarTemplate(
+            $to,
+            $contentSid,
+            [],
+            'template_motivo_rechazo_tasacion_final',
+            'Gracias por tu respuesta, nos gustaría saber el motivo de tu decisión.'
+        );
+    }
+
+    public static function enviarTemplateRecordatorioTasacionFinal24Hs(
+        string $to,
+        string $nombre,
+        string $vehiculo
+    ): bool {
+        $contentSid = ParametroSistemaService::obtener(
+            'twilio',
+            'template_recordatorio_tasacion_final_24hs'
+        );
+
+        return self::enviarTemplate(
+            $to,
+            $contentSid,
+            [
+                '1' => $nombre,
+                '2' => $vehiculo
+            ],
+            'template_recordatorio_tasacion_final_24hs',
+            "Recordatorio 24 hs de tasación final para {$nombre} - {$vehiculo}"
+        );
+    }
 }

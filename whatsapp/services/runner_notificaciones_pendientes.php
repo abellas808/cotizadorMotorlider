@@ -2,6 +2,7 @@
 
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
+date_default_timezone_set('America/Montevideo');
 
 require_once dirname(__DIR__, 2) . '/config.php';
 
@@ -176,6 +177,47 @@ while ($row = $rs->fetch_assoc()) {
 
             continue 2;
 
+        case 'RECORDATORIO_TASACION_FINAL_24HS':
+
+            $nombre = trim((string)($payload['nombre'] ?? ''));
+            $vehiculo = trim((string)($payload['vehiculo'] ?? ''));
+
+            if ($nombre === '') {
+                $nombre = 'cliente';
+            }
+
+            if ($vehiculo === '') {
+                $vehiculo = 'vehículo';
+            }
+
+            $ok = TwilioMessageService::enviarTemplateRecordatorioTasacionFinal24Hs(
+                $telefono,
+                $nombre,
+                $vehiculo
+            );
+
+            if ($ok) {
+                NotificacionPendienteService::marcarProcesada($id);
+
+                NotificacionPendienteService::crear(
+                    intval($row['id_cotizacion'] ?? 0),
+                    null,
+                    $telefono,
+                    'ABANDONO_TASACION_FINAL_POST_RECORDATORIO_3HS',
+                    'TASACION_FINAL',
+                    date('Y-m-d H:i:s', strtotime('+3 hours')),
+                    $payload,
+                    'Control de abandono luego del recordatorio de tasación final'
+                );
+            } else {
+                NotificacionPendienteService::marcarError(
+                    $id,
+                    'Error al enviar notificación tipo ' . $tipo
+                );
+            }
+
+            continue 2;
+
 
         case 'ABANDONO_PRECOTIZACION_POST_RECORDATORIO_3HS':
 
@@ -330,6 +372,88 @@ while ($row = $rs->fetch_assoc()) {
             $cnAbandono->query($sqlUpdateConv);
             $cnAbandono->close();
 
+            NotificacionPendienteService::marcarProcesada($id);
+
+            continue 2;
+
+        case 'ABANDONO_TASACION_FINAL_POST_RECORDATORIO_3HS':
+
+            $idCotizacion = intval($row['id_cotizacion'] ?? 0);
+
+            if ($idCotizacion <= 0) {
+                NotificacionPendienteService::marcarError(
+                    $id,
+                    'No se pudo procesar abandono tasación final: id_cotizacion vacío'
+                );
+                continue 2;
+            }
+
+            $cnAbandono = wa_db();
+
+            $sqlConv = "
+                SELECT id, datos_json
+                FROM whatsapp_conversaciones
+                WHERE telefono = '" . $cnAbandono->real_escape_string($telefono) . "'
+                ORDER BY id DESC
+                LIMIT 1
+            ";
+
+            $rsConv = $cnAbandono->query($sqlConv);
+            $conv = $rsConv ? $rsConv->fetch_assoc() : null;
+            $idConversacion = intval($conv['id'] ?? 0);
+            $datos = [];
+
+            if (!empty($conv['datos_json'])) {
+                $tmp = json_decode($conv['datos_json'], true);
+                if (is_array($tmp)) {
+                    $datos = $tmp;
+                }
+            }
+
+            $stepActual = (string)($datos['step'] ?? '');
+
+            if ($stepActual !== 'tasacion_final_enviado') {
+                NotificacionPendienteService::marcarProcesada($id);
+                $cnAbandono->close();
+                continue 2;
+            }
+
+            if (!CarritoAbandonadoService::existePendiente(
+                $idCotizacion,
+                'NO_RESPONDE_TASACION_FINAL',
+                'TASACION_FINAL'
+            )) {
+                CarritoAbandonadoService::registrar(
+                    $idCotizacion,
+                    $idConversacion,
+                    $telefono,
+                    'Sin respuesta luego del recordatorio de tasación final',
+                    'NO_RESPONDE_TASACION_FINAL',
+                    'TASACION_FINAL',
+                    'Alan'
+                );
+            }
+
+            $datos['step'] = 'cerrado';
+            $datos['sub_step'] = 'carrito_abandonado_sin_respuesta_tasacion_final';
+            $datos['id_cotizacion'] = $idCotizacion;
+            $datos['motivo_abandono'] = 'NO_RESPONDE_TASACION_FINAL';
+            $datos['origen_abandono'] = 'TASACION_FINAL';
+
+            $cnAbandono->query("
+                UPDATE whatsapp_conversaciones
+                SET
+                    estado = 'CERRADO',
+                    modo_atencion = 'BOT',
+                    datos_json = '" . $cnAbandono->real_escape_string(
+                        json_encode($datos, JSON_UNESCAPED_UNICODE)
+                    ) . "',
+                    fecha_mod = NOW()
+                WHERE id = " . intval($idConversacion) . "
+                LIMIT 1
+            ");
+
+            $cnAbandono->close();
             NotificacionPendienteService::marcarProcesada($id);
 
             continue 2;

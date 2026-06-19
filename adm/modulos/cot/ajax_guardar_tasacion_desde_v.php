@@ -9,6 +9,7 @@ if (!isset($config['db_tablePrefix'])) {
 
 require_once(__DIR__ . '/../../includes/database.php');
 require_once(__DIR__ . '/../../includes/funciones.php');
+require_once(__DIR__ . '/../../../whatsapp/services/NotificacionPendienteService.php');
 
 session_start();
 
@@ -261,7 +262,7 @@ if ($modoEnvio === 'final') {
 	// BUSCAR DATOS DE LA COTIZACIÓN
 	// =========================
 	$cot = $db->query_first("
-		SELECT nombre, telefono
+		SELECT nombre, telefono, marca, familia AS modelo
 		FROM cotizaciones_generadas
 		WHERE id_cotizaciones_generadas = " . intval($id) . "
 		LIMIT 1
@@ -276,6 +277,13 @@ if ($modoEnvio === 'final') {
 
 	$nombreCliente = trim((string)($cot['nombre'] ?? 'Cliente'));
 	$telefono = trim((string)($cot['telefono'] ?? ''));
+	$marca = trim((string)($cot['marca'] ?? ''));
+	$modelo = trim((string)($cot['modelo'] ?? ''));
+	$vehiculo = trim($marca . ' ' . $modelo);
+
+	if ($vehiculo === '') {
+		$vehiculo = 'vehículo';
+	}
 
 	if ($telefono === '') {
 		j([
@@ -387,6 +395,32 @@ if ($modoEnvio === 'final') {
 		WHERE id_cotizaciones_generadas = " . intval($id) . "
 		LIMIT 1
 	");
+
+	NotificacionPendienteService::cancelarPorCotizacionYTipo(
+		intval($id),
+		'RECORDATORIO_TASACION_FINAL_24HS',
+		'Se reemplaza recordatorio anterior al reenviar tasación final'
+	);
+
+	NotificacionPendienteService::cancelarPorCotizacionYTipo(
+		intval($id),
+		'ABANDONO_TASACION_FINAL_POST_RECORDATORIO_3HS',
+		'Se reemplaza control anterior al reenviar tasación final'
+	);
+
+	NotificacionPendienteService::crear(
+		intval($id),
+		null,
+		$telefono,
+		'RECORDATORIO_TASACION_FINAL_24HS',
+		'TASACION_FINAL',
+		date('Y-m-d H:i:s', strtotime('+24 hours')),
+		[
+			'nombre' => $nombreCliente,
+			'vehiculo' => $vehiculo
+		],
+		'Recordatorio 24 hs luego de enviar tasación final'
+	);
 
 	// =========================
 	// ACTUALIZAR ESTADO CONVERSACION
