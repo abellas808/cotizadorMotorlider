@@ -226,4 +226,89 @@ class NotificacionPendienteService
 
         return (bool)$ok;
     }
+
+    public static function cancelar(int $id, string $observacion = ''): bool
+    {
+        $cn = self::db();
+
+        $sql = "
+            UPDATE whatsapp_notificaciones_pendientes
+            SET
+                estado = 'CANCELADA',
+                fecha_procesada = NOW(),
+                observaciones = CONCAT(IFNULL(observaciones,''), '\n', '" . $cn->real_escape_string($observacion) . "')
+            WHERE id = " . intval($id) . "
+            AND estado = 'PENDIENTE'
+            LIMIT 1
+        ";
+
+        $ok = $cn->query($sql);
+
+        self::log('NOTIFICACION_PENDIENTE_CANCELAR_ID', [
+            'ok' => $ok,
+            'id' => $id,
+            'affected_rows' => $cn->affected_rows,
+            'error' => $cn->error
+        ]);
+
+        return (bool)$ok;
+    }
+
+    public static function cancelarPendientesPorCotizacion(
+        int $idCotizacion,
+        string $observacion = ''
+    ): bool {
+        $cn = self::db();
+
+        $sql = "
+            UPDATE whatsapp_notificaciones_pendientes
+            SET
+                estado = 'CANCELADA',
+                fecha_procesada = NOW(),
+                observaciones = CONCAT(IFNULL(observaciones,''), '\n', '" . $cn->real_escape_string($observacion) . "')
+            WHERE id_cotizacion = " . intval($idCotizacion) . "
+            AND estado = 'PENDIENTE'
+        ";
+
+        $ok = $cn->query($sql);
+
+        self::log('NOTIFICACIONES_PENDIENTES_CANCELAR_COTIZACION', [
+            'ok' => $ok,
+            'id_cotizacion' => $idCotizacion,
+            'affected_rows' => $cn->affected_rows,
+            'error' => $cn->error
+        ]);
+
+        return (bool)$ok;
+    }
+
+    public static function reprogramar(
+        int $id,
+        string $fechaProgramada,
+        string $observacion = ''
+    ): bool {
+        $cn = self::db();
+
+        $sql = "
+            UPDATE whatsapp_notificaciones_pendientes
+            SET
+                fecha_programada = '" . $cn->real_escape_string($fechaProgramada) . "',
+                observaciones = CONCAT(IFNULL(observaciones,''), '\n', '" . $cn->real_escape_string($observacion) . "')
+            WHERE id = " . intval($id) . "
+            AND estado = 'PENDIENTE'
+            LIMIT 1
+        ";
+
+        $ok = $cn->query($sql);
+
+        self::log('NOTIFICACION_PENDIENTE_REPROGRAMAR', [
+            'ok' => $ok,
+            'id' => $id,
+            'fecha_programada' => $fechaProgramada,
+            'affected_rows' => $cn->affected_rows,
+            'error' => $cn->error
+        ]);
+
+        return (bool)$ok;
+    }
 }

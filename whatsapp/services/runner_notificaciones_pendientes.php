@@ -9,6 +9,7 @@ require_once dirname(__DIR__, 2) . '/config.php';
 require_once __DIR__ . '/ParametroSistemaService.php';
 require_once __DIR__ . '/TwilioMessageService.php';
 require_once __DIR__ . '/NotificacionPendienteService.php';
+require_once __DIR__ . '/NotificacionAutomaticaGuardService.php';
 require_once __DIR__ . '/CarritoAbandonadoService.php';
 
 function wa_db(): mysqli
@@ -69,6 +70,45 @@ while ($row = $rs->fetch_assoc()) {
     $id = intval($row['id']);
     $telefono = trim((string)$row['telefono']);
     $tipo = trim((string)$row['tipo_notificacion']);
+
+    $control = NotificacionAutomaticaGuardService::evaluar($row);
+    $accionControl = (string)($control['accion'] ?? 'OMITIR');
+    $motivoControl = (string)($control['motivo'] ?? 'Control de seguridad sin resultado');
+
+    wa_log('RUNNER_KILL_SWITCH', [
+        'id' => $id,
+        'id_cotizacion' => intval($row['id_cotizacion'] ?? 0),
+        'tipo' => $tipo,
+        'accion' => $accionControl,
+        'motivo' => $motivoControl,
+        'fecha_programada' => $control['fecha_programada'] ?? null
+    ]);
+
+    if ($accionControl === 'CANCELAR_TODAS') {
+        NotificacionPendienteService::cancelarPendientesPorCotizacion(
+            intval($row['id_cotizacion'] ?? 0),
+            $motivoControl
+        );
+        continue;
+    }
+
+    if ($accionControl === 'CANCELAR') {
+        NotificacionPendienteService::cancelar($id, $motivoControl);
+        continue;
+    }
+
+    if ($accionControl === 'REPROGRAMAR') {
+        NotificacionPendienteService::reprogramar(
+            $id,
+            (string)$control['fecha_programada'],
+            $motivoControl
+        );
+        continue;
+    }
+
+    if ($accionControl !== 'CONTINUAR') {
+        continue;
+    }
 
     $payload = [];
 
