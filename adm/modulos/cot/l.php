@@ -666,7 +666,7 @@ $cant_cotizaciones = $db->query_first('SELECT COUNT(*) AS cant ' . $sql_from);
     }
 
     .cot-grid-wrap {
-        overflow-x: auto;
+        overflow-x: visible;
         overflow-y: visible;
         margin-top: 18px !important;
         position: relative;
@@ -678,7 +678,6 @@ $cant_cotizaciones = $db->query_first('SELECT COUNT(*) AS cant ' . $sql_from);
 
     .cot-grid-compact {
         width: 100%;
-        min-width: 1120px;
         table-layout: fixed;
         font-size: 10px;
     }
@@ -741,30 +740,42 @@ $cant_cotizaciones = $db->query_first('SELECT COUNT(*) AS cant ' . $sql_from);
 
     .cot-grid-compact td.cot-col-estado {
         white-space: normal !important;
-        overflow: visible !important;
+        overflow: hidden !important;
         text-overflow: unset !important;
         line-height: 1.2;
     }
 
+    .cot-grid-compact td.cot-col-auto {
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: unset !important;
+        line-height: 1.25;
+    }
+
     .cot-grid-compact td.cot-col-estado span,
     .cot-grid-compact td.cot-col-conf span {
+        display: block !important;
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: 100% !important;
+        box-sizing: border-box;
         word-break: normal !important;
         overflow-wrap: normal !important;
         white-space: normal !important;
     }
 
-    .cot-col-cod { width: 45px; }
-    .cot-col-anio { width: 45px; }
-    .cot-col-km { width: 55px; }
-    .cot-col-auto { width: 105px; }
-    .cot-col-nombre { width: 80px; }
-    .cot-col-tel { width: 68px; }
-    .cot-col-money { width: 58px; }
-    .cot-col-fecha { width: 58px; }
-    .cot-col-estado { width: 88px; }
-    .cot-col-agecod { width: 38px; }
+    .cot-col-cod { width: 42px; }
+    .cot-col-anio { width: 36px; }
+    .cot-col-km { width: 50px; }
+    .cot-col-auto { width: 150px; }
+    .cot-col-nombre { width: 72px; }
+    .cot-col-tel { width: 64px; }
+    .cot-col-money { width: 54px; }
+    .cot-col-fecha { width: 56px; }
+    .cot-col-estado { width: 112px; }
+    .cot-col-agecod { width: 40px; }
     .cot-col-agehora { width: 48px; }
-    .cot-col-conf { width: 72px; }
+    .cot-col-conf { width: 82px; }
     .cot-col-money-strong { font-weight: 700; }
 
     .cot-filtros-bar {
