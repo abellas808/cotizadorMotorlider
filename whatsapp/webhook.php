@@ -2704,7 +2704,7 @@ if (
             $idConversacion,
             $from,
             $mensajeCliente,
-            $motivoAbandono,
+            'TASACION_FINAL_RECHAZADA',
             'TASACION_FINAL',
             'Alan'
         );
@@ -2814,15 +2814,21 @@ if (
     }
 
     $origenAbandono = strtoupper(trim((string)($userState['origen_abandono'] ?? 'PRETASACION')));
-    $motivoActualizado = false;
+    $puntoAbandono = strtoupper(trim((string)($userState['motivo_base'] ?? '')));
 
-    if ($origenAbandono === 'AGENDA') {
-        $motivoActualizado = CarritoAbandonadoService::actualizarMotivoCancelacionAgenda(
-            $idCotizacion,
-            $mensajeCliente,
-            $motivoAbandono
-        );
+    if ($puntoAbandono === '') {
+        $puntoAbandono = $origenAbandono === 'AGENDA'
+            ? 'NO_CONFIRMA_AGENDA'
+            : 'NO_AGENDA_REVISION';
     }
+
+    $motivoActualizado = CarritoAbandonadoService::actualizarMotivoPendiente(
+        $idCotizacion,
+        $origenAbandono,
+        [$puntoAbandono],
+        $mensajeCliente,
+        $motivoAbandono
+    );
 
     if (!$motivoActualizado) {
         CarritoAbandonadoService::registrar(
@@ -2830,7 +2836,7 @@ if (
             $idConversacion,
             $from,
             $mensajeCliente,
-            $motivoAbandono,
+            $puntoAbandono,
             $origenAbandono
         );
     }
@@ -2961,7 +2967,7 @@ if (
             if ($idCotizacion > 0) {
                 if (!CarritoAbandonadoService::existePendiente(
                     $idCotizacion,
-                    'CANCELO_AGENDA_PENDIENTE_MOTIVO',
+                    'NO_CONFIRMA_AGENDA',
                     'AGENDA'
                 )) {
                     CarritoAbandonadoService::registrar(
@@ -2969,7 +2975,7 @@ if (
                         $idConversacion,
                         $from,
                         'Cliente canceló asistencia mediante botón',
-                        'CANCELO_AGENDA_PENDIENTE_MOTIVO',
+                        'NO_CONFIRMA_AGENDA',
                         'AGENDA',
                         'Alan'
                     );
@@ -3011,7 +3017,7 @@ if (
             $nuevoEstado['id_cotizacion'] = $idCotizacion;
             $nuevoEstado['id_conversacion'] = $idConversacion;
             $nuevoEstado['origen_abandono'] = 'AGENDA';
-            $nuevoEstado['motivo_base'] = 'CANCELO_AGENDA';
+            $nuevoEstado['motivo_base'] = 'NO_CONFIRMA_AGENDA';
 
             wa_set_user_state(
                 $from,
@@ -3117,14 +3123,24 @@ if (
             $idCotizacion = intval($conv['id_cotizacion'] ?? 0);
         }
 
-        CarritoAbandonadoService::registrar(
-            $idCotizacion,
-            $idConversacion,
-            $from,
-            $mensajeCliente !== '' ? $mensajeCliente : 'No quiero agendar',
-            $motivoAbandono,
-            'PRETASACION'
-        );
+        if (
+            $idCotizacion > 0
+            && !CarritoAbandonadoService::existePendiente(
+                $idCotizacion,
+                'NO_AGENDA_REVISION',
+                'PRETASACION'
+            )
+        ) {
+            CarritoAbandonadoService::registrar(
+                $idCotizacion,
+                $idConversacion,
+                $from,
+                'Cliente respondió que no quiere agendar',
+                'NO_AGENDA_REVISION',
+                'PRETASACION',
+                'Alan'
+            );
+        }
 
         $nuevoEstado = $userState;
         $nuevoEstado['step'] = 'cerrado';
@@ -3297,9 +3313,24 @@ if ($step === 'resultado_enviado' && $subStep === 'esperando_agenda') {
             $idCotizacion = intval($conv['id_cotizacion'] ?? 0);
         }
 
-        // IMPORTANTE:
-        // Ya no registramos carrito abandonado acá.
-        // Primero pedimos el motivo mediante template.
+        if (
+            $idCotizacion > 0
+            && !CarritoAbandonadoService::existePendiente(
+                $idCotizacion,
+                'NO_AGENDA_REVISION',
+                'PRETASACION'
+            )
+        ) {
+            CarritoAbandonadoService::registrar(
+                $idCotizacion,
+                $idConversacion,
+                $from,
+                $body !== '' ? $body : 'Cliente respondió que no quiere agendar',
+                'NO_AGENDA_REVISION',
+                'PRETASACION',
+                'Alan'
+            );
+        }
 
         $nuevoEstado = $userState;
         $nuevoEstado['step'] = 'esperando_motivo_no_agendar_precotizacion';
@@ -3526,7 +3557,7 @@ Te estaremos enviando un recordatorio antes de la inspección."
         if ($idCotizacion > 0) {
             if (!CarritoAbandonadoService::existePendiente(
                 $idCotizacion,
-                'CANCELO_AGENDA_PENDIENTE_MOTIVO',
+                'NO_CONFIRMACION_AGENDA',
                 'AGENDA'
             )) {
                 CarritoAbandonadoService::registrar(
@@ -3534,7 +3565,7 @@ Te estaremos enviando un recordatorio antes de la inspección."
                     $idConversacion,
                     $from,
                     $mensajeCliente !== '' ? $mensajeCliente : 'Cliente canceló la agenda respondiendo NO por WhatsApp',
-                    'CANCELO_AGENDA_PENDIENTE_MOTIVO',
+                    'NO_CONFIRMACION_AGENDA',
                     'AGENDA',
                     'Alan'
                 );
@@ -3574,7 +3605,7 @@ Te estaremos enviando un recordatorio antes de la inspección."
         $nuevoEstado['id_cotizacion'] = $idCotizacion;
         $nuevoEstado['id_conversacion'] = $idConversacion;
         $nuevoEstado['origen_abandono'] = 'AGENDA';
-        $nuevoEstado['motivo_base'] = 'CANCELO_AGENDA';
+        $nuevoEstado['motivo_base'] = 'NO_CONFIRMACION_AGENDA';
 
         wa_set_user_state(
             $from,
@@ -5168,7 +5199,7 @@ if (
         $nuevoEstado['id_cotizacion'] = $idCotizacionTmp;
         $nuevoEstado['id_conversacion'] = intval($convTmp['id'] ?? 0);
         $nuevoEstado['origen_abandono'] = 'AGENDA';
-        $nuevoEstado['motivo_base'] = 'NO_ASISTIO_CANCELA_RECOORDINACION';
+        $nuevoEstado['motivo_base'] = 'NO_ASISTIO_AGENDA';
 
         wa_set_user_state(
             $from,
@@ -5371,7 +5402,7 @@ if (
         $carritoPreparado = CarritoAbandonadoService::actualizarMotivoCancelacionAgenda(
             $idCotizacionTmp,
             'Cliente canceló la agenda desde un recordatorio',
-            'CANCELO_AGENDA_PENDIENTE_MOTIVO'
+            'NO_CONFIRMA_AGENDA'
         );
 
         if (
@@ -5379,7 +5410,7 @@ if (
             !$carritoPreparado &&
             !CarritoAbandonadoService::existePendiente(
                 $idCotizacionTmp,
-                'CANCELO_AGENDA_PENDIENTE_MOTIVO',
+                'NO_CONFIRMA_AGENDA',
                 'AGENDA'
             )
         ) {
@@ -5388,7 +5419,7 @@ if (
                 $idConversacionTmp,
                 $from,
                 'Cliente canceló la agenda desde un recordatorio',
-                'CANCELO_AGENDA_PENDIENTE_MOTIVO',
+                'NO_CONFIRMA_AGENDA',
                 'AGENDA',
                 'Alan'
             );
@@ -5400,7 +5431,7 @@ if (
         $nuevoEstado['id_cotizacion'] = $idCotizacionTmp;
         $nuevoEstado['id_conversacion'] = intval($convTmp['id'] ?? 0);
         $nuevoEstado['origen_abandono'] = 'AGENDA';
-        $nuevoEstado['motivo_base'] = 'NO_CONFIRMACION_AGENDA';
+        $nuevoEstado['motivo_base'] = 'NO_CONFIRMA_AGENDA';
 
         wa_set_user_state(
             $from,
@@ -5635,9 +5666,9 @@ if (($userState['step'] ?? '') === 'agenda_hora') {
             $idCotizacionAgenda,
             null,
             $from,
-            'RECORDATORIO_CONFIRMACION_AGENDA_10HS',
+            'RECORDATORIO_CONFIRMACION_AGENDA_3HS',
             'AGENDA',
-            date('Y-m-d H:i:s', strtotime('+10 hours')),
+            date('Y-m-d H:i:s', strtotime('+3 hours')),
             [
                 'id_cotizacion' => $idCotizacionAgenda,
                 'fecha' => (string)$nuevoEstado['agenda_fecha'],
@@ -5645,7 +5676,7 @@ if (($userState['step'] ?? '') === 'agenda_hora') {
                 'fecha_formateada' => $fechaFormateada,
                 'hora_formateada' => $horaFormateada
             ],
-            'Recordatorio 10 hs luego de enviar resumen de agenda sin confirmar'
+            'Recordatorio 3 hs luego de enviar resumen de agenda sin confirmar'
         );
 
         twiml_empty();
@@ -5729,7 +5760,7 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
 
             if (!CarritoAbandonadoService::existePendiente(
                 $idCotizacionCancelada,
-                'CANCELO_AGENDA_PENDIENTE_MOTIVO',
+                'NO_CONFIRMACION_AGENDA',
                 'AGENDA'
             )) {
                 CarritoAbandonadoService::registrar(
@@ -5737,7 +5768,7 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
                     $idConversacionCancelacion,
                     $from,
                     'Cliente canceló la solicitud de agenda',
-                    'CANCELO_AGENDA_PENDIENTE_MOTIVO',
+                    'NO_CONFIRMACION_AGENDA',
                     'AGENDA',
                     'Alan'
                 );
@@ -5772,7 +5803,7 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
                 'sub_step' => 'motivo_no_agendar',
                 'id_cotizacion' => $idCotizacionCancelada,
                 'origen_abandono' => 'AGENDA',
-                'motivo_base' => 'CANCELO_AGENDA'
+                'motivo_base' => 'NO_CONFIRMACION_AGENDA'
             ],
             'ESPERANDO_MOTIVO_CANCELACION_AGENDA',
             'BOT',
@@ -6301,7 +6332,7 @@ function wa_registrar_cancelacion_agenda_en_carrito(
             $idConversacion,
             $from,
             'Cliente canceló la confirmación de agenda',
-            'CANCELO_AGENDA_PENDIENTE_MOTIVO',
+            'NO_CONFIRMACION_AGENDA',
             'AGENDA',
             'Alan'
         );

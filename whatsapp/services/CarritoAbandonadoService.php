@@ -25,12 +25,12 @@ class CarritoAbandonadoService
             UPDATE carrito_abandonado
             SET
                 mensaje_cliente = ?,
-                motivo_abandono = ?,
                 fecha_respuesta = NOW(),
                 observaciones = CONCAT(
                     IFNULL(observaciones, ''),
                     IF(IFNULL(observaciones, '') = '', '', '\n'),
-                    'Motivo informado por WhatsApp'
+                    'Motivo informado por WhatsApp: ',
+                    ?
                 )
             WHERE id_cotizacion = ?
               AND origen_abandono = ?
@@ -78,6 +78,8 @@ class CarritoAbandonadoService
             [
                 'CANCELO_AGENDA_PENDIENTE_MOTIVO',
                 'NO_RESPONDIO_CONFIRMACION_AGENDA',
+                'NO_CONFIRMACION_AGENDA',
+                'NO_CONFIRMA_AGENDA',
                 'NO_ASISTIO_AGENDA'
             ],
             $mensajeCliente,

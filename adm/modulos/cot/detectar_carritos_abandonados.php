@@ -82,6 +82,15 @@ while ($regla = $db->fetch_array($reglas)) {
     $mensajeCliente = trim((string)$regla['mensaje_cliente']);
     $textoReferencia = trim((string)$regla['texto_mensaje_referencia']);
 
+    // Normalización de puntos históricos configurados en la tabla de reglas.
+    if ($motivoAbandono === 'NO_CONFIRMA_AGENDA' && $horasEspera === 3) {
+        $motivoAbandono = 'NO_CONFIRMACION_AGENDA';
+    } elseif ($motivoAbandono === 'NO_RESPONDE_RECORDATORIO_AGENDA') {
+        $motivoAbandono = 'NO_CONFIRMA_AGENDA';
+    } elseif ($motivoAbandono === 'NO_RESPONDE_TASACION_FINAL') {
+        $horasEspera = 48;
+    }
+
     echo "-------------------------------------\n";
     echo "Regla ID: {$idRegla}\n";
     echo "Motivo: {$motivoAbandono}\n";
@@ -297,7 +306,7 @@ $sqlAgendaPendiente = "
           SELECT 1
           FROM carrito_abandonado ca
           WHERE ca.id_cotizacion = wc.id_cotizacion
-            AND ca.motivo_abandono = 'NO_CONFIRMACION_AGENDA_AUTO'
+            AND ca.motivo_abandono = 'NO_CONFIRMACION_AGENDA'
       )
 ";
 
@@ -364,7 +373,7 @@ if (!$rsAgenda) {
                 " . intval($row['kilometros']) . ",
                 " . floatval($row['tasacion_final']) . ",
                 'Cliente no confirmó ni canceló la agenda',
-                'NO_CONFIRMACION_AGENDA_AUTO',
+                'NO_CONFIRMACION_AGENDA',
                 'CONFIRMACION_AGENDA_AUTO',
                 NOW(),
                 'CRON',

@@ -44,7 +44,7 @@ function ca_badge_punto_abandono($punto) {
             break;
 
         case 'TASACION_FINAL_RECHAZADA':
-            $clase = 'ca-badge-naranja';
+            $clase = 'ca-badge-fucsia';
             break;
 
         case 'NO_RESPONDE_TASACION_FINAL':
@@ -53,6 +53,55 @@ function ca_badge_punto_abandono($punto) {
     }
 
     return '<span class="ca-badge ' . $clase . '">' . htmlspecialchars($punto, ENT_QUOTES, 'UTF-8') . '</span>';
+}
+
+function ca_normalizar_punto_abandono($punto, $origen = '') {
+    $punto = strtoupper(trim((string)$punto));
+    $origen = strtoupper(trim((string)$origen));
+
+    $canonicos = [
+        'NO_AGENDA_REVISION',
+        'NO_RESPONDE_PRETASACION',
+        'NO_CONFIRMACION_AGENDA',
+        'NO_CONFIRMA_AGENDA',
+        'NO_ASISTIO_AGENDA',
+        'TASACION_FINAL_RECHAZADA',
+        'NO_RESPONDE_TASACION_FINAL'
+    ];
+
+    if (in_array($punto, $canonicos, true)) {
+        return $punto;
+    }
+
+    if ($punto === 'SIN_RESPUESTA_RECORDATORIO_24HS') {
+        return 'NO_RESPONDE_PRETASACION';
+    }
+
+    if ($punto === 'NO_CONFIRMACION_AGENDA_AUTO') {
+        return 'NO_CONFIRMACION_AGENDA';
+    }
+
+    if (in_array($punto, [
+        'CANCELO_AGENDA_PENDIENTE_MOTIVO',
+        'NO_RESPONDIO_CONFIRMACION_AGENDA',
+        'NO_RESPONDE_RECORDATORIO_AGENDA'
+    ], true)) {
+        return 'NO_CONFIRMA_AGENDA';
+    }
+
+    if ($origen === 'TASACION_FINAL') {
+        return 'TASACION_FINAL_RECHAZADA';
+    }
+
+    if ($origen === 'PRETASACION') {
+        return 'NO_AGENDA_REVISION';
+    }
+
+    if ($origen === 'AGENDA') {
+        return 'NO_CONFIRMA_AGENDA';
+    }
+
+    return $punto;
 }
 
 $buscar = trim((string)($_GET['buscar'] ?? ''));
@@ -82,17 +131,15 @@ if ($buscar !== '') {
     ";
 }
 
-if ($puntoAbandono !== '') {
-    $where .= " AND ca.motivo_abandono = '" . $db->escape($puntoAbandono) . "'";
-}
-
-$puntosAbandono = $db->query("
-    SELECT DISTINCT motivo_abandono
-    FROM carrito_abandonado
-    WHERE motivo_abandono IS NOT NULL
-      AND motivo_abandono <> ''
-    ORDER BY motivo_abandono ASC
-");
+$puntosAbandono = [
+    'NO_AGENDA_REVISION',
+    'NO_RESPONDE_PRETASACION',
+    'NO_CONFIRMACION_AGENDA',
+    'NO_CONFIRMA_AGENDA',
+    'NO_ASISTIO_AGENDA',
+    'TASACION_FINAL_RECHAZADA',
+    'NO_RESPONDE_TASACION_FINAL'
+];
 
 $listado = $db->query("
     SELECT
@@ -181,15 +228,13 @@ require_once('sistema_pre_contenido.php');
     <select name="punto_abandono" style="width:280px;">
         <option value="">Todos los puntos de abandono</option>
 
-        <?php if ($puntosAbandono) { ?>
-            <?php while ($pa = $db->fetch_array($puntosAbandono)) { ?>
+        <?php foreach ($puntosAbandono as $pa) { ?>
                 <option
-                    value="<?php echo_s($pa['motivo_abandono']); ?>"
-                    <?php echo ($puntoAbandono === $pa['motivo_abandono']) ? 'selected' : ''; ?>
+                    value="<?php echo_s($pa); ?>"
+                    <?php echo ($puntoAbandono === $pa) ? 'selected' : ''; ?>
                 >
-                    <?php echo_s($pa['motivo_abandono']); ?>
+                    <?php echo_s($pa); ?>
                 </option>
-            <?php } ?>
         <?php } ?>
     </select>
 
@@ -225,9 +270,16 @@ require_once('sistema_pre_contenido.php');
             $puntoMostrar = '';
 
             if (!empty($row['motivo_abandono'])) {
-                $puntoMostrar = $row['motivo_abandono'];
+                $puntoMostrar = ca_normalizar_punto_abandono(
+                    $row['motivo_abandono'],
+                    $row['origen_abandono'] ?? ''
+                );
             } elseif (!empty($row['origen_abandono'])) {
                 $puntoMostrar = $row['origen_abandono'];
+            }
+
+            if ($puntoAbandono !== '' && $puntoMostrar !== $puntoAbandono) {
+                continue;
             }
             ?>
 

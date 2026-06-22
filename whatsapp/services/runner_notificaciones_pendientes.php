@@ -184,9 +184,9 @@ while ($row = $rs->fetch_assoc()) {
                     $telefono,
                     'ABANDONO_AGENDA_POST_RECORDATORIO_3HS',
                     'AGENDA',
-                    date('Y-m-d H:i:s', strtotime('+3 hours')),
+                    date('Y-m-d H:i:s', strtotime('+10 hours')),
                     $payload,
-                    'Control de abandono luego del recordatorio de confirmación de agenda'
+                    'Control de abandono 10 hs luego del recordatorio de confirmación de agenda'
                 );
 
                 wa_log('RUNNER_RECORDATORIO_CONFIRMACION_AGENDA_OK', [
@@ -245,9 +245,9 @@ while ($row = $rs->fetch_assoc()) {
                     $telefono,
                     'ABANDONO_TASACION_FINAL_POST_RECORDATORIO_3HS',
                     'TASACION_FINAL',
-                    date('Y-m-d H:i:s', strtotime('+3 hours')),
+                    date('Y-m-d H:i:s', strtotime('+24 hours')),
                     $payload,
-                    'Control de abandono luego del recordatorio de tasación final'
+                    'Control de abandono a las 48 hs de enviada la tasación final'
                 );
             } else {
                 NotificacionPendienteService::marcarError(
@@ -302,21 +302,27 @@ while ($row = $rs->fetch_assoc()) {
                 continue 2;
             }
 
-            CarritoAbandonadoService::registrar(
+            if (!CarritoAbandonadoService::existePendiente(
                 $idCotizacion,
-                $idConversacion,
-                $telefono,
-                'Sin respuesta luego del recordatorio 24 hs',
-                'SIN_RESPUESTA_RECORDATORIO_24HS',
-                'PRETASACION',
-                'Alan'
-            );
+                'NO_RESPONDE_PRETASACION',
+                'PRETASACION'
+            )) {
+                CarritoAbandonadoService::registrar(
+                    $idCotizacion,
+                    $idConversacion,
+                    $telefono,
+                    'Sin respuesta luego de la pre-cotización',
+                    'NO_RESPONDE_PRETASACION',
+                    'PRETASACION',
+                    'Alan'
+                );
+            }
 
             $nuevoDatos = $datos;
             $nuevoDatos['step'] = 'cerrado';
             $nuevoDatos['sub_step'] = 'carrito_abandonado_sin_respuesta_recordatorio';
             $nuevoDatos['id_cotizacion'] = $idCotizacion;
-            $nuevoDatos['motivo_abandono'] = 'SIN_RESPUESTA_RECORDATORIO_24HS';
+            $nuevoDatos['motivo_abandono'] = 'NO_RESPONDE_PRETASACION';
             $nuevoDatos['origen_abandono'] = 'PRETASACION';
 
             $sqlUpdateConv = "
@@ -381,21 +387,27 @@ while ($row = $rs->fetch_assoc()) {
                 continue 2;
             }
 
-            CarritoAbandonadoService::registrar(
+            if (!CarritoAbandonadoService::existePendiente(
                 $idCotizacion,
-                $idConversacion,
-                $telefono,
-                'Sin respuesta luego del recordatorio de confirmación de agenda',
-                'NO_RESPONDIO_CONFIRMACION_AGENDA',
-                'AGENDA',
-                'Alan'
-            );
+                'NO_CONFIRMA_AGENDA',
+                'AGENDA'
+            )) {
+                CarritoAbandonadoService::registrar(
+                    $idCotizacion,
+                    $idConversacion,
+                    $telefono,
+                    'Sin respuesta luego del recordatorio de confirmación de agenda',
+                    'NO_CONFIRMA_AGENDA',
+                    'AGENDA',
+                    'Alan'
+                );
+            }
 
             $nuevoDatos = $datos;
             $nuevoDatos['step'] = 'cerrado';
             $nuevoDatos['sub_step'] = 'carrito_abandonado_sin_confirmar_agenda';
             $nuevoDatos['id_cotizacion'] = $idCotizacion;
-            $nuevoDatos['motivo_abandono'] = 'NO_RESPONDIO_CONFIRMACION_AGENDA';
+            $nuevoDatos['motivo_abandono'] = 'NO_CONFIRMA_AGENDA';
             $nuevoDatos['origen_abandono'] = 'AGENDA';
 
             $sqlUpdateConv = "
