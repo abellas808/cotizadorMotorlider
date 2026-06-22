@@ -702,8 +702,8 @@ if (!function_exists('cot_v_hora_chat')) {
 		<div class="cot-card">
 			<h4>Valores Motorlider</h4>
 			<div class="cot-item"><div class="cot-label">Valor Mínimo Motorlider</div><div class="cot-value"><?php echo_s(cot_v_money($elemento['valor_minimo_autodata'])); ?></div></div>
-			<div class="cot-item"><div class="cot-label">Valor Máximo Motorlider</div><div class="cot-value"><?php echo_s(cot_v_money($elemento['valor_maximo_autodata'])); ?></div></div>
 			<div class="cot-item"><div class="cot-label">Valor Promedio Motorlider</div><div class="cot-value"><?php echo_s(cot_v_money($elemento['valor_promedio_autodata'])); ?></div></div>
+			<div class="cot-item"><div class="cot-label">Valor Máximo Motorlider</div><div class="cot-value"><?php echo_s(cot_v_money($elemento['valor_maximo_autodata'])); ?></div></div>
 		</div>
 	</div>
 
@@ -711,8 +711,8 @@ if (!function_exists('cot_v_hora_chat')) {
 		<div class="cot-card">
 			<h4>Valores de Mercado</h4>
 			<div class="cot-item"><div class="cot-label">Valor Mínimo de Mercado</div><div class="cot-value"><?php echo_s(cot_v_money($elemento['valor_minimo'])); ?></div></div>
-			<div class="cot-item"><div class="cot-label">Valor Máximo de Mercado</div><div class="cot-value"><?php echo_s(cot_v_money($elemento['valor_maximo'])); ?></div></div>
 			<div class="cot-item"><div class="cot-label">Valor Promedio de Mercado</div><div class="cot-value"><?php echo_s(cot_v_money($elemento['valor_promedio'])); ?></div></div>
+			<div class="cot-item"><div class="cot-label">Valor Máximo de Mercado</div><div class="cot-value"><?php echo_s(cot_v_money($elemento['valor_maximo'])); ?></div></div>
 		</div>
 	</div>
 </div>

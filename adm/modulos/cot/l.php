@@ -79,8 +79,10 @@ if (!function_exists('cot_badge')) {
         color:' . $c['fg'] . ';
         background:' . $c['bg'] . ';
         white-space:normal;
-        word-break:break-word;
-        max-width:140px;
+        word-break:normal;
+        overflow-wrap:normal;
+        max-width:none;
+        min-width:72px;
         text-align:center;
         ">
         ' . htmlspecialchars($texto) . '
@@ -111,8 +113,10 @@ if (!function_exists('cot_estado_badge_db')) {
             color:#fff;
             background:' . htmlspecialchars($color) . ';
             white-space:normal;
-            word-break:break-word;
-            max-width:140px;
+            word-break:normal;
+            overflow-wrap:normal;
+            max-width:none;
+            min-width:76px;
             text-align:center;
         ">' . htmlspecialchars($texto) . '</span>';
     }
@@ -629,8 +633,8 @@ $cant_cotizaciones = $db->query_first('SELECT COUNT(*) AS cant ' . $sql_from);
         position: relative;
         background: #fff;
         padding: 0;
-        margin: 0 0 22px 0;
-        min-height: 86px;
+        margin: 0 0 14px 0;
+        min-height: auto;
         z-index: 6;
     }
 
@@ -662,27 +666,31 @@ $cant_cotizaciones = $db->query_first('SELECT COUNT(*) AS cant ' . $sql_from);
     }
 
     .cot-grid-wrap {
-        overflow-x: visible;
-        margin-top: 70px !important;
+        overflow-x: auto;
+        overflow-y: visible;
+        margin-top: 18px !important;
         position: relative;
         z-index: 1;
         clear: both;
+        max-width: 100%;
+        padding-bottom: 6px;
     }
 
     .cot-grid-compact {
         width: 100%;
+        min-width: 1120px;
         table-layout: fixed;
-        font-size: 9px;
+        font-size: 10px;
     }
 
     .cot-grid-compact th,
     .cot-grid-compact td {
-        padding: 3px 4px !important;
+        padding: 5px 5px !important;
         vertical-align: middle !important;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-        line-height: 1.1;
+        line-height: 1.18;
     }
 
     .cot-grid-compact thead tr.group-row th {
@@ -738,13 +746,26 @@ $cant_cotizaciones = $db->query_first('SELECT COUNT(*) AS cant ' . $sql_from);
         line-height: 1.2;
     }
 
-    .cot-col-auto { width: 90px; }
+    .cot-grid-compact td.cot-col-estado span,
+    .cot-grid-compact td.cot-col-conf span {
+        word-break: normal !important;
+        overflow-wrap: normal !important;
+        white-space: normal !important;
+    }
+
+    .cot-col-cod { width: 45px; }
+    .cot-col-anio { width: 45px; }
+    .cot-col-km { width: 55px; }
+    .cot-col-auto { width: 105px; }
     .cot-col-nombre { width: 80px; }
     .cot-col-tel { width: 68px; }
-    .cot-col-money { width: 55px; }
+    .cot-col-money { width: 58px; }
     .cot-col-fecha { width: 58px; }
-    .cot-col-estado { width: 145px; }
+    .cot-col-estado { width: 88px; }
+    .cot-col-agecod { width: 38px; }
+    .cot-col-agehora { width: 48px; }
     .cot-col-conf { width: 72px; }
+    .cot-col-money-strong { font-weight: 700; }
 
     .cot-filtros-bar {
         max-width: 100%;
@@ -754,6 +775,17 @@ $cant_cotizaciones = $db->query_first('SELECT COUNT(*) AS cant ' . $sql_from);
     .cot-filtro-item input,
     .cot-filtro-item select {
         max-width: 180px;
+    }
+
+    @media (max-width: 1200px) {
+        .cot-top-search {
+            justify-content: flex-start;
+        }
+
+        .cot-filtro-item input,
+        .cot-filtro-item select {
+            max-width: 155px;
+        }
     }
 </style>
 
@@ -932,8 +964,8 @@ $cant_cotizaciones = $db->query_first('SELECT COUNT(*) AS cant ' . $sql_from);
                             echo_s($telefono);
                             ?>
                         </td>
-                        <td class="cot-col-money"><?php echo_s(cot_format_tasacion($tasDesde)); ?></td>
-                        <td class="cot-col-money"><?php echo_s(cot_format_tasacion($tasHasta)); ?></td>
+                        <td class="cot-col-money cot-col-money-strong"><?php echo_s(cot_format_tasacion($tasDesde)); ?></td>
+                        <td class="cot-col-money cot-col-money-strong"><?php echo_s(cot_format_tasacion($tasHasta)); ?></td>
                         <td class="cot-col-money" style="font-weight:bold;"><?php echo_s(cot_format_tasacion($tasFinal)); ?></td>
                         <td class="cot-col-fecha"><?php echo_s(cot_format_fecha($entrada['fecha'])); ?></td>
                         <td class="cot-col-estado"><?php echo cot_estado_badge_db($entrada); ?></td>
