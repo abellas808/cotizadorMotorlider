@@ -599,10 +599,17 @@ $cant_cotizaciones = $db->query_first('SELECT COUNT(*) AS cant ' . $sql_from);
         clear: both;
         display: block;
         position: relative;
+        left: auto;
+        right: auto;
+        top: auto;
         margin: 0 0 18px 0;
         padding: 0;
         z-index: 5;
         background: #fff;
+    }
+
+    #contenido {
+        padding-left: 220px;
     }
 
     .cot-top-search {
@@ -663,6 +670,39 @@ $cant_cotizaciones = $db->query_first('SELECT COUNT(*) AS cant ' . $sql_from);
         height: 30px;
         padding: 4px 6px;
         font-size: 12px;
+    }
+
+    .cot-top-search .btn,
+    .cot-filtros-bar .btn {
+        height: 32px;
+        padding: 5px 14px;
+        border: 1px solid #2f80d1;
+        border-radius: 6px;
+        background: #2f80d1;
+        color: #fff;
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 18px;
+        box-shadow: none;
+        text-shadow: none;
+    }
+
+    .cot-top-search .btn:hover,
+    .cot-filtros-bar .btn:hover {
+        background: #256cac;
+        color: #fff;
+    }
+
+    .cot-filtros-bar .btn + .btn {
+        margin-left: 8px;
+        border-color: #c7ccd1;
+        background: #fff;
+        color: #333;
+    }
+
+    .cot-filtros-bar .btn + .btn:hover {
+        background: #f3f5f7;
+        color: #333;
     }
 
     .cot-grid-wrap {
