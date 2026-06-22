@@ -104,6 +104,79 @@ function ca_normalizar_punto_abandono($punto, $origen = '') {
     return $punto;
 }
 
+function ca_motivo_abandono($mensajeCliente) {
+    $mensaje = trim((string)$mensajeCliente);
+
+    if ($mensaje === '') {
+        return 'Esperando respuesta';
+    }
+
+    $normalizado = strtolower($mensaje);
+
+    $mensajesSinMotivo = [
+        'sin respuesta',
+        'cliente respondiÃ³: por ahora no',
+        'cliente respondio: por ahora no',
+        'cliente cancelÃ³ asistencia mediante botÃ³n',
+        'cliente cancelo asistencia mediante boton',
+        'cliente cancelÃ³ la agenda',
+        'cliente cancelo la agenda'
+    ];
+
+    foreach ($mensajesSinMotivo as $sinMotivo) {
+        if (strpos($normalizado, $sinMotivo) === 0) {
+            return 'Esperando respuesta';
+        }
+    }
+
+    return $mensaje;
+}
+
+function ca_respuesta_abandono($punto) {
+    $punto = strtoupper(trim((string)$punto));
+
+    $flujos = [
+        'NO_AGENDA_REVISION' => [
+            'BOT: envia pre tasacion.',
+            'Usuario: responde que no quiere agendar.'
+        ],
+        'NO_RESPONDE_PRETASACION' => [
+            'BOT: envia pre tasacion.',
+            'Usuario: no responde.'
+        ],
+        'NO_CONFIRMACION_AGENDA' => [
+            'BOT: solicita confirmacion de agenda.',
+            'Usuario: no confirma la agenda.'
+        ],
+        'NO_CONFIRMA_AGENDA' => [
+            'BOT: envia recordatorio de agenda.',
+            'Usuario: cancela o no confirma.'
+        ],
+        'NO_ASISTIO_AGENDA' => [
+            'Agenda confirmada.',
+            'Usuario: no asistio a la revision.'
+        ],
+        'TASACION_FINAL_RECHAZADA' => [
+            'BOT: envia tasacion final.',
+            'Usuario: responde por ahora no.'
+        ],
+        'NO_RESPONDE_TASACION_FINAL' => [
+            'BOT: envia tasacion final.',
+            'Usuario: no responde.'
+        ]
+    ];
+
+    if (!isset($flujos[$punto])) {
+        return '-';
+    }
+
+    $lineas = array_map(function ($linea) {
+        return htmlspecialchars($linea, ENT_QUOTES, 'UTF-8');
+    }, $flujos[$punto]);
+
+    return implode('<br>', $lineas);
+}
+
 $buscar = trim((string)($_GET['buscar'] ?? ''));
 $puntoAbandono = trim((string)($_GET['punto_abandono'] ?? ''));
 
@@ -205,6 +278,11 @@ require_once('sistema_pre_contenido.php');
         background:#ff8c00;
         color:#fff;
     }
+
+    .ca-respuesta-flujo {
+        min-width: 210px;
+        line-height: 1.35;
+    }
 </style>
 
 <div id="contenido_cabezal">
@@ -256,7 +334,7 @@ require_once('sistema_pre_contenido.php');
             <th>Tasación final</th>
             <th>Respuesta</th>
             <th>Punto abandono</th>
-            <th>Estado</th>
+            <th>Motivo</th>
             <th></th>
         </tr>
     </thead>
@@ -314,13 +392,13 @@ require_once('sistema_pre_contenido.php');
                     ?>
                 </td>
 
-                <td><?php echo_s($row['mensaje_cliente']); ?></td>
+                <td class="ca-respuesta-flujo"><?php echo ca_respuesta_abandono($puntoMostrar); ?></td>
 
                 <td>
                     <?php echo ca_badge_punto_abandono($puntoMostrar); ?>
                 </td>
 
-                <td><?php echo_s($row['estado']); ?></td>
+                <td><?php echo_s(ca_motivo_abandono($row['mensaje_cliente'])); ?></td>
 
                 <td>
                     <?php if (intval($row['id_cotizacion']) > 0) { ?>
