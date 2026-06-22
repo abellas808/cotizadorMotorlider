@@ -323,50 +323,6 @@ h5.titulo {
   display: none;
 }
 
-.contraer_botonera {
-  position: fixed;
-  top: 74px;
-  left: 184px;
-  width: 28px;
-  height: 28px;
-  border: 1px solid #ddd;
-  border-radius: 50%;
-  background: #fff;
-  color: #555;
-  font-size: 22px;
-  line-height: 22px;
-  text-align: center;
-  z-index: 4;
-  cursor: pointer;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, .12);
-  transition: .2s all ease;
-}
-
-.contraer_botonera:hover {
-  background: #f5f5f5;
-}
-
-body.menu-contraido #botonera {
-  left: -205px;
-}
-
-body.menu-contraido #contenido {
-  padding-left: 25px;
-}
-
-body.menu-contraido #contenido_cabezal {
-  left: 25px;
-}
-
-body.menu-contraido #cabezal .logo {
-  margin-left: 55px;
-}
-
-body.menu-contraido .contraer_botonera {
-  left: 14px;
-  transform: rotate(180deg);
-}
-
 .span10 {
   width: 10%;
 }
@@ -451,10 +407,6 @@ body.menu-contraido .contraer_botonera {
     left: 18px;
     font-size: 12px;
     display: block;
-  }
-
-  .contraer_botonera {
-    display: none;
   }
 
   #botonera {

@@ -666,14 +666,20 @@ $cant_cotizaciones = $db->query_first('SELECT COUNT(*) AS cant ' . $sql_from);
     }
 
     .cot-grid-wrap {
-        overflow-x: visible;
+        overflow-x: hidden;
         overflow-y: visible;
         margin-top: 18px !important;
         position: relative;
         z-index: 1;
         clear: both;
+        width: 100%;
         max-width: 100%;
         padding-bottom: 6px;
+    }
+
+    #form_listado {
+        margin-left: 0 !important;
+        margin-right: 0 !important;
     }
 
     .cot-grid-compact {
@@ -767,7 +773,7 @@ $cant_cotizaciones = $db->query_first('SELECT COUNT(*) AS cant ' . $sql_from);
     .cot-col-cod { width: 42px; }
     .cot-col-anio { width: 36px; }
     .cot-col-km { width: 50px; }
-    .cot-col-auto { width: 150px; }
+    .cot-col-auto { width: 180px; }
     .cot-col-nombre { width: 72px; }
     .cot-col-tel { width: 64px; }
     .cot-col-money { width: 54px; }

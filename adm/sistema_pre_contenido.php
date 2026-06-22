@@ -9,7 +9,6 @@ if (!isset($sistema_iniciado)) exit();
 <div class="box">
   <div id="cabezal">
     <div class="toggle_botonera" onclick="$('#botonera').toggleClass('botonera_abierta');"><img src="img/menu.png" width="24" height="24"></div>
-    <button type="button" class="contraer_botonera" id="contraer_botonera" title="Contraer menú">‹</button>
     <img src="img/logo_negativo.svg" class="logo" width="150" >
        <a href="?m=l" class="salir" title="Salir"></a>
       <div class="usuario"><?php echo_s($_SESSION[$config['codigo_unico']]['login_nombre']); ?></div>   
@@ -33,16 +32,3 @@ if (!isset($sistema_iniciado)) exit();
 	</div>
   </div>
   <div id="contenido">
-<script>
-$(function() {
-  var menuContraido = localStorage.getItem('ml_menu_contraido') === '1';
-  if (menuContraido) {
-    $('body').addClass('menu-contraido');
-  }
-
-  $('#contraer_botonera').bind('click', function() {
-    $('body').toggleClass('menu-contraido');
-    localStorage.setItem('ml_menu_contraido', $('body').hasClass('menu-contraido') ? '1' : '0');
-  });
-});
-</script>
