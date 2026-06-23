@@ -143,6 +143,43 @@ while ($row = $rs->fetch_assoc()) {
             if ($ok) {
                 NotificacionPendienteService::marcarProcesada($id);
 
+                $idCotizacionPre = intval($row['id_cotizacion'] ?? 0);
+
+                if ($idCotizacionPre > 0) {
+                    $cnAbandonoPre = wa_db();
+
+                    $sqlConvPre = "
+                        SELECT id
+                        FROM whatsapp_conversaciones
+                        WHERE telefono = '" . $cnAbandonoPre->real_escape_string($telefono) . "'
+                          AND id_cotizacion = " . intval($idCotizacionPre) . "
+                        ORDER BY id DESC
+                        LIMIT 1
+                    ";
+
+                    $rsConvPre = $cnAbandonoPre->query($sqlConvPre);
+                    $convPre = $rsConvPre ? $rsConvPre->fetch_assoc() : null;
+                    $idConversacionPre = intval($convPre['id'] ?? 0);
+
+                    if (!CarritoAbandonadoService::existePendiente(
+                        $idCotizacionPre,
+                        'NO_RESPONDE_PRETASACION',
+                        'PRETASACION'
+                    )) {
+                        CarritoAbandonadoService::registrar(
+                            $idCotizacionPre,
+                            $idConversacionPre,
+                            $telefono,
+                            'Sin respuesta luego de la pre-cotización',
+                            'NO_RESPONDE_PRETASACION',
+                            'PRETASACION',
+                            'Alan'
+                        );
+                    }
+
+                    $cnAbandonoPre->close();
+                }
+
                 NotificacionPendienteService::crear(
                     intval($row['id_cotizacion'] ?? 0),
                     null,
@@ -446,6 +483,7 @@ while ($row = $rs->fetch_assoc()) {
                 SELECT id, datos_json
                 FROM whatsapp_conversaciones
                 WHERE telefono = '" . $cnAbandono->real_escape_string($telefono) . "'
+                  AND id_cotizacion = " . intval($idCotizacion) . "
                 ORDER BY id DESC
                 LIMIT 1
             ";
