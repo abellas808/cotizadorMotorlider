@@ -29,7 +29,8 @@ class TwilioMessageService
         string $contentSid,
         array $variables,
         string $origen,
-        string $mensajeHistorial = ''
+        string $mensajeHistorial = '',
+        ?int $idCotizacionHistorial = null
     ): bool {
         $accountSid = ParametroSistemaService::obtener('twilio', 'account_sid');
         $authToken = ParametroSistemaService::obtener('twilio', 'auth_token');
@@ -93,21 +94,156 @@ class TwilioMessageService
             return false;
         }
 
-        if ($mensajeHistorial !== '' && function_exists('wa_save_last_bot_message')) {
-            wa_save_last_bot_message(
-                $to,
-                $mensajeHistorial,
-                [
-                    'origen' => $origen,
-                    'content_sid' => $contentSid,
-                    'variables' => $variables
-                ],
-                '',
-                'BOT'
-            );
+        if ($mensajeHistorial !== '') {
+            $metaHistorial = [
+                'origen' => $origen,
+                'content_sid' => $contentSid,
+                'variables' => $variables
+            ];
+
+            if ($idCotizacionHistorial !== null && $idCotizacionHistorial > 0) {
+                $metaHistorial['id_cotizacion'] = $idCotizacionHistorial;
+            }
+
+            if (function_exists('wa_save_last_bot_message')) {
+                wa_save_last_bot_message(
+                    $to,
+                    $mensajeHistorial,
+                    $metaHistorial,
+                    '',
+                    'BOT'
+                );
+            } else {
+                self::guardarMensajeHistorial(
+                    $to,
+                    $mensajeHistorial,
+                    $metaHistorial,
+                    $idCotizacionHistorial
+                );
+            }
         }
 
         return true;
+    }
+
+    private static function db(): mysqli
+    {
+        if (function_exists('wa_db')) {
+            return wa_db();
+        }
+
+        $cn = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);
+
+        if ($cn->connect_errno) {
+            throw new RuntimeException('Error conexión MySQL: ' . $cn->connect_error);
+        }
+
+        $cn->set_charset('utf8mb4');
+
+        return $cn;
+    }
+
+    private static function limpiarEmojisParaHistorial(string $texto): string
+    {
+        $texto = preg_replace('/[\x{1F000}-\x{1FAFF}]/u', '', $texto);
+        $texto = preg_replace('/[\x{FE00}-\x{FE0F}]/u', '', (string)$texto);
+        $texto = preg_replace('/\x{200D}/u', '', (string)$texto);
+
+        return trim((string)$texto);
+    }
+
+    private static function guardarMensajeHistorial(
+        string $telefono,
+        string $mensaje,
+        array $meta,
+        ?int $idCotizacion = null
+    ): void {
+        try {
+            $cn = self::db();
+
+            $whereCotizacion = '';
+            if ($idCotizacion !== null && $idCotizacion > 0) {
+                $whereCotizacion = ' AND id_cotizacion = ' . intval($idCotizacion);
+            }
+
+            $sqlConv = "
+                SELECT id
+                FROM whatsapp_conversaciones
+                WHERE telefono = '" . $cn->real_escape_string($telefono) . "'
+                {$whereCotizacion}
+                ORDER BY id DESC
+                LIMIT 1
+            ";
+
+            $rsConv = $cn->query($sqlConv);
+            $conv = $rsConv ? $rsConv->fetch_assoc() : null;
+            $idConversacion = intval($conv['id'] ?? 0);
+
+            if ($idConversacion <= 0 && $whereCotizacion !== '') {
+                $sqlConvFallback = "
+                    SELECT id
+                    FROM whatsapp_conversaciones
+                    WHERE telefono = '" . $cn->real_escape_string($telefono) . "'
+                    ORDER BY id DESC
+                    LIMIT 1
+                ";
+
+                $rsConvFallback = $cn->query($sqlConvFallback);
+                $convFallback = $rsConvFallback ? $rsConvFallback->fetch_assoc() : null;
+                $idConversacion = intval($convFallback['id'] ?? 0);
+            }
+
+            if ($idConversacion <= 0) {
+                if (function_exists('wa_log')) {
+                    wa_log('TWILIO_SERVICE_HISTORIAL_SKIP', [
+                        'telefono' => $telefono,
+                        'id_cotizacion' => $idCotizacion,
+                        'motivo' => 'sin_conversacion'
+                    ]);
+                }
+                $cn->close();
+                return;
+            }
+
+            $metaJson = json_encode($meta, JSON_UNESCAPED_UNICODE);
+            $sql = "
+                INSERT INTO whatsapp_conversacion_mensajes
+                (id_conversacion, telefono, direccion, emisor, mensaje, meta_json, sid_mensaje, fecha)
+                VALUES (?, ?, 'SALIENTE', 'BOT', ?, ?, NULL, NOW())
+            ";
+
+            $st = $cn->prepare($sql);
+            if (!$st) {
+                throw new RuntimeException('Error prepare historial Twilio: ' . $cn->error);
+            }
+
+            $mensajeGuardar = $mensaje;
+            $st->bind_param('isss', $idConversacion, $telefono, $mensajeGuardar, $metaJson);
+
+            if (!$st->execute()) {
+                $st->close();
+                $mensajeGuardar = self::limpiarEmojisParaHistorial($mensaje);
+
+                $st = $cn->prepare($sql);
+                if (!$st) {
+                    throw new RuntimeException('Error prepare historial Twilio fallback: ' . $cn->error);
+                }
+
+                $st->bind_param('isss', $idConversacion, $telefono, $mensajeGuardar, $metaJson);
+                $st->execute();
+            }
+
+            $st->close();
+            $cn->close();
+        } catch (Throwable $e) {
+            if (function_exists('wa_log')) {
+                wa_log('TWILIO_SERVICE_HISTORIAL_ERROR', [
+                    'telefono' => $telefono,
+                    'id_cotizacion' => $idCotizacion,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
     }
 
     public static function enviarTemplateMotivoNoAgendar(string $to): bool
@@ -129,7 +265,8 @@ class TwilioMessageService
     public static function enviarTemplateRecordatorioPrecotizacion24Hs(
         string $to,
         string $nombre,
-        string $vehiculo
+        string $vehiculo,
+        ?int $idCotizacion = null
     ): bool {
         $contentSid = ParametroSistemaService::obtener(
             'twilio',
@@ -144,7 +281,8 @@ class TwilioMessageService
                 "2" => $vehiculo
             ],
             'template_recordatorio_precotizacion_24hs',
-            "Recordatorio 24 hs pre-cotización para {$nombre} - {$vehiculo}"
+            "¡Hola {$nombre}! 👋 Ayer te envié la cotización preliminar por tu {$vehiculo}. ¿Pudiste evaluarla? Avísame si querés agendar una revisión rápida sin costo o si por ahora preferís dejarlo en pausa.",
+            $idCotizacion
         );
     }
 

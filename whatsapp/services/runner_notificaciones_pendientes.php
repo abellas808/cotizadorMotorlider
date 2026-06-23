@@ -22,7 +22,7 @@ function wa_db(): mysqli
         throw new RuntimeException('Error conexión MySQL: ' . $cn->connect_error);
     }
 
-    $cn->set_charset('utf8');
+    $cn->set_charset('utf8mb4');
 
     return $cn;
 }
@@ -137,7 +137,8 @@ while ($row = $rs->fetch_assoc()) {
             $ok = TwilioMessageService::enviarTemplateRecordatorioPrecotizacion24Hs(
                 $telefono,
                 $nombre,
-                $vehiculo
+                $vehiculo,
+                intval($row['id_cotizacion'] ?? 0)
             );
 
             if ($ok) {
