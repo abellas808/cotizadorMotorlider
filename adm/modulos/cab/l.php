@@ -32,6 +32,9 @@ function ca_badge_punto_abandono($punto) {
             break;
 
         case 'NO_CONFIRMACION_AGENDA':
+        case 'NO_CONFIRMACION_AGENDA_AUTO':
+        case 'NO_CONFIRMA_AGENDA_AUTO':
+        case 'NO_RESPONDE_RECORDATORIO_AGENDA':
             $clase = 'ca-badge-rojo';
             break;
 
@@ -62,8 +65,9 @@ function ca_normalizar_punto_abandono($punto, $origen = '') {
     $canonicos = [
         'NO_AGENDA_REVISION',
         'NO_RESPONDE_PRETASACION',
-        'NO_CONFIRMACION_AGENDA',
+        'NO_CONFIRMA_AGENDA_AUTO',
         'NO_CONFIRMA_AGENDA',
+        'NO_RESPONDE_RECORDATORIO_AGENDA',
         'NO_ASISTIO_AGENDA',
         'TASACION_FINAL_RECHAZADA',
         'NO_RESPONDE_TASACION_FINAL'
@@ -77,14 +81,17 @@ function ca_normalizar_punto_abandono($punto, $origen = '') {
         return 'NO_RESPONDE_PRETASACION';
     }
 
-    if ($punto === 'NO_CONFIRMACION_AGENDA_AUTO') {
-        return 'NO_CONFIRMACION_AGENDA';
+    if ($punto === 'NO_CONFIRMACION_AGENDA' || $punto === 'NO_CONFIRMACION_AGENDA_AUTO') {
+        return 'NO_CONFIRMA_AGENDA_AUTO';
+    }
+
+    if ($punto === 'NO_RESPONDE_RECORDATORIO_AGENDA') {
+        return 'NO_RESPONDE_RECORDATORIO_AGENDA';
     }
 
     if (in_array($punto, [
         'CANCELO_AGENDA_PENDIENTE_MOTIVO',
-        'NO_RESPONDIO_CONFIRMACION_AGENDA',
-        'NO_RESPONDE_RECORDATORIO_AGENDA'
+        'NO_RESPONDIO_CONFIRMACION_AGENDA'
     ], true)) {
         return 'NO_CONFIRMA_AGENDA';
     }
@@ -144,13 +151,17 @@ function ca_respuesta_abandono($punto) {
             'BOT: envia pre tasacion.',
             'Usuario: no responde.'
         ],
-        'NO_CONFIRMACION_AGENDA' => [
+        'NO_CONFIRMA_AGENDA_AUTO' => [
             'BOT: solicita confirmacion de agenda.',
-            'Usuario: no confirma la agenda.'
+            'Usuario: no responde.'
         ],
         'NO_CONFIRMA_AGENDA' => [
             'BOT: envia recordatorio de agenda.',
             'Usuario: cancela o no confirma.'
+        ],
+        'NO_RESPONDE_RECORDATORIO_AGENDA' => [
+            'BOT: envia recordatorio de agenda.',
+            'Usuario: no responde.'
         ],
         'NO_ASISTIO_AGENDA' => [
             'Agenda confirmada.',
@@ -207,8 +218,9 @@ if ($buscar !== '') {
 $puntosAbandono = [
     'NO_AGENDA_REVISION',
     'NO_RESPONDE_PRETASACION',
-    'NO_CONFIRMACION_AGENDA',
+    'NO_CONFIRMA_AGENDA_AUTO',
     'NO_CONFIRMA_AGENDA',
+    'NO_RESPONDE_RECORDATORIO_AGENDA',
     'NO_ASISTIO_AGENDA',
     'TASACION_FINAL_RECHAZADA',
     'NO_RESPONDE_TASACION_FINAL'
