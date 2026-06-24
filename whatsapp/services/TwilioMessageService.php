@@ -363,10 +363,11 @@ class TwilioMessageService
     {
         $contentSid = ParametroSistemaService::obtener(
             'twilio',
-            'template_motivo_cancelacion_agenda',
+            'template_motivo_recordatorio_no_agenda',
             ParametroSistemaService::obtener(
                 'twilio',
-                'template_motivo_no_agendar'
+                'template_motivo_cancelacion_agenda',
+                'HX38dbc6649cff3cea0b38426314b0e6d3'
             )
         );
 
@@ -374,7 +375,7 @@ class TwilioMessageService
             $to,
             $contentSid,
             [],
-            'template_motivo_cancelacion_agenda',
+            'template_motivo_recordatorio_no_agenda',
             'Gracias por tu respuesta, nos gustaría saber el motivo de tu decisión.'
         );
     }

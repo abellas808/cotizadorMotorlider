@@ -2767,6 +2767,7 @@ if (
         'motivo_no_agenda_probando',
         'motivo_no_agenda_otra_oferta',
         'motivo_no_agenda_recibi_otra_oferta',
+        'motivo_no_agenda_vendido',
         'motivo_no_agenda_auto_vendido',
         'motivo_no_agenda_ya_vendi_auto',
         'motivo_no_agenda_personales'
@@ -2803,6 +2804,7 @@ if (
             $motivoAbandono = 'RECIBIO_OTRA_OFERTA';
             break;
 
+        case 'motivo_no_agenda_vendido':
         case 'motivo_no_agenda_auto_vendido':
         case 'motivo_no_agenda_ya_vendi_auto':
             $motivoAbandono = 'YA_VENDIO_EL_AUTO';
