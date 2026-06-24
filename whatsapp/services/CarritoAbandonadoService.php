@@ -79,7 +79,9 @@ class CarritoAbandonadoService
                 'CANCELO_AGENDA_PENDIENTE_MOTIVO',
                 'NO_RESPONDIO_CONFIRMACION_AGENDA',
                 'NO_CONFIRMACION_AGENDA',
+                'NO_CONFIRMACION_AGENDA_AUTO',
                 'NO_CONFIRMA_AGENDA',
+                'NO_CONFIRMA_AGENDA_AUTO',
                 'NO_ASISTIO_AGENDA'
             ],
             $mensajeCliente,

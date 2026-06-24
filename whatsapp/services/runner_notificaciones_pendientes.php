@@ -218,7 +218,7 @@ while ($row = $rs->fetch_assoc()) {
 
                 if ($idCotizacion > 0 && !CarritoAbandonadoService::existePendiente(
                     $idCotizacion,
-                    'NO_CONFIRMA_AGENDA_AUTO',
+                    'NO_CONFIRMACION_AGENDA_AUTO',
                     'AGENDA'
                 )) {
                     $cnAbandono = wa_db();
@@ -255,7 +255,7 @@ while ($row = $rs->fetch_assoc()) {
                         $idConversacion,
                         $telefono,
                         'Sin respuesta a la confirmacion de agenda',
-                        'NO_CONFIRMA_AGENDA_AUTO',
+                        'NO_CONFIRMACION_AGENDA_AUTO',
                         'AGENDA',
                         'Alan'
                     );

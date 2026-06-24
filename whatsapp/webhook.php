@@ -5411,7 +5411,7 @@ if (
         $carritoPreparado = CarritoAbandonadoService::actualizarMotivoCancelacionAgenda(
             $idCotizacionTmp,
             'Cliente canceló la agenda desde un recordatorio',
-            'NO_CONFIRMA_AGENDA'
+            'NO_CONFIRMACION_AGENDA_AUTO'
         );
 
         if (
@@ -5419,7 +5419,7 @@ if (
             !$carritoPreparado &&
             !CarritoAbandonadoService::existePendiente(
                 $idCotizacionTmp,
-                'NO_CONFIRMA_AGENDA',
+                'NO_CONFIRMACION_AGENDA_AUTO',
                 'AGENDA'
             )
         ) {
@@ -5428,7 +5428,7 @@ if (
                 $idConversacionTmp,
                 $from,
                 'Cliente canceló la agenda desde un recordatorio',
-                'NO_CONFIRMA_AGENDA',
+                'NO_CONFIRMACION_AGENDA_AUTO',
                 'AGENDA',
                 'Alan'
             );
@@ -5440,7 +5440,7 @@ if (
         $nuevoEstado['id_cotizacion'] = $idCotizacionTmp;
         $nuevoEstado['id_conversacion'] = intval($convTmp['id'] ?? 0);
         $nuevoEstado['origen_abandono'] = 'AGENDA';
-        $nuevoEstado['motivo_base'] = 'NO_CONFIRMA_AGENDA';
+        $nuevoEstado['motivo_base'] = 'NO_CONFIRMACION_AGENDA_AUTO';
 
         wa_set_user_state(
             $from,
