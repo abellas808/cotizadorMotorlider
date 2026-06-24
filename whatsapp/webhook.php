@@ -3313,7 +3313,6 @@ if ($step === 'resultado_enviado' && $subStep === 'esperando_agenda') {
 
    // EN OTRO MOMENTO / NO ME QUIERO AGENDAR
     if (
-        $payload === 'tasacion_finalizar_no' ||
         in_array($bodyLower, ['en otro momento', 'no', 'ahora no'], true)
     ) {
         $conv = wa_get_conversation($from);
