@@ -2770,6 +2770,7 @@ if (
         'motivo_no_agenda_vendido',
         'motivo_no_agenda_auto_vendido',
         'motivo_no_agenda_ya_vendi_auto',
+        'motivo_no_agenda_motivos_personales',
         'motivo_no_agenda_personales'
     ], true)
 ) {
@@ -2810,6 +2811,7 @@ if (
             $motivoAbandono = 'YA_VENDIO_EL_AUTO';
             break;
 
+        case 'motivo_no_agenda_motivos_personales':
         case 'motivo_no_agenda_personales':
             $motivoAbandono = 'MOTIVOS_PERSONALES';
             break;
