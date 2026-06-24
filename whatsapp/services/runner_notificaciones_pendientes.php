@@ -562,16 +562,66 @@ while ($row = $rs->fetch_assoc()) {
             if ($ok) {
                 NotificacionPendienteService::marcarProcesada($id);
 
-                NotificacionPendienteService::crear(
-                    intval($row['id_cotizacion'] ?? 0),
-                    null,
-                    $telefono,
-                    'ABANDONO_TASACION_FINAL_POST_RECORDATORIO_3HS',
-                    'TASACION_FINAL',
-                    date('Y-m-d H:i:s', strtotime('+24 hours')),
-                    $payload,
-                    'Control de abandono a las 48 hs de enviada la tasación final'
-                );
+                $idCotizacion = intval($row['id_cotizacion'] ?? 0);
+
+                if ($idCotizacion > 0) {
+                    $cnAbandono = wa_db();
+                    $rsConv = $cnAbandono->query("
+                        SELECT id, datos_json
+                        FROM whatsapp_conversaciones
+                        WHERE telefono = '" . $cnAbandono->real_escape_string($telefono) . "'
+                          AND id_cotizacion = " . intval($idCotizacion) . "
+                        ORDER BY id DESC
+                        LIMIT 1
+                    ");
+                    $conv = $rsConv ? $rsConv->fetch_assoc() : null;
+                    $idConversacion = intval($conv['id'] ?? 0);
+                    $datos = [];
+
+                    if (!empty($conv['datos_json'])) {
+                        $tmp = json_decode($conv['datos_json'], true);
+                        if (is_array($tmp)) {
+                            $datos = $tmp;
+                        }
+                    }
+
+                    if (!CarritoAbandonadoService::existePendiente(
+                        $idCotizacion,
+                        'NO_RESPONDE_TASACION_FINAL',
+                        'TASACION_FINAL'
+                    )) {
+                        CarritoAbandonadoService::registrar(
+                            $idCotizacion,
+                            $idConversacion,
+                            $telefono,
+                            'Sin respuesta a las 24 hs de enviada la tasación final',
+                            'NO_RESPONDE_TASACION_FINAL',
+                            'TASACION_FINAL',
+                            'Alan'
+                        );
+                    }
+
+                    $datos['step'] = 'cerrado';
+                    $datos['sub_step'] = 'carrito_abandonado_sin_respuesta_tasacion_final';
+                    $datos['id_cotizacion'] = $idCotizacion;
+                    $datos['motivo_abandono'] = 'NO_RESPONDE_TASACION_FINAL';
+                    $datos['origen_abandono'] = 'TASACION_FINAL';
+
+                    if ($idConversacion > 0) {
+                        $cnAbandono->query("
+                            UPDATE whatsapp_conversaciones
+                            SET
+                                estado = 'CERRADO',
+                                modo_atencion = 'BOT',
+                                datos_json = '" . $cnAbandono->real_escape_string(json_encode($datos, JSON_UNESCAPED_UNICODE)) . "',
+                                fecha_mod = NOW()
+                            WHERE id = " . intval($idConversacion) . "
+                            LIMIT 1
+                        ");
+                    }
+
+                    $cnAbandono->close();
+                }
             } else {
                 NotificacionPendienteService::marcarError(
                     $id,
