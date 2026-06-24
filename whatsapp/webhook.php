@@ -2888,6 +2888,11 @@ if (
 
         if ($buttonPayloadAgenda === 'asistencia__agenda_si') {
             wa_marcar_confirmacion_agenda((int)$agendaPendiente['id_agenda'], 'SI');
+            NotificacionPendienteService::cancelarPorAgendaYTipo(
+                (int)$agendaPendiente['id_agenda'],
+                'ABANDONO_RECORDATORIO_AGENDA_10HS',
+                'Cliente confirmÃ³ asistencia antes del control de 10 hs'
+            );
             CarritoAbandonadoService::cerrarPendientePorConfirmacionAgenda(
                 intval($agendaPendiente['id_cotizacion'] ?? 0)
             );
@@ -2931,6 +2936,11 @@ if (
         }
 
         if ($buttonPayloadAgenda === 'asistencia_agenda_no') {
+            NotificacionPendienteService::cancelarPorAgendaYTipo(
+                (int)$agendaPendiente['id_agenda'],
+                'ABANDONO_RECORDATORIO_AGENDA_10HS',
+                'Cliente cancelÃ³ asistencia antes del control de 10 hs'
+            );
             wa_marcar_confirmacion_agenda(
                 (int)$agendaPendiente['id_agenda'],
                 'NO',

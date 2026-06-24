@@ -33,11 +33,11 @@ function ca_badge_punto_abandono($punto) {
 
         case 'NO_CONFIRMACION_AGENDA_AUTO':
         case 'NO_CONFIRMA_AGENDA_AUTO':
+        case 'NO_RESPONDE_RECORDATORIO_AGENDA':
             $clase = 'ca-badge-default';
             break;
 
         case 'NO_CONFIRMACION_AGENDA':
-        case 'NO_RESPONDE_RECORDATORIO_AGENDA':
             $clase = 'ca-badge-rojo';
             break;
 

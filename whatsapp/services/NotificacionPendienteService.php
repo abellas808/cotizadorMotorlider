@@ -4,6 +4,7 @@ class NotificacionPendienteService
 {
     private const TIPO_CONFIRMACION_AGENDA_24HS = 'RECORDATORIO_ASISTENCIA_AGENDA_24HS';
     private const TIPO_CONFIRMACION_AGENDA_48HS = 'RECORDATORIO_ASISTENCIA_AGENDA_48HS';
+    private const TIPO_ABANDONO_RECORDATORIO_AGENDA_10HS = 'ABANDONO_RECORDATORIO_AGENDA_10HS';
 
     private static function db(): mysqli
     {
@@ -299,6 +300,31 @@ class NotificacionPendienteService
             $fechaProgramadaDt->format('Y-m-d H:i:s'),
             $payload,
             $observaciones
+        );
+    }
+
+    public static function programarAbandonoRecordatorioAgenda10Hs(
+        int $idCotizacion,
+        int $idAgenda,
+        string $telefono,
+        array $payload = []
+    ): bool {
+        if ($idCotizacion <= 0 || $idAgenda <= 0 || trim($telefono) === '') {
+            return false;
+        }
+
+        $payload['id_cotizacion'] = $idCotizacion;
+        $payload['id_agenda'] = $idAgenda;
+
+        return self::crear(
+            $idCotizacion,
+            $idAgenda,
+            $telefono,
+            self::TIPO_ABANDONO_RECORDATORIO_AGENDA_10HS,
+            'AGENDA',
+            date('Y-m-d H:i:s', strtotime('+10 hours')),
+            $payload,
+            'Control interno: si no responde al recordatorio de agenda en 10 hs, enviar a carrito abandonado'
         );
     }
 

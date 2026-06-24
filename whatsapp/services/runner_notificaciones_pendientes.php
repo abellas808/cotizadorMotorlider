@@ -375,10 +375,140 @@ while ($row = $rs->fetch_assoc()) {
 
                 $cnAgenda->close();
                 NotificacionPendienteService::marcarProcesada($id);
+                NotificacionPendienteService::programarAbandonoRecordatorioAgenda10Hs(
+                    $idCotizacion,
+                    $idAgenda,
+                    $telefonoAgenda,
+                    [
+                        'fecha' => $fechaAgenda,
+                        'hora' => $horaAgenda,
+                        'nombre' => $nombreAgenda,
+                        'auto' => $autoAgenda,
+                        'tipo_recordatorio_origen' => $tipo
+                    ]
+                );
             } else {
                 $cnAgenda->close();
                 NotificacionPendienteService::marcarError($id, 'Error al enviar confirmación de asistencia de agenda');
             }
+
+            continue 2;
+
+        case 'ABANDONO_RECORDATORIO_AGENDA_10HS':
+
+            $idCotizacion = intval($row['id_cotizacion'] ?? 0);
+            $idAgenda = intval($row['id_agenda'] ?? 0);
+
+            if ($idCotizacion <= 0 || $idAgenda <= 0) {
+                NotificacionPendienteService::marcarError(
+                    $id,
+                    'No se pudo procesar abandono recordatorio agenda: faltan id_cotizacion o id_agenda'
+                );
+                continue 2;
+            }
+
+            $cnAbandonoAgenda = wa_db();
+            $rsAgenda = $cnAbandonoAgenda->query("
+                SELECT id_agenda, id_cotizacion, telefono, cancelado, finalizada, confirmacion_asistencia
+                FROM agendas
+                WHERE id_agenda = " . intval($idAgenda) . "
+                  AND id_cotizacion = " . intval($idCotizacion) . "
+                LIMIT 1
+            ");
+            $agenda = $rsAgenda ? $rsAgenda->fetch_assoc() : null;
+
+            if (!$agenda) {
+                $cnAbandonoAgenda->close();
+                NotificacionPendienteService::marcarError($id, 'No se pudo procesar abandono recordatorio agenda: agenda no encontrada');
+                continue 2;
+            }
+
+            $confirmacionAsistencia = strtoupper(trim((string)($agenda['confirmacion_asistencia'] ?? '')));
+
+            if (
+                intval($agenda['cancelado'] ?? 0) === 1
+                || intval($agenda['finalizada'] ?? 0) === 1
+                || !in_array($confirmacionAsistencia, ['', 'PENDIENTE', 'PTE RESP.', 'PTE_RESP', 'SIN_RESPUESTA'], true)
+            ) {
+                $cnAbandonoAgenda->close();
+                NotificacionPendienteService::marcarProcesada($id);
+                continue 2;
+            }
+
+            $telefonoAgenda = trim((string)($agenda['telefono'] ?? $telefono));
+            if ($telefonoAgenda === '') {
+                $telefonoAgenda = $telefono;
+            }
+
+            $rsConv = $cnAbandonoAgenda->query("
+                SELECT id, datos_json
+                FROM whatsapp_conversaciones
+                WHERE telefono = '" . $cnAbandonoAgenda->real_escape_string($telefonoAgenda) . "'
+                  AND id_cotizacion = " . intval($idCotizacion) . "
+                ORDER BY id DESC
+                LIMIT 1
+            ");
+            $conv = $rsConv ? $rsConv->fetch_assoc() : null;
+            $idConversacion = intval($conv['id'] ?? 0);
+
+            if ($idConversacion <= 0) {
+                $rsConvFallback = $cnAbandonoAgenda->query("
+                    SELECT id, datos_json
+                    FROM whatsapp_conversaciones
+                    WHERE telefono = '" . $cnAbandonoAgenda->real_escape_string($telefonoAgenda) . "'
+                    ORDER BY id DESC
+                    LIMIT 1
+                ");
+                $conv = $rsConvFallback ? $rsConvFallback->fetch_assoc() : $conv;
+                $idConversacion = intval($conv['id'] ?? 0);
+            }
+
+            $datos = [];
+            if (!empty($conv['datos_json'])) {
+                $tmp = json_decode($conv['datos_json'], true);
+                if (is_array($tmp)) {
+                    $datos = $tmp;
+                }
+            }
+
+            if (!CarritoAbandonadoService::existePendiente(
+                $idCotizacion,
+                'NO_RESPONDE_RECORDATORIO_AGENDA',
+                'AGENDA'
+            )) {
+                CarritoAbandonadoService::registrar(
+                    $idCotizacion,
+                    $idConversacion,
+                    $telefonoAgenda,
+                    'Sin respuesta luego del recordatorio automÃ¡tico de agenda',
+                    'NO_RESPONDE_RECORDATORIO_AGENDA',
+                    'AGENDA',
+                    'Alan'
+                );
+            }
+
+            $nuevoDatos = $datos;
+            $nuevoDatos['step'] = 'cerrado';
+            $nuevoDatos['sub_step'] = 'carrito_abandonado_sin_respuesta_recordatorio_agenda';
+            $nuevoDatos['id_cotizacion'] = $idCotizacion;
+            $nuevoDatos['motivo_abandono'] = 'NO_RESPONDE_RECORDATORIO_AGENDA';
+            $nuevoDatos['origen_abandono'] = 'AGENDA';
+
+            if ($idConversacion > 0) {
+                $cnAbandonoAgenda->query("
+                    UPDATE whatsapp_conversaciones
+                    SET
+                        estado = 'CERRADO',
+                        modo_atencion = 'BOT',
+                        datos_json = '" . $cnAbandonoAgenda->real_escape_string(json_encode($nuevoDatos, JSON_UNESCAPED_UNICODE)) . "',
+                        fecha_mod = NOW()
+                    WHERE id = " . intval($idConversacion) . "
+                    LIMIT 1
+                ");
+            }
+
+            $cnAbandonoAgenda->close();
+            NotificacionPendienteService::marcarProcesada($id);
 
             continue 2;
 

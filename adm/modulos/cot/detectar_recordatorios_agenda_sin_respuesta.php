@@ -36,7 +36,7 @@ function cron_escape($valor) {
     return $db->escape((string)$valor);
 }
 
-$horasEspera = 6;
+$horasEspera = 10;
 
 $tiposRecordatorio = array(
     'confirmacion_24h',
@@ -60,7 +60,7 @@ $tiposSql = implode(',', $tiposEscapados);
 /**
  * Esta query:
  * 1. Busca el último recordatorio por agenda.
- * 2. Valida que hayan pasado 6 horas desde ese último recordatorio.
+ * 2. Valida que hayan pasado 10 horas desde ese último recordatorio.
  * 3. Verifica que la agenda no esté cancelada ni finalizada.
  * 4. Verifica que la asistencia siga pendiente.
  * 5. Verifica que no exista una respuesta posterior en whatsapp_agenda_notificaciones.
