@@ -209,23 +209,57 @@ while ($row = $rs->fetch_assoc()) {
                 'telefono' => $telefono
             ]);
 
-            $ok = TwilioMessageService::enviarTemplateRecordatorioConfirmacionAgenda10Hs(
-                $telefono
-            );
+            $ok = TwilioMessageService::enviarTemplateRecordatorioConfirmacionAgenda3Hs($telefono);
 
             if ($ok) {
                 NotificacionPendienteService::marcarProcesada($id);
 
-                NotificacionPendienteService::crear(
-                    intval($row['id_cotizacion'] ?? 0),
-                    null,
-                    $telefono,
-                    'ABANDONO_AGENDA_POST_RECORDATORIO_3HS',
-                    'AGENDA',
-                    date('Y-m-d H:i:s', strtotime('+10 hours')),
-                    $payload,
-                    'Control de abandono 10 hs luego del recordatorio de confirmación de agenda'
-                );
+                $idCotizacion = intval($row['id_cotizacion'] ?? 0);
+
+                if ($idCotizacion > 0 && !CarritoAbandonadoService::existePendiente(
+                    $idCotizacion,
+                    'NO_CONFIRMA_AGENDA_AUTO',
+                    'AGENDA'
+                )) {
+                    $cnAbandono = wa_db();
+                    $sqlConv = "
+                        SELECT id
+                        FROM whatsapp_conversaciones
+                        WHERE telefono = '" . $cnAbandono->real_escape_string($telefono) . "'
+                          AND id_cotizacion = " . intval($idCotizacion) . "
+                        ORDER BY id DESC
+                        LIMIT 1
+                    ";
+
+                    $rsConv = $cnAbandono->query($sqlConv);
+                    $conv = $rsConv ? $rsConv->fetch_assoc() : null;
+                    $idConversacion = intval($conv['id'] ?? 0);
+
+                    if ($idConversacion <= 0) {
+                        $sqlConvFallback = "
+                            SELECT id
+                            FROM whatsapp_conversaciones
+                            WHERE telefono = '" . $cnAbandono->real_escape_string($telefono) . "'
+                            ORDER BY id DESC
+                            LIMIT 1
+                        ";
+                        $rsConvFallback = $cnAbandono->query($sqlConvFallback);
+                        $convFallback = $rsConvFallback ? $rsConvFallback->fetch_assoc() : null;
+                        $idConversacion = intval($convFallback['id'] ?? 0);
+                    }
+
+                    $cnAbandono->close();
+
+                    CarritoAbandonadoService::registrar(
+                        $idCotizacion,
+                        $idConversacion,
+                        $telefono,
+                        'Sin respuesta a la confirmacion de agenda',
+                        'NO_CONFIRMA_AGENDA_AUTO',
+                        'AGENDA',
+                        'Alan'
+                    );
+                }
 
                 wa_log('RUNNER_RECORDATORIO_CONFIRMACION_AGENDA_OK', [
                     'id' => $id,

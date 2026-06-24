@@ -87,6 +87,58 @@ class CarritoAbandonadoService
         );
     }
 
+    public static function cerrarPendientePorConfirmacionAgenda(int $idCotizacion): bool
+    {
+        if ($idCotizacion <= 0) {
+            return false;
+        }
+
+        $cn = wa_db();
+        $cn->set_charset("utf8mb4");
+
+        $motivos = [
+            'NO_CONFIRMA_AGENDA_AUTO',
+            'NO_CONFIRMACION_AGENDA_AUTO'
+        ];
+
+        $motivosSql = [];
+        foreach ($motivos as $motivo) {
+            $motivosSql[] = "'" . $cn->real_escape_string($motivo) . "'";
+        }
+
+        $sql = "
+            UPDATE carrito_abandonado
+            SET
+                estado = 'CERRADO',
+                fecha_ultima_gestion = NOW(),
+                usuario_ultima_gestion = 'Alan',
+                observaciones = CONCAT(
+                    IFNULL(observaciones, ''),
+                    IF(IFNULL(observaciones, '') = '', '', '\n'),
+                    'Cerrado automáticamente: cliente confirmó agenda luego del recordatorio.'
+                )
+            WHERE id_cotizacion = ?
+              AND origen_abandono = 'AGENDA'
+              AND estado = 'PENDIENTE'
+              AND motivo_abandono IN (" . implode(',', $motivosSql) . ")
+        ";
+
+        $st = $cn->prepare($sql);
+        if (!$st) {
+            $cn->close();
+            return false;
+        }
+
+        $st->bind_param('i', $idCotizacion);
+        $ok = $st->execute();
+        $actualizados = $st->affected_rows;
+
+        $st->close();
+        $cn->close();
+
+        return $ok && $actualizados > 0;
+    }
+
     public static function existePendiente(
         int $idCotizacion,
         string $motivoAbandono,

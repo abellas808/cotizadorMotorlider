@@ -2888,6 +2888,9 @@ if (
 
         if ($buttonPayloadAgenda === 'asistencia__agenda_si') {
             wa_marcar_confirmacion_agenda((int)$agendaPendiente['id_agenda'], 'SI');
+            CarritoAbandonadoService::cerrarPendientePorConfirmacionAgenda(
+                intval($agendaPendiente['id_cotizacion'] ?? 0)
+            );
 
             wa_registrar_notificacion_agenda(
                 (int)$agendaPendiente['id_agenda'],
@@ -3455,6 +3458,9 @@ if (
     if (wa_respuesta_es_si($body)) {
         try {
             wa_marcar_confirmacion_agenda((int)$agendaPendienteConfirmacionGlobal['id_agenda'], 'SI');
+            CarritoAbandonadoService::cerrarPendientePorConfirmacionAgenda(
+                intval($agendaPendienteConfirmacionGlobal['id_cotizacion'] ?? 0)
+            );
 
             $cn = wa_db();
             registrarEnvio(
@@ -3792,6 +3798,9 @@ if (in_array($currentEstado, ['PENDIENTE_RESPUESTA_HUMANA', 'HUMANO_EN_CONVERSAC
         if (wa_respuesta_es_si($body)) {
             try {
                 wa_marcar_confirmacion_agenda((int)$agendaPendienteConfirmacion['id_agenda'], 'SI');
+                CarritoAbandonadoService::cerrarPendientePorConfirmacionAgenda(
+                    intval($agendaPendienteConfirmacion['id_cotizacion'] ?? 0)
+                );
             } catch (Throwable $e) {
                 wa_log('AGENDA_CONFIRMACION_UPDATE_ERROR', [
                     'from' => $from,
