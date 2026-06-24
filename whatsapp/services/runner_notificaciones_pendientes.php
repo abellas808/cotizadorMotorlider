@@ -216,7 +216,20 @@ while ($row = $rs->fetch_assoc()) {
 
                 $idCotizacion = intval($row['id_cotizacion'] ?? 0);
 
-                if ($idCotizacion > 0 && !CarritoAbandonadoService::existePendiente(
+                if ($tipo === 'RECORDATORIO_CONFIRMACION_AGENDA_10HS' && $idCotizacion > 0) {
+                    NotificacionPendienteService::crear(
+                        $idCotizacion,
+                        intval($row['id_agenda'] ?? 0) > 0 ? intval($row['id_agenda']) : null,
+                        $telefono,
+                        'ABANDONO_AGENDA_POST_RECORDATORIO_3HS',
+                        'AGENDA',
+                        date('Y-m-d H:i:s', strtotime('+10 hours')),
+                        $payload,
+                        'Control interno: si no responde al recordatorio de agenda en 10 hs, enviar a carrito abandonado'
+                    );
+                }
+
+                if ($tipo === 'RECORDATORIO_CONFIRMACION_AGENDA_3HS' && $idCotizacion > 0 && !CarritoAbandonadoService::existePendiente(
                     $idCotizacion,
                     'NO_CONFIRMACION_AGENDA_AUTO',
                     'AGENDA'
@@ -699,15 +712,15 @@ while ($row = $rs->fetch_assoc()) {
 
             if (!CarritoAbandonadoService::existePendiente(
                 $idCotizacion,
-                'NO_CONFIRMA_AGENDA',
+                'NO_RESPONDE_RECORDATORIO_AGENDA',
                 'AGENDA'
             )) {
                 CarritoAbandonadoService::registrar(
                     $idCotizacion,
                     $idConversacion,
                     $telefono,
-                    'Sin respuesta luego del recordatorio de confirmación de agenda',
-                    'NO_CONFIRMA_AGENDA',
+                    'Sin respuesta luego del recordatorio de agenda',
+                    'NO_RESPONDE_RECORDATORIO_AGENDA',
                     'AGENDA',
                     'Alan'
                 );
@@ -717,7 +730,7 @@ while ($row = $rs->fetch_assoc()) {
             $nuevoDatos['step'] = 'cerrado';
             $nuevoDatos['sub_step'] = 'carrito_abandonado_sin_confirmar_agenda';
             $nuevoDatos['id_cotizacion'] = $idCotizacion;
-            $nuevoDatos['motivo_abandono'] = 'NO_CONFIRMA_AGENDA';
+            $nuevoDatos['motivo_abandono'] = 'NO_RESPONDE_RECORDATORIO_AGENDA';
             $nuevoDatos['origen_abandono'] = 'AGENDA';
 
             $sqlUpdateConv = "
