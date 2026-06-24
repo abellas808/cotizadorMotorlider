@@ -2,6 +2,8 @@
 
 class TwilioMessageService
 {
+    private const TEMPLATE_ASISTENCIA_AGENDA_DEFAULT = 'HX4e31eca8dab14ba5842ffc5d78ec93d0';
+
     public static function enviarTemplateDatosFinalesAgendaConfirmacion(
         string $to,
         string $fecha,
@@ -124,6 +126,60 @@ class TwilioMessageService
         }
 
         return true;
+    }
+
+    public static function enviarTemplateAsistenciaAgenda(
+        string $to,
+        string $nombre,
+        string $auto,
+        string $fecha,
+        string $hora,
+        ?int $idCotizacion = null
+    ): bool {
+        $contentSid = ParametroSistemaService::obtener(
+            'twilio',
+            'template_asistencia_agenda',
+            self::TEMPLATE_ASISTENCIA_AGENDA_DEFAULT
+        );
+
+        $fechaFmt = self::formatearFechaEs($fecha);
+        $horaFmt = substr($hora, 0, 5);
+
+        return self::enviarTemplate(
+            $to,
+            $contentSid,
+            [
+                '1' => $nombre,
+                '2' => $auto,
+                '3' => $fechaFmt,
+                '4' => $horaFmt
+            ],
+            'template_asistencia_agenda',
+            "Hola {$nombre}, te escribimos para confirmar tu asistencia a la agenda de inspección de tu vehículo {$auto}. Fecha: {$fechaFmt}. Hora: {$horaFmt}.",
+            $idCotizacion
+        );
+    }
+
+    private static function formatearFechaEs(string $fecha): string
+    {
+        $ts = strtotime($fecha);
+        if (!$ts) {
+            return $fecha;
+        }
+
+        $dias = [
+            'Sunday' => 'Domingo',
+            'Monday' => 'Lunes',
+            'Tuesday' => 'Martes',
+            'Wednesday' => 'Miércoles',
+            'Thursday' => 'Jueves',
+            'Friday' => 'Viernes',
+            'Saturday' => 'Sábado',
+        ];
+
+        $dayName = date('l', $ts);
+
+        return ($dias[$dayName] ?? $dayName) . ' ' . date('d/m/Y', $ts);
     }
 
     private static function db(): mysqli

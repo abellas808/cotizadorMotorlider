@@ -9,6 +9,8 @@ class NotificacionAutomaticaGuardService
         'RECORDATORIO_PRECOTIZACION_24HS',
         'RECORDATORIO_CONFIRMACION_AGENDA_3HS',
         'RECORDATORIO_CONFIRMACION_AGENDA_10HS',
+        'RECORDATORIO_ASISTENCIA_AGENDA_24HS',
+        'RECORDATORIO_ASISTENCIA_AGENDA_48HS',
         'NOTIFICACION_NO_ASISTIO_AGENDA',
         'RECORDATORIO_TASACION_FINAL_24HS'
     ];
@@ -48,6 +50,8 @@ class NotificacionAutomaticaGuardService
             }
 
             if (
+                !self::esRecordatorioAsistenciaAgenda($tipo)
+                &&
                 $creada !== ''
                 && !empty($estadoCotizacion['fecha_mod'])
                 && strtotime((string)$estadoCotizacion['fecha_mod']) > strtotime($creada)
@@ -59,7 +63,12 @@ class NotificacionAutomaticaGuardService
             }
         }
 
-        if ($telefono !== '' && $creada !== '' && self::huboInteraccionPosterior($telefono, $creada)) {
+        if (
+            !self::esRecordatorioAsistenciaAgenda($tipo)
+            && $telefono !== ''
+            && $creada !== ''
+            && self::huboInteraccionPosterior($telefono, $creada)
+        ) {
             return self::resultado(
                 $idCotizacion > 0 ? 'CANCELAR_TODAS' : 'CANCELAR',
                 'Kill switch: hubo una respuesta del cliente o una intervención humana posterior'
@@ -94,6 +103,14 @@ class NotificacionAutomaticaGuardService
         $cn->close();
 
         return strtoupper(trim((string)($row['estado'] ?? ''))) === 'PENDIENTE';
+    }
+
+    private static function esRecordatorioAsistenciaAgenda(string $tipo): bool
+    {
+        return in_array($tipo, [
+            'RECORDATORIO_ASISTENCIA_AGENDA_24HS',
+            'RECORDATORIO_ASISTENCIA_AGENDA_48HS'
+        ], true);
     }
 
     private static function estadoCotizacion(int $idCotizacion): array

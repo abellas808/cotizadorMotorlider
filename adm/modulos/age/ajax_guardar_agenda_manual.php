@@ -9,6 +9,7 @@ if (!isset($config['db_tablePrefix'])) {
 
 require_once(__DIR__ . '/../../includes/database.php');
 require_once(__DIR__ . '/../../includes/funciones.php');
+require_once(__DIR__ . '/../../../whatsapp/services/NotificacionPendienteService.php');
 
 session_start();
 require_once(__DIR__ . '/../../includes/chk_login.php');
@@ -173,6 +174,17 @@ if ($idAgenda <= 0) {
         'debug' => 'Insert ejecutado pero no se encontró la agenda creada.'
     ]);
 }
+
+NotificacionPendienteService::programarConfirmacionAsistenciaAgenda(
+    $idCotizacion,
+    $idAgenda,
+    $telefono,
+    $fecha,
+    $hora,
+    $nombre,
+    $auto,
+    date('Y-m-d H:i:s')
+);
 
 j([
     'ok' => true,

@@ -274,6 +274,114 @@ while ($row = $rs->fetch_assoc()) {
 
             continue 2;
 
+        case 'RECORDATORIO_ASISTENCIA_AGENDA_24HS':
+        case 'RECORDATORIO_ASISTENCIA_AGENDA_48HS':
+
+            $idAgenda = intval($row['id_agenda'] ?? 0);
+            $idCotizacion = intval($row['id_cotizacion'] ?? 0);
+
+            if ($idAgenda <= 0) {
+                NotificacionPendienteService::marcarError($id, 'No se pudo enviar confirmación de asistencia: id_agenda vacío');
+                continue 2;
+            }
+
+            $cnAgenda = wa_db();
+            $rsAgenda = $cnAgenda->query("
+                SELECT id_agenda, id_cotizacion, telefono, nombre, auto, fecha, hora, cancelado, finalizada, confirmacion_asistencia
+                FROM agendas
+                WHERE id_agenda = " . intval($idAgenda) . "
+                LIMIT 1
+            ");
+            $agenda = $rsAgenda ? $rsAgenda->fetch_assoc() : null;
+
+            if (!$agenda) {
+                $cnAgenda->close();
+                NotificacionPendienteService::marcarError($id, 'No se pudo enviar confirmación de asistencia: agenda no encontrada');
+                continue 2;
+            }
+
+            if (
+                intval($agenda['cancelado'] ?? 0) === 1
+                || intval($agenda['finalizada'] ?? 0) === 1
+                || strtotime((string)$agenda['fecha'] . ' ' . (string)$agenda['hora']) < time()
+            ) {
+                $cnAgenda->close();
+                NotificacionPendienteService::cancelar($id, 'Agenda cancelada, finalizada o vencida');
+                continue 2;
+            }
+
+            if (trim((string)($agenda['confirmacion_asistencia'] ?? '')) !== '') {
+                $cnAgenda->close();
+                NotificacionPendienteService::cancelar($id, 'La agenda ya tiene confirmación de asistencia');
+                continue 2;
+            }
+
+            $telefonoAgenda = trim((string)($agenda['telefono'] ?? $telefono));
+            $nombreAgenda = trim((string)($agenda['nombre'] ?? ($payload['nombre'] ?? '')));
+            $autoAgenda = trim((string)($agenda['auto'] ?? ($payload['auto'] ?? '')));
+            $fechaAgenda = (string)($agenda['fecha'] ?? ($payload['fecha'] ?? ''));
+            $horaAgenda = (string)($agenda['hora'] ?? ($payload['hora'] ?? ''));
+
+            $ok = TwilioMessageService::enviarTemplateAsistenciaAgenda(
+                $telefonoAgenda,
+                $nombreAgenda,
+                $autoAgenda,
+                $fechaAgenda,
+                $horaAgenda,
+                $idCotizacion
+            );
+
+            if ($ok) {
+                $cnAgenda->query("
+                    UPDATE agendas
+                    SET confirmacion_asistencia = 'PENDIENTE',
+                        fecha_confirmacion_asistencia = NOW()
+                    WHERE id_agenda = " . intval($idAgenda) . "
+                    LIMIT 1
+                ");
+
+                $tipoAgenda = $tipo === 'RECORDATORIO_ASISTENCIA_AGENDA_48HS'
+                    ? 'confirmacion_48h'
+                    : 'confirmacion_24h';
+
+                $cnAgenda->query("
+                    INSERT INTO whatsapp_agenda_notificaciones
+                    (
+                        id_agenda,
+                        telefono,
+                        tipo_notificacion,
+                        fecha_agenda,
+                        hora_agenda,
+                        fecha_envio,
+                        estado_envio,
+                        mensaje_enviado,
+                        sid_mensaje,
+                        respuesta_api
+                    )
+                    VALUES
+                    (
+                        " . intval($idAgenda) . ",
+                        '" . $cnAgenda->real_escape_string($telefonoAgenda) . "',
+                        '" . $cnAgenda->real_escape_string($tipoAgenda) . "',
+                        '" . $cnAgenda->real_escape_string($fechaAgenda) . "',
+                        '" . $cnAgenda->real_escape_string($horaAgenda) . "',
+                        NOW(),
+                        'ENVIADO',
+                        'Confirmación de asistencia enviada desde cola central',
+                        '',
+                        '" . $cnAgenda->real_escape_string(json_encode(['origen' => 'whatsapp_notificaciones_pendientes'], JSON_UNESCAPED_UNICODE)) . "'
+                    )
+                ");
+
+                $cnAgenda->close();
+                NotificacionPendienteService::marcarProcesada($id);
+            } else {
+                $cnAgenda->close();
+                NotificacionPendienteService::marcarError($id, 'Error al enviar confirmación de asistencia de agenda');
+            }
+
+            continue 2;
+
         case 'NOTIFICACION_NO_ASISTIO_AGENDA':
 
             $ok = TwilioMessageService::enviarTemplateNoAsistioAgenda($telefono);

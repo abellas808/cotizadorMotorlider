@@ -2,6 +2,9 @@
 
 class NotificacionPendienteService
 {
+    private const TIPO_CONFIRMACION_AGENDA_24HS = 'RECORDATORIO_ASISTENCIA_AGENDA_24HS';
+    private const TIPO_CONFIRMACION_AGENDA_48HS = 'RECORDATORIO_ASISTENCIA_AGENDA_48HS';
+
     private static function db(): mysqli
     {
         global $db;
@@ -225,6 +228,78 @@ class NotificacionPendienteService
         ]);
 
         return (bool)$ok;
+    }
+
+    public static function programarConfirmacionAsistenciaAgenda(
+        int $idCotizacion,
+        int $idAgenda,
+        string $telefono,
+        string $fechaAgenda,
+        string $horaAgenda,
+        string $nombre = '',
+        string $auto = '',
+        ?string $fechaCreacion = null
+    ): bool {
+        if ($idAgenda <= 0 || trim($telefono) === '' || trim($fechaAgenda) === '' || trim($horaAgenda) === '') {
+            return false;
+        }
+
+        $tz = new DateTimeZone('America/Montevideo');
+        $agendaDt = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $fechaAgenda . ' ' . substr($horaAgenda, 0, 5) . ':00', $tz);
+
+        if (!$agendaDt) {
+            return false;
+        }
+
+        $creacionDt = null;
+        if ($fechaCreacion !== null && trim($fechaCreacion) !== '') {
+            $creacionDt = new DateTimeImmutable($fechaCreacion, $tz);
+        }
+
+        if (!$creacionDt) {
+            $creacionDt = new DateTimeImmutable('now', $tz);
+        }
+
+        $segundosEntreCreacionYAgenda = $agendaDt->getTimestamp() - $creacionDt->getTimestamp();
+
+        if ($segundosEntreCreacionYAgenda <= 24 * 60 * 60) {
+            self::log('NOTIFICACION_AGENDA_CONFIRMACION_NO_PROGRAMADA', [
+                'id_cotizacion' => $idCotizacion,
+                'id_agenda' => $idAgenda,
+                'motivo' => 'Agenda creada dentro de las 24 hs previas'
+            ]);
+            return true;
+        }
+
+        $tipo = self::TIPO_CONFIRMACION_AGENDA_24HS;
+        $fechaProgramadaDt = $agendaDt->modify('-24 hours');
+        $observaciones = 'Confirmación de asistencia 24 hs antes de la agenda';
+
+        if ($segundosEntreCreacionYAgenda > 72 * 60 * 60) {
+            $tipo = self::TIPO_CONFIRMACION_AGENDA_48HS;
+            $fechaProgramadaDt = $agendaDt->modify('-48 hours');
+            $observaciones = 'Confirmación de asistencia 48 hs antes de la agenda';
+        }
+
+        $payload = [
+            'id_cotizacion' => $idCotizacion,
+            'id_agenda' => $idAgenda,
+            'fecha' => $fechaAgenda,
+            'hora' => $horaAgenda,
+            'nombre' => $nombre,
+            'auto' => $auto
+        ];
+
+        return self::crear(
+            $idCotizacion > 0 ? $idCotizacion : null,
+            $idAgenda,
+            $telefono,
+            $tipo,
+            'AGENDA',
+            $fechaProgramadaDt->format('Y-m-d H:i:s'),
+            $payload,
+            $observaciones
+        );
     }
 
     public static function cancelar(int $id, string $observacion = ''): bool

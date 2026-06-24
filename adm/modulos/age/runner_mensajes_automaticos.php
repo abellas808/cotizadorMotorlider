@@ -87,6 +87,48 @@ function yaFueEnviado(mysqli $db, int $idAgenda, string $tipo): bool
     return $ok;
 }
 
+function existeColaCentralAgenda(mysqli $db, int $idAgenda, string $tipoAgenda): bool
+{
+    $tipoCola = '';
+
+    if ($tipoAgenda === TIPO_NOTIFICACION_CONFIRMACION_24H) {
+        $tipoCola = 'RECORDATORIO_ASISTENCIA_AGENDA_24HS';
+    }
+
+    if ($tipoAgenda === TIPO_NOTIFICACION_CONFIRMACION_48H) {
+        $tipoCola = 'RECORDATORIO_ASISTENCIA_AGENDA_48HS';
+    }
+
+    if ($tipoCola === '') {
+        return false;
+    }
+
+    $sql = "SELECT id
+            FROM whatsapp_notificaciones_pendientes
+            WHERE id_agenda = ?
+              AND tipo_notificacion = ?
+              AND estado IN ('PENDIENTE', 'PROCESADA', 'REPROGRAMADA')
+            LIMIT 1";
+
+    $st = $db->prepare($sql);
+    if (!$st) {
+        logMensajeAutomatico('ERROR_PREPARE_EXISTE_COLA_CENTRAL', ['error' => $db->error]);
+        return false;
+    }
+
+    $st->bind_param('is', $idAgenda, $tipoCola);
+    $st->execute();
+    $rs = $st->get_result();
+    $existe = $rs && $rs->num_rows > 0;
+
+    if ($rs) {
+        $rs->free();
+    }
+    $st->close();
+
+    return $existe;
+}
+
 function registrarEnvio(
     mysqli $db,
     int $idAgenda,
@@ -695,7 +737,7 @@ while ($row = $q->fetch_assoc()) {
         if ($faltan > 0 && $faltan <= SEGUNDOS_48_HORAS) {
             $tipo = TIPO_NOTIFICACION_CONFIRMACION_48H;
 
-            if (!yaFueEnviado($db, $idAgenda, $tipo) && $confirmacionAsistencia === '') {
+            if (!existeColaCentralAgenda($db, $idAgenda, $tipo) && !yaFueEnviado($db, $idAgenda, $tipo) && $confirmacionAsistencia === '') {
                 $mensaje = construirMensajeConfirmacion48h($row);
                 $envio = enviarWhatsappTemplateAsistenciaAgenda($telefono, $row);
 
@@ -745,7 +787,7 @@ while ($row = $q->fetch_assoc()) {
                         'error' => $envio['error'] ?? null
                     ]);
                 }
-            } elseif (yaFueEnviado($db, $idAgenda, $tipo)) {
+            } elseif (existeColaCentralAgenda($db, $idAgenda, $tipo) || yaFueEnviado($db, $idAgenda, $tipo)) {
                 $resumen['omitidos_duplicado']++;
             }
         }
@@ -760,7 +802,7 @@ while ($row = $q->fetch_assoc()) {
         if ($faltan > 0 && $faltan <= SEGUNDOS_24_HORAS) {
             $tipo = TIPO_NOTIFICACION_CONFIRMACION_24H;
 
-            if (!yaFueEnviado($db, $idAgenda, $tipo) && $confirmacionAsistencia === '') {
+            if (!existeColaCentralAgenda($db, $idAgenda, $tipo) && !yaFueEnviado($db, $idAgenda, $tipo) && $confirmacionAsistencia === '') {
                 $mensaje = construirMensajeConfirmacion24h($row);
                 $envio = enviarWhatsappTemplateAsistenciaAgenda($telefono, $row);
 
@@ -810,7 +852,7 @@ while ($row = $q->fetch_assoc()) {
                         'error' => $envio['error'] ?? null
                     ]);
                 }
-            } elseif (yaFueEnviado($db, $idAgenda, $tipo)) {
+            } elseif (existeColaCentralAgenda($db, $idAgenda, $tipo) || yaFueEnviado($db, $idAgenda, $tipo)) {
                 $resumen['omitidos_duplicado']++;
             }
         }

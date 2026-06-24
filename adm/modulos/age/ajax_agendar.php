@@ -10,6 +10,7 @@ if (!isset($config['db_tablePrefix'])) {
 require_once(__DIR__ . '/../../includes/database.php');
 require_once(__DIR__ . '/../../includes/funciones.php');
 require_once(__DIR__ . '/../../includes/class.phpmailer.php');
+require_once(__DIR__ . '/../../../whatsapp/services/NotificacionPendienteService.php');
 
 session_start();
 require_once(__DIR__ . '/../../includes/chk_login.php');
@@ -224,6 +225,19 @@ $nuevaAgenda = $db->query_first("
 ");
 
 $id_agenda = intval($nuevaAgenda['id_agenda'] ?? 0);
+
+if ($id_agenda > 0) {
+	NotificacionPendienteService::programarConfirmacionAsistenciaAgenda(
+		intval($id_cotizacion),
+		$id_agenda,
+		$telefono,
+		$fecha,
+		$hora,
+		$nombre,
+		$auto,
+		date('Y-m-d H:i:s')
+	);
+}
 
 // GUARDAR USUARIO EN cotizaciones_generadas
 $idUsuarioCotizo = intval($_SESSION[$config['codigo_unico']]['login_usuario_id'] ?? 0);

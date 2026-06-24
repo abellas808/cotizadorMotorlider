@@ -5958,6 +5958,43 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
     // Agenda creada OK: marcar cotización como AGENDADO
     wa_marcar_cotizacion_agendado($idCotizacion);
 
+    $idAgendaCreada = 0;
+    try {
+        $cnAgendaCreada = wa_db();
+        $rsAgendaCreada = $cnAgendaCreada->query("
+            SELECT id_agenda, fecha_creacion
+            FROM agendas
+            WHERE id_cotizacion = " . intval($idCotizacion) . "
+              AND fecha = '" . $cnAgendaCreada->real_escape_string($fecha) . "'
+              AND hora = '" . $cnAgendaCreada->real_escape_string($hora) . "'
+            ORDER BY id_agenda DESC
+            LIMIT 1
+        ");
+        $agendaCreada = $rsAgendaCreada ? $rsAgendaCreada->fetch_assoc() : null;
+        $idAgendaCreada = intval($agendaCreada['id_agenda'] ?? 0);
+        $fechaCreacionAgenda = (string)($agendaCreada['fecha_creacion'] ?? date('Y-m-d H:i:s'));
+        $cnAgendaCreada->close();
+
+        if ($idAgendaCreada > 0) {
+            NotificacionPendienteService::programarConfirmacionAsistenciaAgenda(
+                $idCotizacion,
+                $idAgendaCreada,
+                $from,
+                $fecha,
+                $hora,
+                (string)($payload['nombre'] ?? ''),
+                $auto,
+                $fechaCreacionAgenda
+            );
+        }
+    } catch (Throwable $e) {
+        wa_log('AGENDA_CONFIRMACION_ASISTENCIA_PROGRAMAR_ERROR', [
+            'id_cotizacion' => $idCotizacion,
+            'id_agenda' => $idAgendaCreada,
+            'error' => $e->getMessage()
+        ]);
+    }
+
     $nuevoEstado = $userState;
     $nuevoEstado['step'] = 'agendado';
     $nuevoEstado['id_cotizacion'] = $idCotizacion;
