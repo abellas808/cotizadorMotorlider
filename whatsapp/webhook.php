@@ -2235,7 +2235,98 @@ function wa_agenda_hora_a_minutos(string $hora): int
     return ($h * 60) + $m;
 }
 
-function wa_filtrar_horas_agendables_con_antelacion(array $horasDisponibles, string $fechaElegida): array
+function wa_agenda_parametro_hora_minutos(string $clave, string $default): int
+{
+    try {
+        $valor = wa_get_parametro_sistema('agenda_bot', $clave);
+    } catch (Throwable $e) {
+        $valor = null;
+    }
+
+    $valor = trim((string)($valor ?? ''));
+    if ($valor === '' || !preg_match('/^\d{1,2}:\d{2}$/', $valor)) {
+        $valor = $default;
+    }
+
+    return wa_agenda_hora_a_minutos($valor);
+}
+
+function wa_agenda_parametro_bloques_margen(): int
+{
+    try {
+        $valor = wa_get_parametro_sistema('agenda_bot', 'bloques_margen_fuera_horario');
+    } catch (Throwable $e) {
+        $valor = null;
+    }
+
+    $bloques = (int)trim((string)($valor ?? ''));
+    return $bloques > 0 ? $bloques : 6;
+}
+
+function wa_obtener_primera_fecha_agenda_opciones(array $opciones, bool $excluirHoy = false): string
+{
+    $fechas = [];
+    $hoy = date('Y-m-d');
+
+    foreach ($opciones as $opcion) {
+        $fecha = trim((string)($opcion['fecha'] ?? ''));
+        if ($excluirHoy && $fecha <= $hoy) {
+            continue;
+        }
+        if ($fecha !== '') {
+            $fechas[] = $fecha;
+        }
+    }
+
+    if (empty($fechas)) {
+        return '';
+    }
+
+    sort($fechas);
+    return (string)$fechas[0];
+}
+
+function wa_consulta_agenda_en_horario_operativo(): bool
+{
+    $diaSemana = (int)date('N'); // 1 lunes, 7 domingo
+    $ahoraMin = ((int)date('H') * 60) + (int)date('i');
+
+    $inicioLaboral = wa_agenda_parametro_hora_minutos('hora_inicio_operativa', '09:00');
+    $corteAgendaTemprana = wa_agenda_parametro_hora_minutos('hora_corte_agenda_temprana', '15:30');
+
+    return $diaSemana >= 1
+        && $diaSemana <= 5
+        && $ahoraMin >= $inicioLaboral
+        && $ahoraMin <= $corteAgendaTemprana;
+}
+
+function wa_consulta_agenda_antes_de_apertura(): bool
+{
+    $diaSemana = (int)date('N'); // 1 lunes, 7 domingo
+    $ahoraMin = ((int)date('H') * 60) + (int)date('i');
+    $inicioLaboral = wa_agenda_parametro_hora_minutos('hora_inicio_operativa', '09:00');
+
+    return $diaSemana >= 1
+        && $diaSemana <= 5
+        && $ahoraMin < $inicioLaboral;
+}
+
+function wa_consulta_agenda_despues_de_corte_o_cerrado(): bool
+{
+    $diaSemana = (int)date('N'); // 1 lunes, 7 domingo
+    $ahoraMin = ((int)date('H') * 60) + (int)date('i');
+    $corteAgendaTemprana = wa_agenda_parametro_hora_minutos('hora_corte_agenda_temprana', '15:30');
+
+    return $diaSemana < 1
+        || $diaSemana > 5
+        || $ahoraMin > $corteAgendaTemprana;
+}
+
+function wa_filtrar_horas_agendables_con_antelacion(
+    array $horasDisponibles,
+    string $fechaElegida,
+    ?string $fechaPrimerDisponible = null
+): array
 {
     $horasDisponibles = array_values($horasDisponibles);
     if (empty($horasDisponibles)) {
@@ -2243,17 +2334,34 @@ function wa_filtrar_horas_agendables_con_antelacion(array $horasDisponibles, str
     }
 
     $hoy = date('Y-m-d');
-    $maniana = date('Y-m-d', strtotime('+1 day'));
-    $bloquesMinimos = 6; // 6 bloques de 30 min = 3 horas
+    $bloquesMinimos = wa_agenda_parametro_bloques_margen();
     $ahoraMin = ((int)date('H') * 60) + (int)date('i');
-
-    // Horario automotora
-    $inicioLaboral = (9 * 60);           // 09:00
-    $corteDiaSiguiente = (15 * 60) + 30; // 15:30
+    $antesDeApertura = wa_consulta_agenda_antes_de_apertura();
+    $despuesDeCorteOCerrado = wa_consulta_agenda_despues_de_corte_o_cerrado();
+    $fechaPrimerDisponible = trim((string)$fechaPrimerDisponible);
 
     // Fecha pasada
     if ($fechaElegida < $hoy) {
         return [];
+    }
+
+    // De 15:30 a 00:00, o en días cerrados, no se agenda para el mismo día.
+    // La restricción de 6 turnos aplica sobre el próximo día disponible.
+    if ($despuesDeCorteOCerrado && $fechaElegida === $hoy) {
+        return [];
+    }
+
+    // De 00:00 a 09:00, la restricción aplica sobre el mismo día.
+    // De 15:30 en adelante/cerrado, aplica sobre el próximo día disponible.
+    if (
+        (
+            ($antesDeApertura && $fechaElegida === $hoy)
+            || $despuesDeCorteOCerrado
+        )
+        && $fechaPrimerDisponible !== ''
+        && $fechaElegida === $fechaPrimerDisponible
+    ) {
+        return array_slice($horasDisponibles, $bloquesMinimos);
     }
 
     // MISMO DÍA: permitir solo horarios con al menos 3 horas reales de anticipación
@@ -2281,24 +2389,21 @@ function wa_filtrar_horas_agendables_con_antelacion(array $horasDisponibles, str
         return $filtradas;
     }
 
-    // MAÑANA:
-    // si consultan dentro del horario de la automotora (09:00 a 15:30), mostrar todo
-    if ($fechaElegida === $maniana) {
-        if ($ahoraMin >= $inicioLaboral && $ahoraMin <= $corteDiaSiguiente) {
-            return $horasDisponibles;
-        }
-
-        // si consultan después de 15:30 (o antes de abrir), ocultar los primeros 6 bloques
-        return array_slice($horasDisponibles, $bloquesMinimos);
-    }
-
-    // PASADO MAÑANA O MÁS ADELANTE: mostrar todo
     return $horasDisponibles;
 }
 
-function wa_hora_agendable_permitida(string $fecha, string $hora, array $horasDisponibles): bool
+function wa_hora_agendable_permitida(
+    string $fecha,
+    string $hora,
+    array $horasDisponibles,
+    ?string $fechaPrimerDisponible = null
+): bool
 {
-    $filtradas = wa_filtrar_horas_agendables_con_antelacion($horasDisponibles, $fecha);
+    $filtradas = wa_filtrar_horas_agendables_con_antelacion(
+        $horasDisponibles,
+        $fecha,
+        $fechaPrimerDisponible
+    );
 
     foreach ($filtradas as $item) {
         $horaItem = (string)($item['hora'] ?? '');
@@ -5534,8 +5639,16 @@ if (($userState['step'] ?? '') === 'agenda_dia') {
     $horasOpciones = [];
     $lineas = [];
     $horas = $respHorarios['schedules']['horas_disponibles'];
+    $fechaPrimerDisponible = wa_obtener_primera_fecha_agenda_opciones(
+        is_array($opciones) ? $opciones : [],
+        wa_consulta_agenda_despues_de_corte_o_cerrado()
+    );
 
-    $horas = wa_filtrar_horas_agendables_con_antelacion($horas, $fechaElegida);
+    $horas = wa_filtrar_horas_agendables_con_antelacion(
+        $horas,
+        $fechaElegida,
+        $fechaPrimerDisponible
+    );
 
     $max = count($horas);
 
@@ -5907,7 +6020,14 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
         $horasValidacion = $respHorariosValidacion['schedules']['horas_disponibles'];
     }
 
-    if (!wa_hora_agendable_permitida($fecha, $hora, $horasValidacion)) {
+    $fechaPrimerDisponibleValidacion = wa_obtener_primera_fecha_agenda_opciones(
+        is_array($userState['agenda_dias_opciones'] ?? null)
+            ? $userState['agenda_dias_opciones']
+            : [],
+        wa_consulta_agenda_despues_de_corte_o_cerrado()
+    );
+
+    if (!wa_hora_agendable_permitida($fecha, $hora, $horasValidacion, $fechaPrimerDisponibleValidacion)) {
         twiml_message_and_save(
             $from,
             "No pude confirmar la agenda en este momento.\n\n"
