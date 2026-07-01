@@ -2,6 +2,39 @@
 
 class CarritoAbandonadoService
 {
+    private static function obtenerIdPendientePorCotizacion($cn, int $idCotizacion): int
+    {
+        if ($idCotizacion <= 0) {
+            return 0;
+        }
+
+        $sql = "
+            SELECT id
+            FROM carrito_abandonado
+            WHERE id_cotizacion = ?
+              AND estado = 'PENDIENTE'
+            ORDER BY id DESC
+            LIMIT 1
+        ";
+
+        $st = $cn->prepare($sql);
+        if (!$st) {
+            return 0;
+        }
+
+        $st->bind_param('i', $idCotizacion);
+        $st->execute();
+        $rs = $st->get_result();
+        $row = $rs ? $rs->fetch_assoc() : null;
+
+        if ($rs) {
+            $rs->free();
+        }
+        $st->close();
+
+        return intval($row['id'] ?? 0);
+    }
+
     public static function actualizarMotivoPendiente(
         int $idCotizacion,
         string $origenAbandono,
@@ -243,6 +276,91 @@ class CarritoAbandonadoService
         $anio = intval($cot['anio'] ?? 0);
         $kilometros = intval($cot['kilometros'] ?? 0);
         $tasacionFinal = floatval($cot['tasacion_final'] ?? 0);
+
+        $idPendiente = self::obtenerIdPendientePorCotizacion($cn, $idCotizacion);
+
+        if ($idPendiente > 0) {
+            $sqlUpdate = "
+                UPDATE carrito_abandonado
+                SET
+                    id_conversacion = ?,
+                    telefono = ?,
+                    nombre = ?,
+                    email = ?,
+                    marca = ?,
+                    modelo = ?,
+                    anio = ?,
+                    kilometros = ?,
+                    tasacion_final = ?,
+                    mensaje_cliente = ?,
+                    motivo_abandono = ?,
+                    origen_abandono = ?,
+                    fecha_respuesta = NOW(),
+                    usuario = ?,
+                    fecha_alta = NOW(),
+                    observaciones = CONCAT(
+                        IFNULL(observaciones, ''),
+                        IF(IFNULL(observaciones, '') = '', '', '\n'),
+                        'Actualizado automÃ¡ticamente: ya existÃ­a un carrito pendiente para esta cotizaciÃ³n.'
+                    )
+                WHERE id = ?
+                  AND estado = 'PENDIENTE'
+                LIMIT 1
+            ";
+
+            $stUpdate = $cn->prepare($sqlUpdate);
+
+            if (!$stUpdate) {
+                wa_log('CARRITO_UPDATE_PREPARE_ERROR', [
+                    'error' => $cn->error,
+                    'sql' => $sqlUpdate,
+                    'id_cotizacion' => $idCotizacion,
+                    'id_pendiente' => $idPendiente
+                ]);
+                $cn->close();
+                return;
+            }
+
+            $stUpdate->bind_param(
+                'isssssiidssssi',
+                $idConversacion,
+                $telefono,
+                $nombre,
+                $email,
+                $marca,
+                $modelo,
+                $anio,
+                $kilometros,
+                $tasacionFinal,
+                $mensajeCliente,
+                $motivoAbandono,
+                $origenAbandono,
+                $usuario,
+                $idPendiente
+            );
+
+            if (!$stUpdate->execute()) {
+                wa_log('CARRITO_UPDATE_ERROR', [
+                    'error' => $stUpdate->error,
+                    'errno' => $stUpdate->errno,
+                    'id_cotizacion' => $idCotizacion,
+                    'id_pendiente' => $idPendiente,
+                    'telefono' => $telefono
+                ]);
+            } else {
+                wa_log('CARRITO_UPDATE_OK', [
+                    'id_actualizado' => $idPendiente,
+                    'id_cotizacion' => $idCotizacion,
+                    'telefono' => $telefono,
+                    'motivo_abandono' => $motivoAbandono,
+                    'origen_abandono' => $origenAbandono
+                ]);
+            }
+
+            $stUpdate->close();
+            $cn->close();
+            return;
+        }
 
         $sql = "
             INSERT INTO carrito_abandonado
