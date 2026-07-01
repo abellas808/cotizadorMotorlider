@@ -3844,6 +3844,108 @@ Te estaremos enviando un recordatorio antes de la inspección."
     }
 }
 
+if (in_array($buttonPayload, ['cancelar_agenda_final', 'agenda_revision_cancelar'], true)) {
+    $conv = wa_get_conversation($from);
+    $idConversacion = intval($conv['id'] ?? 0);
+
+    $idCotizacion = wa_obtener_cotizacion_actual_para_agenda(
+        $from,
+        $userState,
+        (int)($conv['id_cotizacion'] ?? 0)
+    );
+
+    if ($idCotizacion <= 0) {
+        $idCotizacion = intval($userState['id_cotizacion'] ?? 0);
+    }
+
+    if ($idCotizacion <= 0) {
+        $idCotizacion = intval($userState['api_result']['id_cotizacion'] ?? 0);
+    }
+
+    if ($idCotizacion <= 0) {
+        $idCotizacion = intval($userState['api_result']['post_cotizacion']['id_cotizacion'] ?? 0);
+    }
+
+    if ($idCotizacion <= 0) {
+        $contexto = wa_obtener_contexto_completo_por_telefono($from);
+        $idCotizacion = intval($contexto['id_cotizaciones_generadas'] ?? 0);
+    }
+
+    if ($idCotizacion > 0) {
+        CarritoAbandonadoService::registrar(
+            $idCotizacion,
+            $idConversacion,
+            $from,
+            'Cliente cancelÃ³ la agenda desde el resumen de confirmaciÃ³n',
+            'NO_CONFIRMACION_AGENDA',
+            'AGENDA',
+            'Alan'
+        );
+
+        NotificacionPendienteService::cancelarPorCotizacionYTipo(
+            $idCotizacion,
+            'RECORDATORIO_CONFIRMACION_AGENDA_10HS',
+            'Cliente cancelÃ³ agenda desde el resumen de confirmaciÃ³n'
+        );
+
+        NotificacionPendienteService::cancelarPorCotizacionYTipo(
+            $idCotizacion,
+            'RECORDATORIO_CONFIRMACION_AGENDA_3HS',
+            'Cliente cancelÃ³ agenda desde el resumen de confirmaciÃ³n'
+        );
+
+        $cnEstado = wa_db();
+
+        $stEstado = $cnEstado->prepare("
+            UPDATE cotizaciones_generadas
+            SET
+                estado_id = 3,
+                estado = 'COTIZADO_PRELIMINAR',
+                detalle_estado = 'Cliente cancelÃ³ la agenda desde el resumen de confirmaciÃ³n por WhatsApp',
+                fecha_mod = NOW()
+            WHERE id_cotizaciones_generadas = ?
+            LIMIT 1
+        ");
+
+        if ($stEstado) {
+            $stEstado->bind_param('i', $idCotizacion);
+            $stEstado->execute();
+            $stEstado->close();
+        }
+
+        $cnEstado->close();
+    } else {
+        wa_log('AGENDA_CANCELADA_PAYLOAD_SIN_COTIZACION', [
+            'from' => $from,
+            'button_payload' => $buttonPayload,
+            'step' => $stepActual,
+            'user_state' => $userState
+        ]);
+    }
+
+    $nuevoEstado = $userState;
+    $nuevoEstado['step'] = 'esperando_motivo_cancelacion_agenda';
+    $nuevoEstado['sub_step'] = 'motivo_no_agendar';
+    $nuevoEstado['id_cotizacion'] = $idCotizacion;
+    $nuevoEstado['id_conversacion'] = $idConversacion;
+    $nuevoEstado['origen_abandono'] = 'AGENDA';
+    $nuevoEstado['motivo_base'] = 'NO_CONFIRMACION_AGENDA';
+
+    wa_set_user_state(
+        $from,
+        $nuevoEstado,
+        'ESPERANDO_MOTIVO_CANCELACION_AGENDA',
+        'BOT',
+        $profileName !== '' ? $profileName : null,
+        null,
+        $idCotizacion > 0 ? $idCotizacion : null
+    );
+
+    TwilioMessageService::enviarTemplateMotivoCancelacionAgenda($from);
+
+    return;
+}
+
 // =========================
 // COMANDOS GLOBALES
 // =========================
