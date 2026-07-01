@@ -3844,7 +3844,19 @@ Te estaremos enviando un recordatorio antes de la inspección."
     }
 }
 
-if (in_array($buttonPayload, ['cancelar_agenda_final', 'agenda_revision_cancelar'], true)) {
+$esCancelacionResumenAgenda =
+    in_array($buttonPayload, ['cancelar_agenda_final', 'agenda_revision_cancelar'], true)
+    || (
+        $buttonPayload === ''
+        && wa_es_cancelar_agenda($body)
+        && (
+            in_array($stepActual, ['agenda_hora', 'agenda_confirmar', 'agenda_confirmacion_humana'], true)
+            || isset($userState['agenda_fecha'])
+            || isset($userState['agenda_hora'])
+        )
+    );
+
+if ($esCancelacionResumenAgenda) {
     $conv = wa_get_conversation($from);
     $idConversacion = intval($conv['id'] ?? 0);
 
@@ -3964,7 +3976,7 @@ if (in_array($bodyNorm, ['hola', 'hi', 'menu', 'inicio'], true)) {
 if (
     in_array($bodyNorm, ['cancelar', 'salir'], true)
     && $buttonPayload === ''
-    && (($userState['step'] ?? '') !== 'agenda_confirmar')
+    && !in_array(($userState['step'] ?? ''), ['agenda_hora', 'agenda_confirmar'], true)
 ) {
     wa_set_user_state(
         $from,
@@ -5892,6 +5904,55 @@ if (($userState['step'] ?? '') === 'agenda_dia') {
 // =========================
 if (($userState['step'] ?? '') === 'agenda_hora') {
     $respuesta = trim($body);
+
+    if (wa_es_cancelar_agenda($body)) {
+        $idCotizacionCancelada = intval($userState['id_cotizacion'] ?? 0);
+
+        if ($idCotizacionCancelada <= 0) {
+            $idCotizacionCancelada = intval($userState['api_result']['id_cotizacion'] ?? 0);
+        }
+
+        if ($idCotizacionCancelada <= 0) {
+            $idCotizacionCancelada = intval($userState['api_result']['post_cotizacion']['id_cotizacion'] ?? 0);
+        }
+
+        $convCancelacion = wa_get_conversation($from);
+        $idConversacionCancelacion = intval($convCancelacion['id'] ?? 0);
+
+        if ($idCotizacionCancelada > 0) {
+            CarritoAbandonadoService::registrar(
+                $idCotizacionCancelada,
+                $idConversacionCancelacion,
+                $from,
+                'Cliente cancelo la agenda durante la seleccion de horario',
+                'NO_CONFIRMACION_AGENDA',
+                'AGENDA',
+                'Alan'
+            );
+        }
+
+        $nuevoEstado = $userState;
+        $nuevoEstado['step'] = 'esperando_motivo_cancelacion_agenda';
+        $nuevoEstado['sub_step'] = 'motivo_no_agendar';
+        $nuevoEstado['id_cotizacion'] = $idCotizacionCancelada;
+        $nuevoEstado['id_conversacion'] = $idConversacionCancelacion;
+        $nuevoEstado['origen_abandono'] = 'AGENDA';
+        $nuevoEstado['motivo_base'] = 'NO_CONFIRMACION_AGENDA';
+
+        wa_set_user_state(
+            $from,
+            $nuevoEstado,
+            'ESPERANDO_MOTIVO_CANCELACION_AGENDA',
+            'BOT',
+            $profileName !== '' ? $profileName : null,
+            null,
+            $idCotizacionCancelada > 0 ? $idCotizacionCancelada : null
+        );
+
+        TwilioMessageService::enviarTemplateMotivoCancelacionAgenda($from);
+
+        return;
+    }
 
     if (wa_es_cancelar_agenda($body)) {
         $nuevoEstado = $userState;
