@@ -3862,6 +3862,7 @@ if (in_array($bodyNorm, ['hola', 'hi', 'menu', 'inicio'], true)) {
 if (
     in_array($bodyNorm, ['cancelar', 'salir'], true)
     && $buttonPayload === ''
+    && (($userState['step'] ?? '') !== 'agenda_confirmar')
 ) {
     wa_set_user_state(
         $from,
@@ -5974,7 +5975,10 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
     }
 
     // CANCELAR
-    if (in_array($buttonPayload, ['cancelar_agenda_final', 'agenda_revision_cancelar'], true)) {
+    if (
+        in_array($buttonPayload, ['cancelar_agenda_final', 'agenda_revision_cancelar'], true)
+        || wa_es_cancelar_agenda($body)
+    ) {
 
         $idCotizacionCancelada = intval($userState['id_cotizacion'] ?? 0);
 
