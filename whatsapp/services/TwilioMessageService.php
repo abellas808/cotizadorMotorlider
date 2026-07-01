@@ -96,6 +96,9 @@ class TwilioMessageService
             return false;
         }
 
+        $decoded = json_decode((string)$response, true);
+        $sidMensaje = is_array($decoded) ? trim((string)($decoded['sid'] ?? '')) : '';
+
         if ($mensajeHistorial !== '') {
             $metaHistorial = [
                 'origen' => $origen,
@@ -112,7 +115,7 @@ class TwilioMessageService
                     $to,
                     $mensajeHistorial,
                     $metaHistorial,
-                    '',
+                    $sidMensaje,
                     'BOT'
                 );
             } else {
@@ -120,7 +123,8 @@ class TwilioMessageService
                     $to,
                     $mensajeHistorial,
                     $metaHistorial,
-                    $idCotizacionHistorial
+                    $idCotizacionHistorial,
+                    $sidMensaje
                 );
             }
         }
@@ -212,7 +216,8 @@ class TwilioMessageService
         string $telefono,
         string $mensaje,
         array $meta,
-        ?int $idCotizacion = null
+        ?int $idCotizacion = null,
+        string $sidMensaje = ''
     ): void {
         try {
             $cn = self::db();
@@ -265,7 +270,7 @@ class TwilioMessageService
             $sql = "
                 INSERT INTO whatsapp_conversacion_mensajes
                 (id_conversacion, telefono, direccion, emisor, mensaje, meta_json, sid_mensaje, fecha)
-                VALUES (?, ?, 'SALIENTE', 'BOT', ?, ?, NULL, NOW())
+                VALUES (?, ?, 'SALIENTE', 'BOT', ?, ?, ?, NOW())
             ";
 
             $st = $cn->prepare($sql);
@@ -274,7 +279,8 @@ class TwilioMessageService
             }
 
             $mensajeGuardar = $mensaje;
-            $st->bind_param('isss', $idConversacion, $telefono, $mensajeGuardar, $metaJson);
+            $sidGuardar = $sidMensaje !== '' ? $sidMensaje : null;
+            $st->bind_param('issss', $idConversacion, $telefono, $mensajeGuardar, $metaJson, $sidGuardar);
 
             if (!$st->execute()) {
                 $st->close();
@@ -285,7 +291,7 @@ class TwilioMessageService
                     throw new RuntimeException('Error prepare historial Twilio fallback: ' . $cn->error);
                 }
 
-                $st->bind_param('isss', $idConversacion, $telefono, $mensajeGuardar, $metaJson);
+                $st->bind_param('issss', $idConversacion, $telefono, $mensajeGuardar, $metaJson, $sidGuardar);
                 $st->execute();
             }
 

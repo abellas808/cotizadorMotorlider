@@ -3211,7 +3211,14 @@ if (
 ) {
     $conv = wa_get_conversation($from);
 
-    $idCotizacion = intval($userState['id_cotizacion'] ?? 0);
+    $originalSidRecordatorioPre = trim((string)($_POST['OriginalRepliedMessageSid'] ?? ''));
+    $idCotizacionDesdeMensaje = wa_obtener_id_cotizacion_desde_mensaje_respondido($originalSidRecordatorioPre);
+
+    $idCotizacion = $idCotizacionDesdeMensaje;
+
+    if ($idCotizacion <= 0) {
+        $idCotizacion = intval($userState['id_cotizacion'] ?? 0);
+    }
 
     if ($idCotizacion <= 0) {
         $idCotizacion = intval($conv['id_cotizacion'] ?? 0);
@@ -3239,7 +3246,11 @@ if (
 
         $idConversacion = intval($conv['id'] ?? 0);
 
-        $idCotizacion = intval($userState['id_cotizacion'] ?? 0);
+        $idCotizacion = $idCotizacionDesdeMensaje;
+
+        if ($idCotizacion <= 0) {
+            $idCotizacion = intval($userState['id_cotizacion'] ?? 0);
+        }
 
         if ($idCotizacion <= 0) {
             $idCotizacion = intval($conv['id_cotizacion'] ?? 0);
@@ -3265,29 +3276,113 @@ if (
         }
 
         $nuevoEstado = $userState;
-        $nuevoEstado['step'] = 'cerrado';
-        $nuevoEstado['sub_step'] = 'carrito_abandonado_recordatorio_24hs';
+        $nuevoEstado['step'] = 'esperando_motivo_no_agendar_precotizacion';
+        $nuevoEstado['sub_step'] = 'motivo_no_agendar';
         $nuevoEstado['id_cotizacion'] = $idCotizacion;
-        $nuevoEstado['motivo_abandono'] = 'NO_AGENDA_REVISION';
+        $nuevoEstado['id_conversacion'] = $idConversacion;
         $nuevoEstado['origen_abandono'] = 'PRETASACION';
+        $nuevoEstado['motivo_base'] = 'NO_AGENDA_REVISION';
 
         wa_set_user_state(
             $from,
             $nuevoEstado,
-            'CERRADO',
+            'ESPERANDO_MOTIVO_NO_AGENDAR_PRE_COTIZACION',
             'BOT',
             $profileName !== '' ? $profileName : null,
             null,
             $idCotizacion > 0 ? $idCotizacion : null
         );
 
-        twiml_message_and_save(
-            $from,
-            "Gracias por tu respuesta. Si más adelante querés retomar el proceso, estamos a las órdenes 👍"
-        );
+        TwilioMessageService::enviarTemplateMotivoNoAgendar($from);
 
         return;
     }
+}
+
+if ($payload === 'precotizacion_agendar') {
+    $conv = wa_get_conversation($from);
+    $originalSidPre = trim((string)($_POST['OriginalRepliedMessageSid'] ?? ''));
+    $idCotizacion = wa_obtener_id_cotizacion_desde_mensaje_respondido($originalSidPre);
+
+    if ($idCotizacion <= 0) {
+        $idCotizacion = intval($userState['id_cotizacion'] ?? 0);
+    }
+
+    if ($idCotizacion <= 0) {
+        $idCotizacion = intval($conv['id_cotizacion'] ?? 0);
+    }
+
+    $userState['step'] = 'resultado_enviado';
+    $userState['sub_step'] = 'esperando_agenda';
+    $userState['id_cotizacion'] = $idCotizacion;
+
+    $_POST['ButtonPayload'] = 'si_agendar';
+    $payload = 'si_agendar';
+    $step = 'resultado_enviado';
+    $subStep = 'esperando_agenda';
+}
+
+if ($payload === 'precotizacion_no_agendar') {
+    $conv = wa_get_conversation($from);
+    $idConversacion = intval($conv['id'] ?? 0);
+
+    $originalSidPre = trim((string)($_POST['OriginalRepliedMessageSid'] ?? ''));
+    $idCotizacion = wa_obtener_id_cotizacion_desde_mensaje_respondido($originalSidPre);
+
+    if ($idCotizacion <= 0) {
+        $idCotizacion = intval($userState['id_cotizacion'] ?? 0);
+    }
+
+    if ($idCotizacion <= 0) {
+        $idCotizacion = intval($conv['id_cotizacion'] ?? 0);
+    }
+
+    if (
+        $idCotizacion > 0
+        && !CarritoAbandonadoService::existePendiente(
+            $idCotizacion,
+            'NO_AGENDA_REVISION',
+            'PRETASACION'
+        )
+    ) {
+        CarritoAbandonadoService::registrar(
+            $idCotizacion,
+            $idConversacion,
+            $from,
+            'Cliente respondiÃ³ que no quiere agendar',
+            'NO_AGENDA_REVISION',
+            'PRETASACION',
+            'Alan'
+        );
+    }
+
+    NotificacionPendienteService::cancelarPorCotizacionYTipo(
+        $idCotizacion,
+        'RECORDATORIO_PRECOTIZACION_24HS',
+        'Cliente respondiÃ³ que no quiere agendar antes del recordatorio'
+    );
+
+    $nuevoEstado = $userState;
+    $nuevoEstado['step'] = 'esperando_motivo_no_agendar_precotizacion';
+    $nuevoEstado['sub_step'] = 'motivo_no_agendar';
+    $nuevoEstado['id_cotizacion'] = $idCotizacion;
+    $nuevoEstado['id_conversacion'] = $idConversacion;
+    $nuevoEstado['origen_abandono'] = 'PRETASACION';
+    $nuevoEstado['motivo_base'] = 'NO_AGENDA_REVISION';
+
+    wa_set_user_state(
+        $from,
+        $nuevoEstado,
+        'ESPERANDO_MOTIVO_NO_AGENDAR_PRE_COTIZACION',
+        'BOT',
+        $profileName !== '' ? $profileName : null,
+        null,
+        $idCotizacion > 0 ? $idCotizacion : null
+    );
+
+    TwilioMessageService::enviarTemplateMotivoNoAgendar($from);
+
+    return;
 }
 
 // =========================
