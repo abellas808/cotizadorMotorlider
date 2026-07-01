@@ -3298,6 +3298,7 @@ if ($step === 'resultado_enviado' && $subStep === 'esperando_agenda') {
     // SI, AGENDAR
     if (
         $payload === 'si_agendar' ||
+        $payload === 'precotizacion_agendar' ||
         in_array($bodyLower, ['agendar', 'si agendar', 'sí agendar'], true)
     ) {
 
@@ -3422,6 +3423,7 @@ if ($step === 'resultado_enviado' && $subStep === 'esperando_agenda') {
 
    // EN OTRO MOMENTO / NO ME QUIERO AGENDAR
     if (
+        $payload === 'precotizacion_no_agendar' ||
         in_array($bodyLower, ['en otro momento', 'no', 'ahora no'], true)
     ) {
         $conv = wa_get_conversation($from);
@@ -3625,7 +3627,7 @@ Te estaremos enviando un recordatorio antes de la inspección."
     }
 
     if (
-    $buttonPayload === 'cancelar_agenda_final'
+    in_array($buttonPayload, ['cancelar_agenda_final', 'agenda_revision_cancelar'], true)
     || wa_respuesta_es_no($body)
     || ($buttonPayload === '' && wa_es_cancelar_agenda($body))
     ) {
@@ -5877,7 +5879,7 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
     }
 
     // CANCELAR
-    if ($buttonPayload === 'cancelar_agenda_final') {
+    if (in_array($buttonPayload, ['cancelar_agenda_final', 'agenda_revision_cancelar'], true)) {
 
         $idCotizacionCancelada = intval($userState['id_cotizacion'] ?? 0);
 
@@ -5966,7 +5968,7 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
 
     // Confirmación válida
     $esConfirmacionAgenda =
-        $buttonPayload === 'confirmar_agenda_final'
+        in_array($buttonPayload, ['confirmar_agenda_final', 'agenda_revision_confirmar'], true)
         || in_array($respuestaNorm, ['confirmar', '.confirmar', 'si', 'ok'], true);
 
     if (!$esConfirmacionAgenda) {
@@ -6268,6 +6270,11 @@ function wa_marcar_cotizacion_comunicarse_cliente(int $idCotizacion): bool
 function enviar_template_confirmacion($to, $fecha, $hora) {
 
 	$url = 'https://api.twilio.com/2010-04-01/Accounts/' . TWILIO_ACCOUNT_SID . '/Messages.json';
+    $contentSid = ParametroSistemaService::obtener(
+        'twilio',
+        'agenda_revision',
+        TWILIO_TEMPLATE_CONFIRMAR_AGENDA
+    );
 
 	$variables = json_encode([
 		"1" => $fecha,
@@ -6277,7 +6284,7 @@ function enviar_template_confirmacion($to, $fecha, $hora) {
 	$postFields = http_build_query([
 		'From' => TWILIO_WHATSAPP_FROM,
 		'To' => $to,
-		'ContentSid' => TWILIO_TEMPLATE_CONFIRMAR_AGENDA,
+		'ContentSid' => $contentSid,
 		'ContentVariables' => $variables
 	]);
 
@@ -6305,7 +6312,7 @@ function enviar_template_confirmacion($to, $fecha, $hora) {
         $mensajeHistorial,
         [
             'origen' => 'template_confirmacion_agenda',
-            'content_sid' => TWILIO_TEMPLATE_CONFIRMAR_AGENDA
+            'content_sid' => $contentSid
         ],
         '',
         'BOT'

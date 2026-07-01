@@ -65,6 +65,7 @@ class NotificacionAutomaticaGuardService
 
         if (
             !self::esRecordatorioAsistenciaAgenda($tipo)
+            && !self::permiteInteraccionLibreSinCancelar($tipo)
             && $telefono !== ''
             && $creada !== ''
             && self::huboInteraccionPosterior($telefono, $creada)
@@ -110,6 +111,13 @@ class NotificacionAutomaticaGuardService
         return in_array($tipo, [
             'RECORDATORIO_ASISTENCIA_AGENDA_24HS',
             'RECORDATORIO_ASISTENCIA_AGENDA_48HS'
+        ], true);
+    }
+
+    private static function permiteInteraccionLibreSinCancelar(string $tipo): bool
+    {
+        return in_array($tipo, [
+            'RECORDATORIO_PRECOTIZACION_24HS'
         ], true);
     }
 

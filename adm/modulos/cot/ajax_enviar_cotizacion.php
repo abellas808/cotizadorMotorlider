@@ -42,6 +42,31 @@ function cot_normalizar_money($valor) {
     return intval($valor);
 }
 
+function cot_obtener_parametro_sistema($grupo, $clave, $default = '')
+{
+	global $db;
+
+	$grupo = trim((string)$grupo);
+	$clave = trim((string)$clave);
+
+	if ($grupo === '' || $clave === '') {
+		return $default;
+	}
+
+	$row = $db->query_first("
+		SELECT valor
+		FROM parametros_sistema
+		WHERE grupo = '" . $db->escape($grupo) . "'
+		  AND clave = '" . $db->escape($clave) . "'
+		  AND activo = 1
+		LIMIT 1
+	");
+
+	$valor = trim((string)($row['valor'] ?? ''));
+
+	return $valor !== '' ? $valor : $default;
+}
+
 function normalizar_telefono_whatsapp($telefono)
 {
 	$telefono = trim((string)$telefono);
@@ -201,11 +226,20 @@ function enviar_whatsapp_twilio($to, $body) {
 
 function enviar_template_pretasacion_twilio($to, $bodyTexto) {
 	$url = 'https://api.twilio.com/2010-04-01/Accounts/' . TWILIO_ACCOUNT_SID . '/Messages.json';
+	$contentSid = cot_obtener_parametro_sistema(
+		'twilio',
+		'envio_pre_tasacion',
+		cot_obtener_parametro_sistema(
+			'twilio',
+			'template_pretasacion_interactiva',
+			'HX473298718a4dad72fb2e706921659a13'
+		)
+	);
 
 	$postFields = http_build_query([
 		'From' => TWILIO_WHATSAPP_FROM,
 		'To'   => $to,
-		'ContentSid' => 'HX473298718a4dad72fb2e706921659a13',
+		'ContentSid' => $contentSid,
 		'ContentVariables' => json_encode([
 			'1' => $bodyTexto
 		], JSON_UNESCAPED_UNICODE)
@@ -251,6 +285,7 @@ function enviar_template_pretasacion_twilio($to, $bodyTexto) {
 		'ok' => true,
 		'sid' => $decoded['sid'] ?? '',
 		'status' => $decoded['status'] ?? '',
+		'content_sid' => $contentSid,
 		'raw' => $response
 	];
 }
@@ -451,7 +486,8 @@ registrar_mensaje_whatsapp_backend(
 		'id_cotizacion' => intval($id),
 		'id_usuario' => intval($idUsuario),
 		'tipo_venta' => $tipoVenta,
-		'clave_plantilla' => $clavePlantilla
+		'clave_plantilla' => $clavePlantilla,
+		'content_sid' => (string)($envio['content_sid'] ?? '')
 	],
 	$idUsuario,
 	(string)($usuario['nombre'] ?? '')
