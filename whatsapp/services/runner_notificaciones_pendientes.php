@@ -527,7 +527,10 @@ while ($row = $rs->fetch_assoc()) {
 
         case 'NOTIFICACION_NO_ASISTIO_AGENDA':
 
-            $ok = TwilioMessageService::enviarTemplateNoAsistioAgenda($telefono);
+            $ok = TwilioMessageService::enviarTemplateNoAsistioAgenda(
+                $telefono,
+                $idCotizacion
+            );
 
             if ($ok) {
                 NotificacionPendienteService::marcarProcesada($id);

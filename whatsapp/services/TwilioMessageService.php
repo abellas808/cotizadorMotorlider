@@ -408,7 +408,8 @@ class TwilioMessageService
     }
 
     public static function enviarTemplateNoAsistioAgenda(
-        string $to
+        string $to,
+        ?int $idCotizacion = null
     ): bool {
         $contentSid = ParametroSistemaService::obtener(
             'twilio',
@@ -420,7 +421,8 @@ class TwilioMessageService
             $contentSid,
             [],
             'template_no_asistio_agenda',
-            '¡Hola! Noté que no asististe a tu agenda para la revisión. ¿Querés coordinar una nueva agenda?'
+            '¡Hola! Noté que no asististe a tu agenda para la revisión. ¿Querés coordinar una nueva agenda?',
+            $idCotizacion
         );
     }
 

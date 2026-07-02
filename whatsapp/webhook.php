@@ -5576,6 +5576,42 @@ if (($userState['step'] ?? '') === 'email') {
 // NO ASISTIO - RECOORDINAR O CANCELAR
 // =========================
 $buttonPayloadNoAsistio = trim((string)($_POST['ButtonPayload'] ?? ''));
+$bodyNoAsistioNorm = wa_normalizar_texto($body);
+
+if (
+    $buttonPayloadNoAsistio === ''
+    && in_array($bodyNoAsistioNorm, ['en otro momento', 'si agendar', 'si', 'agendar'], true)
+) {
+    $idCotizacionNoAsistioTexto = wa_obtener_id_cotizacion_desde_mensaje_respondido(
+        trim((string)($_POST['OriginalRepliedMessageSid'] ?? ''))
+    );
+
+    if ($idCotizacionNoAsistioTexto <= 0) {
+        $idCotizacionNoAsistioTexto = wa_obtener_id_cotizacion_ultimo_template(
+            $from,
+            'template_no_asistio_agenda'
+        );
+    }
+
+    if ($idCotizacionNoAsistioTexto <= 0) {
+        $idCotizacionNoAsistioTexto = wa_obtener_id_cotizacion_ultima_notificacion_procesada(
+            $from,
+            'NOTIFICACION_NO_ASISTIO_AGENDA'
+        );
+    }
+
+    if ($idCotizacionNoAsistioTexto > 0) {
+        $userState['id_cotizacion'] = $idCotizacionNoAsistioTexto;
+
+        if ($bodyNoAsistioNorm === 'en otro momento') {
+            $_POST['ButtonPayload'] = 'no_asistio_recoordinar_cancelar';
+            $buttonPayloadNoAsistio = 'no_asistio_recoordinar_cancelar';
+        } else {
+            $_POST['ButtonPayload'] = 'no_asistio_recoordinar_confirmar';
+            $buttonPayloadNoAsistio = 'no_asistio_recoordinar_confirmar';
+        }
+    }
+}
 
 if (
     $buttonPayloadNoAsistio === 'no_asistio_recoordinar_confirmar' ||
@@ -7041,6 +7077,110 @@ function wa_obtener_id_cotizacion_desde_mensaje_respondido(string $originalSid):
     ]);
 
     return $idCotizacion;
+}
+
+function wa_obtener_id_cotizacion_ultimo_template(string $telefono, string $origen): int
+{
+    if ($telefono === '' || $origen === '') {
+        return 0;
+    }
+
+    $cn = wa_db();
+
+    $sql = "
+        SELECT meta_json
+        FROM whatsapp_conversacion_mensajes
+        WHERE telefono = ?
+          AND direccion = 'SALIENTE'
+          AND emisor = 'BOT'
+        ORDER BY id DESC
+        LIMIT 20
+    ";
+
+    $st = $cn->prepare($sql);
+
+    if (!$st) {
+        $cn->close();
+        return 0;
+    }
+
+    $st->bind_param('s', $telefono);
+    $st->execute();
+    $rs = $st->get_result();
+
+    while ($rs && ($row = $rs->fetch_assoc())) {
+        $meta = json_decode((string)($row['meta_json'] ?? ''), true);
+        if (!is_array($meta)) {
+            continue;
+        }
+
+        if ((string)($meta['origen'] ?? '') !== $origen) {
+            continue;
+        }
+
+        $idCotizacion = intval(
+            $meta['id_cotizacion']
+            ?? $meta['id_cotizaciones_generadas']
+            ?? $meta['cotizacion_id']
+            ?? 0
+        );
+
+        if ($idCotizacion > 0) {
+            if ($rs) {
+                $rs->free();
+            }
+            $st->close();
+            $cn->close();
+            return $idCotizacion;
+        }
+    }
+
+    if ($rs) {
+        $rs->free();
+    }
+    $st->close();
+    $cn->close();
+
+    return 0;
+}
+
+function wa_obtener_id_cotizacion_ultima_notificacion_procesada(string $telefono, string $tipo): int
+{
+    if ($telefono === '' || $tipo === '') {
+        return 0;
+    }
+
+    $cn = wa_db();
+
+    $sql = "
+        SELECT id_cotizacion
+        FROM whatsapp_notificaciones_pendientes
+        WHERE telefono = ?
+          AND tipo_notificacion = ?
+          AND estado = 'PROCESADA'
+        ORDER BY fecha_procesada DESC, id DESC
+        LIMIT 1
+    ";
+
+    $st = $cn->prepare($sql);
+
+    if (!$st) {
+        $cn->close();
+        return 0;
+    }
+
+    $st->bind_param('ss', $telefono, $tipo);
+    $st->execute();
+    $rs = $st->get_result();
+    $row = $rs ? $rs->fetch_assoc() : null;
+
+    if ($rs) {
+        $rs->free();
+    }
+    $st->close();
+    $cn->close();
+
+    return intval($row['id_cotizacion'] ?? 0);
 }
 
 function wa_extraer_id_cotizacion_api(array $apiResult): int
