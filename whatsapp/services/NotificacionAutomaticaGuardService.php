@@ -117,7 +117,10 @@ class NotificacionAutomaticaGuardService
     private static function permiteInteraccionLibreSinCancelar(string $tipo): bool
     {
         return in_array($tipo, [
-            'RECORDATORIO_PRECOTIZACION_24HS'
+            'RECORDATORIO_PRECOTIZACION_24HS',
+            'RECORDATORIO_CONFIRMACION_AGENDA_3HS',
+            'RECORDATORIO_CONFIRMACION_AGENDA_10HS',
+            'ABANDONO_AGENDA_POST_RECORDATORIO_3HS'
         ], true);
     }
 
