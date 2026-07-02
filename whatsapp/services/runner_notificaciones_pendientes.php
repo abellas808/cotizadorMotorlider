@@ -529,7 +529,7 @@ while ($row = $rs->fetch_assoc()) {
 
             $ok = TwilioMessageService::enviarTemplateNoAsistioAgenda(
                 $telefono,
-                $idCotizacion
+                intval($row['id_cotizacion'] ?? 0)
             );
 
             if ($ok) {

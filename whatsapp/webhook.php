@@ -5579,7 +5579,12 @@ $buttonPayloadNoAsistio = trim((string)($_POST['ButtonPayload'] ?? ''));
 $bodyNoAsistioNorm = wa_normalizar_texto($body);
 
 if (
-    $buttonPayloadNoAsistio === ''
+    !in_array($buttonPayloadNoAsistio, [
+        'no_asistio_recoordinar_confirmar',
+        'no_asistio_confirmar',
+        'no_asistio_recoordinar_cancelar',
+        'no_asistio_cancelar'
+    ], true)
     && in_array($bodyNoAsistioNorm, ['en otro momento', 'si agendar', 'si', 'agendar'], true)
 ) {
     $idCotizacionNoAsistioTexto = wa_obtener_id_cotizacion_desde_mensaje_respondido(
