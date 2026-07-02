@@ -2785,6 +2785,25 @@ $userState = wa_get_user_data($from);
 $currentConv = wa_get_conversation($from);
 $currentEstado = (string)($currentConv['estado'] ?? 'INICIO');
 $buttonPayloadAgenda = trim((string)($_POST['ButtonPayload'] ?? ''));
+$buttonPayload = $buttonPayloadAgenda;
+
+if ($buttonPayload === '') {
+    if (wa_respuesta_tasacion_final_si($body)) {
+        $idTasacionFinalTexto = wa_obtener_id_cotizacion_ultima_tasacion_final($from);
+        if ($idTasacionFinalTexto > 0) {
+            $_POST['ButtonPayload'] = 'tasacion_finalizar_si';
+            $buttonPayload = 'tasacion_finalizar_si';
+            $buttonPayloadAgenda = 'tasacion_finalizar_si';
+        }
+    } elseif (wa_respuesta_tasacion_final_no($body)) {
+        $idTasacionFinalTexto = wa_obtener_id_cotizacion_ultima_tasacion_final($from);
+        if ($idTasacionFinalTexto > 0) {
+            $_POST['ButtonPayload'] = 'tasacion_finalizar_no';
+            $buttonPayload = 'tasacion_finalizar_no';
+            $buttonPayloadAgenda = 'tasacion_finalizar_no';
+        }
+    }
+}
 
 if (
     in_array($buttonPayloadAgenda, [
@@ -3201,7 +3220,13 @@ if (
 $stepActual = (string)($userState['step'] ?? '');
 
 if ($stepActual === 'pendiente_humano') {
-    if (wa_respuesta_es_si($body) || wa_es_agendar($body)) {
+    $esRespuestaTasacionFinal = (
+        in_array($buttonPayloadAgenda, ['tasacion_finalizar_si', 'tasacion_finalizar_no'], true)
+        || wa_respuesta_tasacion_final_si($body)
+        || wa_respuesta_tasacion_final_no($body)
+    );
+
+    if (!$esRespuestaTasacionFinal && (wa_respuesta_es_si($body) || wa_es_agendar($body))) {
 
         wa_log('PENDIENTE_HUMANO_BLOQUEADO', [
             'telefono' => $from,
