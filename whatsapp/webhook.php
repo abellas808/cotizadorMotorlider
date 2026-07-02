@@ -2430,7 +2430,7 @@ function wa_obtener_ultima_tasacion_final_mensaje(string $telefono): ?array
           AND direccion = 'SALIENTE'
           AND emisor = 'BOT'
         ORDER BY id DESC
-        LIMIT 1
+        LIMIT 20
     ";
 
     $st = $cn->prepare($sql);
@@ -2443,7 +2443,13 @@ function wa_obtener_ultima_tasacion_final_mensaje(string $telefono): ?array
     $st->execute();
 
     $rs = $st->get_result();
-    $row = $rs ? $rs->fetch_assoc() : null;
+    $rows = [];
+
+    if ($rs) {
+        while ($rowTmp = $rs->fetch_assoc()) {
+            $rows[] = $rowTmp;
+        }
+    }
 
     if ($rs) {
         $rs->free();
@@ -2452,22 +2458,36 @@ function wa_obtener_ultima_tasacion_final_mensaje(string $telefono): ?array
     $st->close();
     $cn->close();
 
+    foreach ($rows as $row) {
+        $meta = json_decode((string)($row['meta_json'] ?? ''), true);
+        if (!is_array($meta)) {
+            $meta = [];
+        }
+
+        $origen = (string)($meta['origen'] ?? '');
+
+        if ($origen === 'backend_tasacion_final') {
+            return $row;
+        }
+    }
+
+    return null;
+}
+
+function wa_obtener_id_cotizacion_ultima_tasacion_final(string $telefono): int
+{
+    $row = wa_obtener_ultima_tasacion_final_mensaje($telefono);
+
     if (!$row) {
-        return null;
+        return 0;
     }
 
     $meta = json_decode((string)($row['meta_json'] ?? ''), true);
     if (!is_array($meta)) {
-        $meta = [];
+        return 0;
     }
 
-    $origen = (string)($meta['origen'] ?? '');
-
-    if ($origen !== 'backend_tasacion_final') {
-        return null;
-    }
-
-    return $row;
+    return intval($meta['id_cotizacion'] ?? 0);
 }
 
 function wa_respuesta_tasacion_final_si(string $texto): bool
@@ -2506,6 +2526,10 @@ function wa_iniciar_rechazo_tasacion_final(
 
     if ($idCotizacion <= 0) {
         $idCotizacion = intval($conv['id_cotizacion'] ?? 0);
+    }
+
+    if ($idCotizacion <= 0) {
+        $idCotizacion = wa_obtener_id_cotizacion_ultima_tasacion_final($telefono);
     }
 
     if ($idCotizacion > 0) {
@@ -3601,6 +3625,10 @@ if ($buttonPayload === 'tasacion_finalizar_si') {
         $idCotizacion = intval($conv['id_cotizacion'] ?? 0);
     }
 
+    if ($idCotizacion <= 0) {
+        $idCotizacion = wa_obtener_id_cotizacion_ultima_tasacion_final($from);
+    }
+
     if ($idCotizacion > 0) {
         wa_marcar_cotizacion_comunicarse_cliente($idCotizacion);
     }
@@ -4056,6 +4084,15 @@ if (
     if ($buttonPayload === 'tasacion_finalizar_si') {
 
         $idCotizacion = intval($userState['id_cotizacion'] ?? 0);
+
+        if ($idCotizacion <= 0) {
+            $conv = wa_get_conversation($from);
+            $idCotizacion = intval($conv['id_cotizacion'] ?? 0);
+        }
+
+        if ($idCotizacion <= 0) {
+            $idCotizacion = wa_obtener_id_cotizacion_ultima_tasacion_final($from);
+        }
 
         if ($idCotizacion > 0) {
             wa_marcar_cotizacion_comunicarse_cliente($idCotizacion);
