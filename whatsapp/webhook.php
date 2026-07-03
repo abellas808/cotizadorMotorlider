@@ -2805,6 +2805,10 @@ if ($buttonPayload === '') {
     }
 }
 
+if (wa_procesar_respuesta_no_asistio($from, $body, $userState, $profileName)) {
+    return;
+}
+
 if (
     in_array($buttonPayloadAgenda, [
         'motivo_tasacion_final_otro_valor',
@@ -7186,6 +7190,163 @@ function wa_obtener_id_cotizacion_ultima_notificacion_procesada(string $telefono
     $cn->close();
 
     return intval($row['id_cotizacion'] ?? 0);
+}
+
+function wa_procesar_respuesta_no_asistio(
+    string $from,
+    string $body,
+    array $userState,
+    string $profileName
+): bool {
+    $buttonPayloadNoAsistio = trim((string)($_POST['ButtonPayload'] ?? ''));
+    $bodyNoAsistioNorm = wa_normalizar_texto($body);
+
+    if (
+        !in_array($buttonPayloadNoAsistio, [
+            'no_asistio_recoordinar_confirmar',
+            'no_asistio_confirmar',
+            'no_asistio_recoordinar_cancelar',
+            'no_asistio_cancelar'
+        ], true)
+        && in_array($bodyNoAsistioNorm, ['en otro momento', 'si agendar', 'si', 'agendar'], true)
+    ) {
+        $idCotizacionNoAsistioTexto = wa_obtener_id_cotizacion_desde_mensaje_respondido(
+            trim((string)($_POST['OriginalRepliedMessageSid'] ?? ''))
+        );
+
+        if ($idCotizacionNoAsistioTexto <= 0) {
+            $idCotizacionNoAsistioTexto = wa_obtener_id_cotizacion_ultimo_template(
+                $from,
+                'template_no_asistio_agenda'
+            );
+        }
+
+        if ($idCotizacionNoAsistioTexto <= 0) {
+            $idCotizacionNoAsistioTexto = wa_obtener_id_cotizacion_ultima_notificacion_procesada(
+                $from,
+                'NOTIFICACION_NO_ASISTIO_AGENDA'
+            );
+        }
+
+        if ($idCotizacionNoAsistioTexto > 0) {
+            $userState['id_cotizacion'] = $idCotizacionNoAsistioTexto;
+
+            if ($bodyNoAsistioNorm === 'en otro momento') {
+                $_POST['ButtonPayload'] = 'no_asistio_recoordinar_cancelar';
+                $buttonPayloadNoAsistio = 'no_asistio_recoordinar_cancelar';
+            } else {
+                $_POST['ButtonPayload'] = 'no_asistio_recoordinar_confirmar';
+                $buttonPayloadNoAsistio = 'no_asistio_recoordinar_confirmar';
+            }
+        }
+    }
+
+    if (
+        $buttonPayloadNoAsistio !== 'no_asistio_recoordinar_confirmar'
+        && $buttonPayloadNoAsistio !== 'no_asistio_confirmar'
+        && $buttonPayloadNoAsistio !== 'no_asistio_recoordinar_cancelar'
+        && $buttonPayloadNoAsistio !== 'no_asistio_cancelar'
+    ) {
+        return false;
+    }
+
+    $convTmp = wa_get_conversation($from);
+    $idCotizacionTmp = intval($userState['id_cotizacion'] ?? 0);
+
+    if ($idCotizacionTmp <= 0) {
+        $idCotizacionTmp = intval($convTmp['id_cotizacion'] ?? 0);
+    }
+
+    if (
+        $buttonPayloadNoAsistio === 'no_asistio_recoordinar_cancelar' ||
+        $buttonPayloadNoAsistio === 'no_asistio_cancelar'
+    ) {
+        $nuevoEstado = $userState;
+        $nuevoEstado['step'] = 'esperando_motivo_cancelacion_no_asistio';
+        $nuevoEstado['sub_step'] = 'motivo_no_agendar';
+        $nuevoEstado['id_cotizacion'] = $idCotizacionTmp;
+        $nuevoEstado['id_conversacion'] = intval($convTmp['id'] ?? 0);
+        $nuevoEstado['origen_abandono'] = 'AGENDA';
+        $nuevoEstado['motivo_base'] = 'NO_ASISTIO_AGENDA';
+
+        wa_set_user_state(
+            $from,
+            $nuevoEstado,
+            'ESPERANDO_MOTIVO_CANCELACION_AGENDA',
+            'BOT',
+            $profileName !== '' ? $profileName : null,
+            null,
+            $idCotizacionTmp > 0 ? $idCotizacionTmp : null
+        );
+
+        TwilioMessageService::enviarTemplateMotivoCancelacionAgenda($from);
+        return true;
+    }
+
+    CarritoAbandonadoService::actualizarMotivoCancelacionAgenda(
+        $idCotizacionTmp,
+        'Cliente quiere recoordinar la agenda luego de no asistir',
+        'QUIERE_RECOORDINAR_AGENDA'
+    );
+
+    $location = wa_agenda_location_id();
+    $respDisponibilidad = wa_obtener_disponibilidad_agenda($location);
+
+    if (
+        ($respDisponibilidad['codigo'] ?? 500) != 200 ||
+        empty($respDisponibilidad['availability']) ||
+        !is_array($respDisponibilidad['availability'])
+    ) {
+        twiml_message_and_save(
+            $from,
+            "En este momento no encontré días disponibles para recoordinar. Un asesor lo estará coordinando a la brevedad."
+        );
+        return true;
+    }
+
+    $opciones = [];
+    $lineas = [];
+    $fechas = $respDisponibilidad['availability'];
+    $max = min(7, count($fechas));
+
+    for ($i = 0; $i < $max; $i++) {
+        $nro = (string)($i + 1);
+        $fecha = (string)$fechas[$i]['fecha'];
+        $opciones[$nro] = ['fecha' => $fecha];
+        $lineas[] = $nro . ' = ' . wa_formatear_fecha_chat($fecha);
+    }
+
+    $nuevoEstado = $userState;
+    $nuevoEstado['step'] = 'agenda_dia';
+    $nuevoEstado['sub_step'] = 'recoordinando_no_asistio';
+    $nuevoEstado['agenda_location'] = $location;
+    $nuevoEstado['agenda_dias_opciones'] = $opciones;
+    $nuevoEstado['id_cotizacion'] = $idCotizacionTmp;
+    $nuevoEstado['origen_recoordinacion'] = 'NO_ASISTIO';
+
+    unset(
+        $nuevoEstado['agenda_fecha'],
+        $nuevoEstado['agenda_hora'],
+        $nuevoEstado['agenda_horas_opciones']
+    );
+
+    wa_set_user_state(
+        $from,
+        $nuevoEstado,
+        'QUIERE_RECOORDINAR_AGENDA',
+        'BOT',
+        $profileName !== '' ? $profileName : null,
+        null,
+        $idCotizacionTmp > 0 ? $idCotizacionTmp : null
+    );
+
+    twiml_message_and_save(
+        $from,
+        "¡Genial! Seleccioná el día que te quede mejor:\n\n"
+        . implode("\n", $lineas)
+    );
+
+    return true;
 }
 
 function wa_extraer_id_cotizacion_api(array $apiResult): int
