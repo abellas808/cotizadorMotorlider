@@ -372,7 +372,7 @@ class TwilioMessageService
             'template_motivo_recordatorio_no_agendar',
             ParametroSistemaService::obtener(
                 'twilio',
-                'template_motivo_cancelacion_agenda',
+                'motivo_recordatorio_no_agendar',
                 'HXe9db678711733da0bb008b307d9ff19c'
             )
         );
