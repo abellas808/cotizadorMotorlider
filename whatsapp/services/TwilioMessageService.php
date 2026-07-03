@@ -433,6 +433,17 @@ class TwilioMessageService
             'template_motivo_rechazo_tasacion_final'
         );
 
+        if (!$contentSid) {
+            $contentSid = ParametroSistemaService::obtener(
+                'twilio',
+                'motivo_no_agendamiento_tasacion_final'
+            );
+        }
+
+        if (!$contentSid) {
+            $contentSid = 'HXa222fc590b92c992a00799e12ddc527e';
+        }
+
         return self::enviarTemplate(
             $to,
             $contentSid,

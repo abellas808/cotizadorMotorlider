@@ -2829,7 +2829,10 @@ if (
     in_array($buttonPayloadAgenda, [
         'motivo_tasacion_final_otro_valor',
         'motivo_tasacion_final_vender_mas_adelante',
-        'motivo_tasacion_final_personales'
+        'motivo_tasacion_final_personales',
+        'motivo_no_age_tas_fin_otro_valor',
+        'motivo_no_age_tas_fin_vendere_mas_adelante',
+        'motivo_no_age_tas_fin_motivos_personales'
     ], true)
 ) {
     $conv = wa_get_conversation($from);
@@ -2844,14 +2847,17 @@ if (
 
     switch ($buttonPayloadAgenda) {
         case 'motivo_tasacion_final_otro_valor':
+        case 'motivo_no_age_tas_fin_otro_valor':
             $motivoAbandono = 'ESPERABA_OTRO_VALOR';
             break;
 
         case 'motivo_tasacion_final_vender_mas_adelante':
+        case 'motivo_no_age_tas_fin_vendere_mas_adelante':
             $motivoAbandono = 'VENDERA_MAS_ADELANTE';
             break;
 
         case 'motivo_tasacion_final_personales':
+        case 'motivo_no_age_tas_fin_motivos_personales':
             $motivoAbandono = 'MOTIVOS_PERSONALES';
             break;
     }
