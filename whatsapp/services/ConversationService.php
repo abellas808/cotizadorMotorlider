@@ -1,15 +1,3 @@
-<!-- Responsable de: -->
- <!-- crearConversacionNueva()
-obtenerConversacionActiva()
-cerrarConversacion()
-asociarCotizacion()
-actualizarEstado() -->
-
-<!-- Si empieza nuevo flujo COTIZAR, crear nueva conversación.
-Si ya existe flujo abierto sin cotización, continuar esa.
-Si la anterior tiene cotización o está cerrada, crear nueva. -->
-
-
 <?php
 
 class ConversationService

@@ -2806,7 +2806,7 @@ if ($buttonPayload === '') {
 }
 
 if (wa_procesar_respuesta_no_asistio($from, $body, $userState, $profileName)) {
-    return;
+    twiml_empty();
 }
 
 if (
