@@ -2787,7 +2787,16 @@ $currentEstado = (string)($currentConv['estado'] ?? 'INICIO');
 $buttonPayloadAgenda = trim((string)($_POST['ButtonPayload'] ?? ''));
 $buttonPayload = $buttonPayloadAgenda;
 
-if ($buttonPayload === '') {
+$stepActualInicial = (string)($userState['step'] ?? '');
+$origenRecoordinacionInicial = strtoupper(trim((string)($userState['origen_recoordinacion'] ?? '')));
+$bloquearTasacionFinalPorTexto = in_array($stepActualInicial, [
+    'agenda_dia',
+    'agenda_hora',
+    'agenda_confirmar',
+    'agenda_confirmacion_humana'
+], true) || $origenRecoordinacionInicial === 'NO_ASISTIO';
+
+if ($buttonPayload === '' && !$bloquearTasacionFinalPorTexto) {
     if (wa_respuesta_tasacion_final_si($body)) {
         $idTasacionFinalTexto = wa_obtener_id_cotizacion_ultima_tasacion_final($from);
         if ($idTasacionFinalTexto > 0) {
@@ -2803,6 +2812,13 @@ if ($buttonPayload === '') {
             $buttonPayloadAgenda = 'tasacion_finalizar_no';
         }
     }
+} elseif ($buttonPayload === '' && $bloquearTasacionFinalPorTexto && (wa_respuesta_tasacion_final_si($body) || wa_respuesta_tasacion_final_no($body))) {
+    wa_log('TASACION_FINAL_TEXTO_IGNORADO_POR_FLUJO_AGENDA', [
+        'telefono' => $from,
+        'body' => $body,
+        'step' => $stepActualInicial,
+        'origen_recoordinacion' => $origenRecoordinacionInicial
+    ]);
 }
 
 if (wa_procesar_respuesta_no_asistio($from, $body, $userState, $profileName)) {
