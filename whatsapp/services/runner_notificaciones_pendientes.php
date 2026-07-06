@@ -520,8 +520,18 @@ while ($row = $rs->fetch_assoc()) {
                 ");
             }
 
+            $okRecordatorio10Hs = TwilioMessageService::enviarTemplateRecordatorioConfirmacionAgenda10Hs($telefonoAgenda);
+
             $cnAbandonoAgenda->close();
-            NotificacionPendienteService::marcarProcesada($id);
+
+            if ($okRecordatorio10Hs) {
+                NotificacionPendienteService::marcarProcesada($id);
+            } else {
+                NotificacionPendienteService::marcarError(
+                    $id,
+                    'Error al enviar recordatorio de confirmación de agenda 10 hs'
+                );
+            }
 
             continue 2;
 
