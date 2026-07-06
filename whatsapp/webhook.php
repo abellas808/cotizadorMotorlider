@@ -5677,6 +5677,7 @@ if (
 ) {
     $convTmp = wa_get_conversation($from);
     $idCotizacionTmp = intval($userState['id_cotizacion'] ?? 0);
+    $idAgendaRecordatorioTmp = 0;
 
     if ($idCotizacionTmp <= 0) {
         $idCotizacionTmp = intval($convTmp['id_cotizacion'] ?? 0);
@@ -5782,7 +5783,9 @@ $buttonPayloadRecordatorioAgenda = trim((string)($_POST['ButtonPayload'] ?? ''))
 if (
     $buttonPayloadRecordatorioAgenda === 'recordatorio_agenda_confirmar_pendiente' ||
     $buttonPayloadRecordatorioAgenda === 'recordatorio_agenda_buscar_otro_dia' ||
-    $buttonPayloadRecordatorioAgenda === 'recordatorio_agenda_cancelar'
+    $buttonPayloadRecordatorioAgenda === 'recordatorio_agenda_cancelar' ||
+    $buttonPayloadRecordatorioAgenda === 'recordatorio_agenda_10_confirmar' ||
+    $buttonPayloadRecordatorioAgenda === 'recordatorio_agenda_10_cancelar'
 ) {
     $convTmp = wa_get_conversation($from);
 
@@ -5807,12 +5810,23 @@ if (
             $userState['id_cotizacion'] = intval($payloadRecordatorioAgenda['id_cotizacion']);
             $idCotizacionTmp = intval($payloadRecordatorioAgenda['id_cotizacion']);
         }
+
+        if (!empty($payloadRecordatorioAgenda['id_agenda'])) {
+            $idAgendaRecordatorioTmp = intval($payloadRecordatorioAgenda['id_agenda']);
+            $userState['id_agenda'] = $idAgendaRecordatorioTmp;
+        }
     }
 
     NotificacionPendienteService::cancelarPorCotizacionYTipo(
         $idCotizacionTmp,
         'ABANDONO_AGENDA_POST_RECORDATORIO_3HS',
         'Cliente respondió al recordatorio de confirmación de agenda'
+    );
+
+    NotificacionPendienteService::cancelarPorCotizacionYTipo(
+        $idCotizacionTmp,
+        'ABANDONO_RECORDATORIO_AGENDA_10HS',
+        'Cliente respondio al recordatorio de confirmacion de agenda 10 hs'
     );
 
     $userState['id_cotizacion'] = $idCotizacionTmp;
@@ -5825,7 +5839,30 @@ if (
         $buttonPayload = 'confirmar_agenda_final';
     }
 
-    if ($buttonPayloadRecordatorioAgenda === 'recordatorio_agenda_buscar_otro_dia') {
+    if (
+        $buttonPayloadRecordatorioAgenda === 'recordatorio_agenda_buscar_otro_dia' ||
+        $buttonPayloadRecordatorioAgenda === 'recordatorio_agenda_10_confirmar'
+    ) {
+
+        if (
+            $buttonPayloadRecordatorioAgenda === 'recordatorio_agenda_10_confirmar' &&
+            $idAgendaRecordatorioTmp > 0
+        ) {
+            try {
+                wa_marcar_confirmacion_agenda(
+                    $idAgendaRecordatorioTmp,
+                    'NO',
+                    'Cancelada para recoordinar desde recordatorio de agenda 10 hs'
+                );
+            } catch (Throwable $e) {
+                wa_log('AGENDA_10_RECOORDINAR_CANCELAR_ACTUAL_ERROR', [
+                    'from' => $from,
+                    'id_agenda' => $idAgendaRecordatorioTmp,
+                    'id_cotizacion' => $idCotizacionTmp,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
 
         $location = wa_agenda_location_id();
         $respDisponibilidad = wa_obtener_disponibilidad_agenda($location);
@@ -5890,12 +5927,39 @@ if (
         return;
     }
 
-    if ($buttonPayloadRecordatorioAgenda === 'recordatorio_agenda_cancelar') {
+    if (
+        $buttonPayloadRecordatorioAgenda === 'recordatorio_agenda_cancelar' ||
+        $buttonPayloadRecordatorioAgenda === 'recordatorio_agenda_10_cancelar'
+    ) {
         $idConversacionTmp = intval($convTmp['id'] ?? 0);
+        $esCancelacionRecordatorio10hs = ($buttonPayloadRecordatorioAgenda === 'recordatorio_agenda_10_cancelar');
+        $puntoAbandonoRecordatorio = $esCancelacionRecordatorio10hs
+            ? 'NO_CONFIRMA_AGENDA'
+            : 'NO_CONFIRMACION_AGENDA_AUTO';
+        $mensajeCancelacionRecordatorio = $esCancelacionRecordatorio10hs
+            ? 'Cliente cancelo agenda desde recordatorio de agenda 10 hs'
+            : 'Cliente cancelo la agenda desde un recordatorio';
+
+        if ($esCancelacionRecordatorio10hs && $idAgendaRecordatorioTmp > 0) {
+            try {
+                wa_marcar_confirmacion_agenda(
+                    $idAgendaRecordatorioTmp,
+                    'NO',
+                    'Cancelada por cliente desde recordatorio de agenda 10 hs'
+                );
+            } catch (Throwable $e) {
+                wa_log('AGENDA_10_CANCELAR_ACTUAL_ERROR', [
+                    'from' => $from,
+                    'id_agenda' => $idAgendaRecordatorioTmp,
+                    'id_cotizacion' => $idCotizacionTmp,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        }
         $carritoPreparado = CarritoAbandonadoService::actualizarMotivoCancelacionAgenda(
             $idCotizacionTmp,
-            'Cliente canceló la agenda desde un recordatorio',
-            'NO_CONFIRMACION_AGENDA_AUTO'
+            $mensajeCancelacionRecordatorio,
+            $puntoAbandonoRecordatorio
         );
 
         if (
@@ -5903,7 +5967,7 @@ if (
             !$carritoPreparado &&
             !CarritoAbandonadoService::existePendiente(
                 $idCotizacionTmp,
-                'NO_CONFIRMACION_AGENDA_AUTO',
+                $puntoAbandonoRecordatorio,
                 'AGENDA'
             )
         ) {
@@ -5911,25 +5975,29 @@ if (
                 $idCotizacionTmp,
                 $idConversacionTmp,
                 $from,
-                'Cliente canceló la agenda desde un recordatorio',
-                'NO_CONFIRMACION_AGENDA_AUTO',
+                $mensajeCancelacionRecordatorio,
+                $puntoAbandonoRecordatorio,
                 'AGENDA',
                 'Alan'
             );
         }
 
         $nuevoEstado = $userState;
-        $nuevoEstado['step'] = 'esperando_motivo_no_confirmacion_agenda';
+        $nuevoEstado['step'] = $esCancelacionRecordatorio10hs
+            ? 'esperando_motivo_cancelacion_agenda'
+            : 'esperando_motivo_no_confirmacion_agenda';
         $nuevoEstado['sub_step'] = 'motivo_no_agendar';
         $nuevoEstado['id_cotizacion'] = $idCotizacionTmp;
         $nuevoEstado['id_conversacion'] = intval($convTmp['id'] ?? 0);
         $nuevoEstado['origen_abandono'] = 'AGENDA';
-        $nuevoEstado['motivo_base'] = 'NO_CONFIRMACION_AGENDA_AUTO';
+        $nuevoEstado['motivo_base'] = $puntoAbandonoRecordatorio;
 
         wa_set_user_state(
             $from,
             $nuevoEstado,
-            'ESPERANDO_MOTIVO_NO_CONFIRMACION_AGENDA',
+            $esCancelacionRecordatorio10hs
+                ? 'ESPERANDO_MOTIVO_CANCELACION_AGENDA'
+                : 'ESPERANDO_MOTIVO_NO_CONFIRMACION_AGENDA',
             'BOT',
             $profileName !== '' ? $profileName : null,
             null,
@@ -6616,10 +6684,11 @@ function wa_obtener_payload_ultimo_recordatorio_agenda(int $idCotizacion): array
     $cn = wa_db();
 
     $sql = "
-        SELECT payload_json
+        SELECT id_agenda, tipo_notificacion, payload_json
         FROM whatsapp_notificaciones_pendientes
         WHERE id_cotizacion = " . intval($idCotizacion) . "
         AND tipo_notificacion IN (
+            'ABANDONO_RECORDATORIO_AGENDA_10HS',
             'RECORDATORIO_CONFIRMACION_AGENDA_10HS',
             'RECORDATORIO_CONFIRMACION_AGENDA_3HS'
         )
@@ -6638,7 +6707,19 @@ function wa_obtener_payload_ultimo_recordatorio_agenda(int $idCotizacion): array
 
     $payload = json_decode($row['payload_json'], true);
 
-    return is_array($payload) ? $payload : [];
+    if (!is_array($payload)) {
+        return [];
+    }
+
+    if (!empty($row['id_agenda'])) {
+        $payload['id_agenda'] = intval($row['id_agenda']);
+    }
+
+    if (!empty($row['tipo_notificacion'])) {
+        $payload['tipo_notificacion'] = (string)$row['tipo_notificacion'];
+    }
+
+    return $payload;
 }
 
 function wa_marcar_cotizacion_comunicarse_cliente(int $idCotizacion): bool
