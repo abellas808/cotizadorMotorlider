@@ -50,7 +50,7 @@ function ca_badge_punto_abandono($punto) {
             break;
 
         case 'TASACION_FINAL_RECHAZADA':
-            $clase = 'ca-badge-fucsia';
+            $clase = 'ca-badge-naranja';
             break;
 
         case 'NO_RESPONDE_TASACION_FINAL':

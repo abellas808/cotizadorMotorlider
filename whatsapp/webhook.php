@@ -2522,7 +2522,12 @@ function wa_iniciar_rechazo_tasacion_final(
 ): void {
     $conv = wa_get_conversation($telefono);
     $idConversacion = intval($conv['id'] ?? 0);
-    $idCotizacion = intval($userState['id_cotizacion'] ?? 0);
+    $originalSid = trim((string)($_POST['OriginalRepliedMessageSid'] ?? ''));
+    $idCotizacion = wa_obtener_id_cotizacion_desde_mensaje_respondido($originalSid);
+
+    if ($idCotizacion <= 0) {
+        $idCotizacion = intval($userState['id_cotizacion'] ?? 0);
+    }
 
     if ($idCotizacion <= 0) {
         $idCotizacion = intval($conv['id_cotizacion'] ?? 0);
@@ -2533,6 +2538,13 @@ function wa_iniciar_rechazo_tasacion_final(
     }
 
     if ($idCotizacion > 0) {
+        wa_log('TASACION_FINAL_RECHAZADA_COTIZACION_RESUELTA', [
+            'telefono' => $telefono,
+            'id_cotizacion' => $idCotizacion,
+            'original_sid' => $originalSid,
+            'id_conversacion' => $idConversacion
+        ]);
+
         $cnEstado = wa_db();
         $cnEstado->query("
             UPDATE cotizaciones_generadas
@@ -2546,21 +2558,15 @@ function wa_iniciar_rechazo_tasacion_final(
         ");
         $cnEstado->close();
 
-        if (!CarritoAbandonadoService::existePendiente(
+        CarritoAbandonadoService::registrar(
             $idCotizacion,
+            $idConversacion,
+            $telefono,
+            'Cliente respondió: Por ahora no',
             'TASACION_FINAL_RECHAZADA',
-            'TASACION_FINAL'
-        )) {
-            CarritoAbandonadoService::registrar(
-                $idCotizacion,
-                $idConversacion,
-                $telefono,
-                'Cliente respondió: Por ahora no',
-                'TASACION_FINAL_RECHAZADA',
-                'TASACION_FINAL',
-                'Alan'
-            );
-        }
+            'TASACION_FINAL',
+            'Alan'
+        );
     }
 
     NotificacionPendienteService::cancelarPorCotizacionYTipo(
