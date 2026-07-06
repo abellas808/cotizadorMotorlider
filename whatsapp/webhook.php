@@ -4199,7 +4199,13 @@ if (
 // =========================
 // MODO HUMANO / HÍBRIDO
 // =========================
-if (in_array($currentEstado, ['PENDIENTE_RESPUESTA_HUMANA', 'HUMANO_EN_CONVERSACION'], true)) {
+$stepModoHumano = trim((string)($userState['step'] ?? ''));
+$modoHumanoPuedeIntervenir = ($stepModoHumano === '' || $stepModoHumano === 'cerrado');
+
+if (
+    in_array($currentEstado, ['PENDIENTE_RESPUESTA_HUMANA', 'HUMANO_EN_CONVERSACION'], true)
+    && $modoHumanoPuedeIntervenir
+) {
 
     
     try {
