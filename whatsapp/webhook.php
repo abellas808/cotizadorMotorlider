@@ -5609,8 +5609,27 @@ if (($userState['step'] ?? '') === 'email') {
 // =========================
 $buttonPayloadNoAsistio = trim((string)($_POST['ButtonPayload'] ?? ''));
 $bodyNoAsistioNorm = wa_normalizar_texto($body);
+$stepNoAsistioActual = trim((string)($userState['step'] ?? ''));
+$puedeInferirNoAsistioPorTexto = !in_array($stepNoAsistioActual, [
+    'marca',
+    'modelo',
+    'anio',
+    'km',
+    'version_sugerida',
+    'ficha_oficial',
+    'duenios',
+    'tipo_venta',
+    'valor_pretendido',
+    'email',
+    'agenda_dia',
+    'agenda_hora',
+    'agenda_confirmar',
+    'agenda_confirmacion_humana',
+], true);
 
 if (
+    $puedeInferirNoAsistioPorTexto
+    &&
     !in_array($buttonPayloadNoAsistio, [
         'no_asistio_recoordinar_confirmar',
         'no_asistio_confirmar',
@@ -7240,8 +7259,27 @@ function wa_procesar_respuesta_no_asistio(
 ): bool {
     $buttonPayloadNoAsistio = trim((string)($_POST['ButtonPayload'] ?? ''));
     $bodyNoAsistioNorm = wa_normalizar_texto($body);
+    $stepNoAsistioActual = trim((string)($userState['step'] ?? ''));
+    $puedeInferirNoAsistioPorTexto = !in_array($stepNoAsistioActual, [
+        'marca',
+        'modelo',
+        'anio',
+        'km',
+        'version_sugerida',
+        'ficha_oficial',
+        'duenios',
+        'tipo_venta',
+        'valor_pretendido',
+        'email',
+        'agenda_dia',
+        'agenda_hora',
+        'agenda_confirmar',
+        'agenda_confirmacion_humana',
+    ], true);
 
     if (
+        $puedeInferirNoAsistioPorTexto
+        &&
         !in_array($buttonPayloadNoAsistio, [
             'no_asistio_recoordinar_confirmar',
             'no_asistio_confirmar',
