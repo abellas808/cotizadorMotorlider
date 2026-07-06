@@ -6453,6 +6453,18 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
     $modelo = (string)($contexto['familia'] ?? '');
     $anio = (string)($contexto['anio'] ?? '');
     $auto = (string)($contexto['auto'] ?? '');
+    // Email requerido por el WS de agenda. No modifica la lista interna de destinatarios
+    // de MailService; solo evita que scheduleInspection rechace por "Datos incompletos".
+    $emailWsAgenda = trim((string)($conv['email'] ?? ''));
+    if (!is_valid_email_simple($emailWsAgenda)) {
+        $emailWsAgenda = trim((string)($contexto['email'] ?? ''));
+    }
+    if (!is_valid_email_simple($emailWsAgenda)) {
+        $emailWsAgenda = trim((string)($contexto['agenda_email'] ?? ''));
+    }
+    if (!is_valid_email_simple($emailWsAgenda)) {
+        $emailWsAgenda = 'info@motorlider.com.uy';
+    }
 
     $payload = [
         'location' => $location,
@@ -6464,7 +6476,7 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
         'familia' => $modelo,
         'auto' => $auto,
         'nombre' => (string)($conv['nombre'] ?? ($profileName !== '' ? $profileName : 'Cliente WhatsApp')),
-        'email' => (string)($conv['email'] ?? ''),
+        'email' => $emailWsAgenda,
         'telefono' => $from,
         'id_cotizacion' => $idCotizacion
     ];
