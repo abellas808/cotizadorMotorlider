@@ -2796,6 +2796,20 @@ $buttonPayload = $buttonPayloadAgenda;
 $stepActualInicial = (string)($userState['step'] ?? '');
 $origenRecoordinacionInicial = strtoupper(trim((string)($userState['origen_recoordinacion'] ?? '')));
 $bloquearTasacionFinalPorTexto = in_array($stepActualInicial, [
+    'marca',
+    'marca_sugerida',
+    'modelo',
+    'modelo_sugerido',
+    'anio',
+    'km',
+    'version_opcion',
+    'version',
+    'version_sugerida',
+    'ficha_oficial',
+    'duenios',
+    'tipo_venta',
+    'valor_pretendido',
+    'email',
     'agenda_dia',
     'agenda_hora',
     'agenda_confirmar',
@@ -5618,9 +5632,13 @@ $bodyNoAsistioNorm = wa_normalizar_texto($body);
 $stepNoAsistioActual = trim((string)($userState['step'] ?? ''));
 $puedeInferirNoAsistioPorTexto = !in_array($stepNoAsistioActual, [
     'marca',
+    'marca_sugerida',
     'modelo',
+    'modelo_sugerido',
     'anio',
     'km',
+    'version_opcion',
+    'version',
     'version_sugerida',
     'ficha_oficial',
     'duenios',
@@ -7349,9 +7367,13 @@ function wa_procesar_respuesta_no_asistio(
     $stepNoAsistioActual = trim((string)($userState['step'] ?? ''));
     $puedeInferirNoAsistioPorTexto = !in_array($stepNoAsistioActual, [
         'marca',
+        'marca_sugerida',
         'modelo',
+        'modelo_sugerido',
         'anio',
         'km',
+        'version_opcion',
+        'version',
         'version_sugerida',
         'ficha_oficial',
         'duenios',
