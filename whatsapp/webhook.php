@@ -2928,12 +2928,15 @@ if (
     return;
 }
 
-if (
-    $buttonPayloadAgenda === 'recordatorio_tasacion_final_avanzar' ||
-    $buttonPayloadAgenda === 'recordatorio_tasacion_final_por_ahora_no'
-) {
+if (in_array($buttonPayloadAgenda, [
+    'recordatorio_tasacion_final_avanzar',
+    'recordatorio_tasacion_final_por_ahora_no',
+    'recordatorio_tasacion_final_24hs_avanzar',
+    'recordatorio_tasacion_final_24hs_no_avanzar',
+], true)) {
     $convRecordatorio = wa_get_conversation($from);
-    $idCotizacionRecordatorio = intval($userState['id_cotizacion'] ?? 0);
+    $userStateRecordatorio = (isset($userState) && is_array($userState)) ? $userState : [];
+    $idCotizacionRecordatorio = intval($userStateRecordatorio['id_cotizacion'] ?? 0);
 
     if ($idCotizacionRecordatorio <= 0) {
         $idCotizacionRecordatorio = intval($convRecordatorio['id_cotizacion'] ?? 0);
@@ -2945,12 +2948,17 @@ if (
         'Cliente respondió al recordatorio de tasación final'
     );
 
-    if ($buttonPayloadAgenda === 'recordatorio_tasacion_final_avanzar') {
+    if (in_array($buttonPayloadAgenda, [
+        'recordatorio_tasacion_final_avanzar',
+        'recordatorio_tasacion_final_24hs_avanzar',
+    ], true)) {
         $_POST['ButtonPayload'] = 'tasacion_finalizar_si';
         $buttonPayload = 'tasacion_finalizar_si';
+        $buttonPayloadAgenda = 'tasacion_finalizar_si';
     } else {
         $_POST['ButtonPayload'] = 'tasacion_finalizar_no';
         $buttonPayload = 'tasacion_finalizar_no';
+        $buttonPayloadAgenda = 'tasacion_finalizar_no';
     }
 }
 
@@ -3702,6 +3710,7 @@ if ($buttonPayload === 'tasacion_finalizar_si') {
 
     if ($idCotizacion > 0) {
         wa_marcar_cotizacion_comunicarse_cliente($idCotizacion);
+        wa_marcar_cotizacion_avanzo($idCotizacion);
     }
 
     $userState['step'] = 'pendiente_humano';
@@ -4167,6 +4176,7 @@ if (
 
         if ($idCotizacion > 0) {
             wa_marcar_cotizacion_comunicarse_cliente($idCotizacion);
+            wa_marcar_cotizacion_avanzo($idCotizacion);
         }
 
         NotificacionPendienteService::cancelarPorCotizacionYTipo(
@@ -6791,6 +6801,54 @@ function wa_marcar_cotizacion_comunicarse_cliente(int $idCotizacion): bool
             'id_cotizacion' => $idCotizacion,
             'estado_id' => $estadoId,
             'estado' => $estado
+        ]);
+    }
+
+    $st->close();
+    $cn->close();
+
+    return $ok;
+}
+
+function wa_marcar_cotizacion_avanzo(int $idCotizacion): bool
+{
+    if ($idCotizacion <= 0) {
+        return false;
+    }
+
+    $cn = wa_db();
+
+    $sql = "
+        UPDATE cotizaciones_generadas
+        SET avanzo = 1,
+            fecha_avanzo = NOW(),
+            fecha_mod = NOW()
+        WHERE id_cotizaciones_generadas = ?
+        LIMIT 1
+    ";
+
+    $st = $cn->prepare($sql);
+
+    if (!$st) {
+        wa_log('COTIZACION_AVANZO_PREPARE_ERROR', [
+            'id_cotizacion' => $idCotizacion,
+            'error' => $cn->error
+        ]);
+        $cn->close();
+        return false;
+    }
+
+    $st->bind_param('i', $idCotizacion);
+    $ok = $st->execute();
+
+    if (!$ok) {
+        wa_log('COTIZACION_AVANZO_UPDATE_ERROR', [
+            'id_cotizacion' => $idCotizacion,
+            'error' => $st->error
+        ]);
+    } else {
+        wa_log('COTIZACION_AVANZO_UPDATE_OK', [
+            'id_cotizacion' => $idCotizacion
         ]);
     }
 

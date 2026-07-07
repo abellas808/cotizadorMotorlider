@@ -467,8 +467,7 @@ class TwilioMessageService
             $to,
             $contentSid,
             [
-                '1' => $nombre,
-                '2' => $vehiculo
+                '1' => $nombre
             ],
             'template_recordatorio_tasacion_final_24hs',
             "Recordatorio 24 hs de tasación final para {$nombre} - {$vehiculo}"
