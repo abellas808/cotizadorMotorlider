@@ -1119,6 +1119,43 @@ function wa_get_parametro_sistema(string $grupo, string $clave): ?string
     return $row ? (string)$row['valor'] : null;
 }
 
+function wa_registrar_abandono_pretasacion_y_cancelar_notificaciones(
+    int $idCotizacion,
+    int $idConversacion,
+    string $telefono,
+    string $mensajeCliente
+): void {
+    if ($idCotizacion <= 0) {
+        return;
+    }
+
+    $mensaje = trim($mensajeCliente);
+    if ($mensaje === '') {
+        $mensaje = 'Cliente respondiÃ³ que no quiere agendar';
+    }
+
+    if (!CarritoAbandonadoService::existePendiente(
+        $idCotizacion,
+        'NO_AGENDA_REVISION',
+        'PRETASACION'
+    )) {
+        CarritoAbandonadoService::registrar(
+            $idCotizacion,
+            $idConversacion,
+            $telefono,
+            $mensaje,
+            'NO_AGENDA_REVISION',
+            'PRETASACION',
+            'Alan'
+        );
+    }
+
+    NotificacionPendienteService::cancelarPendientesPorCotizacion(
+        $idCotizacion,
+        'Cliente respondiÃ³ que por ahora no quiere agendar'
+    );
+}
+
 
 
 function wa_obtener_agenda_pendiente_confirmacion(string $telefono): ?array
@@ -3359,8 +3396,16 @@ if (
             $idCotizacion = intval($conv['id_cotizacion'] ?? 0);
         }
 
+        wa_registrar_abandono_pretasacion_y_cancelar_notificaciones(
+            $idCotizacion,
+            $idConversacion,
+            $from,
+            $body !== '' ? $body : 'Cliente respondio que no quiere agendar'
+        );
+
         if (
-            $idCotizacion > 0
+            false
+            && $idCotizacion > 0
             && !CarritoAbandonadoService::existePendiente(
                 $idCotizacion,
                 'NO_AGENDA_REVISION',
@@ -3440,24 +3485,12 @@ if ($payload === 'precotizacion_no_agendar') {
         $idCotizacion = intval($conv['id_cotizacion'] ?? 0);
     }
 
-    if (
-        $idCotizacion > 0
-        && !CarritoAbandonadoService::existePendiente(
-            $idCotizacion,
-            'NO_AGENDA_REVISION',
-            'PRETASACION'
-        )
-    ) {
-        CarritoAbandonadoService::registrar(
+        wa_registrar_abandono_pretasacion_y_cancelar_notificaciones(
             $idCotizacion,
             $idConversacion,
             $from,
-            'Cliente respondiÃ³ que no quiere agendar',
-            'NO_AGENDA_REVISION',
-            'PRETASACION',
-            'Alan'
+            'Cliente respondiÃ³ que no quiere agendar'
         );
-    }
 
     NotificacionPendienteService::cancelarPorCotizacionYTipo(
         $idCotizacion,
@@ -3882,8 +3915,17 @@ Te estaremos enviando un recordatorio antes de la inspección."
             $idCotizacion = intval($contexto['id_cotizaciones_generadas'] ?? 0);
         }
 
+        $mensajeCliente = trim((string)$body);
+
+        wa_registrar_abandono_pretasacion_y_cancelar_notificaciones(
+            $idCotizacion,
+            $idConversacion,
+            $from,
+            $mensajeCliente !== '' ? $mensajeCliente : 'Cliente cancelo la agenda respondiendo NO por WhatsApp'
+        );
+
         if ($idCotizacion > 0) {
-            if (!CarritoAbandonadoService::existePendiente(
+            if (false && !CarritoAbandonadoService::existePendiente(
                 $idCotizacion,
                 'NO_CONFIRMACION_AGENDA',
                 'AGENDA'
@@ -3932,20 +3974,20 @@ Te estaremos enviando un recordatorio antes de la inspección."
         $nuevoEstado['sub_step'] = 'motivo_no_agendar';
         $nuevoEstado['id_cotizacion'] = $idCotizacion;
         $nuevoEstado['id_conversacion'] = $idConversacion;
-        $nuevoEstado['origen_abandono'] = 'AGENDA';
-        $nuevoEstado['motivo_base'] = 'NO_CONFIRMACION_AGENDA';
+        $nuevoEstado['origen_abandono'] = 'PRETASACION';
+        $nuevoEstado['motivo_base'] = 'NO_AGENDA_REVISION';
 
         wa_set_user_state(
             $from,
             $nuevoEstado,
-            'ESPERANDO_MOTIVO_CANCELACION_AGENDA',
+            'ESPERANDO_MOTIVO_NO_AGENDAR_PRE_COTIZACION',
             'BOT',
             $profileName !== '' ? $profileName : null,
             null,
             $idCotizacion > 0 ? $idCotizacion : null
         );
 
-        TwilioMessageService::enviarTemplateMotivoCancelacionAgenda($from);
+        TwilioMessageService::enviarTemplateMotivoNoAgendar($from);
 
         return;
     }
@@ -4015,6 +4057,11 @@ if ($esCancelacionResumenAgenda) {
 
         $cnEstado = wa_db();
 
+        NotificacionPendienteService::cancelarPendientesPorCotizacion(
+            $idCotizacion,
+            'Cliente cancelo la agenda desde el resumen de confirmacion'
+        );
+
         $stEstado = $cnEstado->prepare("
             UPDATE cotizaciones_generadas
             SET
@@ -4060,7 +4107,7 @@ if ($esCancelacionResumenAgenda) {
         $idCotizacion > 0 ? $idCotizacion : null
     );
 
-    TwilioMessageService::enviarTemplateMotivoCancelacionAgenda($from);
+    TwilioMessageService::enviarTemplateMotivoNoAgendar($from);
 
     return;
 }
@@ -6183,6 +6230,11 @@ if (($userState['step'] ?? '') === 'agenda_hora') {
                 'PRETASACION',
                 'Alan'
             );
+
+            NotificacionPendienteService::cancelarPendientesPorCotizacion(
+                $idCotizacionCancelada,
+                'Cliente cancelo la agenda durante la seleccion de horario'
+            );
         }
 
         $nuevoEstado = $userState;
@@ -6203,7 +6255,7 @@ if (($userState['step'] ?? '') === 'agenda_hora') {
             $idCotizacionCancelada > 0 ? $idCotizacionCancelada : null
         );
 
-        TwilioMessageService::enviarTemplateMotivoCancelacionAgenda($from);
+        TwilioMessageService::enviarTemplateMotivoNoAgendar($from);
 
         return;
     }
@@ -6465,6 +6517,11 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
             $idCotizacionCancelada > 0 ? $idCotizacionCancelada : null
         );
 
+        NotificacionPendienteService::cancelarPendientesPorCotizacion(
+            $idCotizacionCancelada,
+            'Cliente cancelo agenda antes del recordatorio'
+        );
+
         NotificacionPendienteService::cancelarPorCotizacionYTipo(
             $idCotizacionCancelada,
             'RECORDATORIO_CONFIRMACION_AGENDA_10HS',
@@ -6477,7 +6534,7 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
             'Cliente canceló agenda antes del recordatorio'
         );
 
-        TwilioMessageService::enviarTemplateMotivoCancelacionAgenda($from);
+        TwilioMessageService::enviarTemplateMotivoNoAgendar($from);
 
         return;
     }

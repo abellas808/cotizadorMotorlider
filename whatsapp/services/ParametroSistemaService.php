@@ -12,6 +12,7 @@ class ParametroSistemaService
             WHERE grupo = ?
               AND clave = ?
               AND activo = 1
+            ORDER BY updated_at DESC, id DESC
             LIMIT 1
         ";
 

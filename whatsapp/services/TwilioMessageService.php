@@ -312,7 +312,8 @@ class TwilioMessageService
     {
         $contentSid = ParametroSistemaService::obtener(
             'twilio',
-            'template_motivo_no_agendar'
+            'template_motivo_no_agendar',
+            'HX578d07078681762f7a5074189edb69a1'
         );
 
         return self::enviarTemplate(
