@@ -31,6 +31,32 @@ function j($a) {
 	exit;
 }
 
+function cancelar_notificaciones_pendientes_cotizacion($idCotizacion, $observacion)
+{
+	global $db;
+
+	$idCotizacion = intval($idCotizacion);
+	if ($idCotizacion <= 0) {
+		return false;
+	}
+
+	$observacionEsc = $db->escape((string)$observacion);
+
+	return (bool)$db->query("
+		UPDATE whatsapp_notificaciones_pendientes
+		SET
+			estado = 'CANCELADA',
+			fecha_procesada = NOW(),
+			observaciones = CONCAT(
+				IFNULL(observaciones, ''),
+				IF(IFNULL(observaciones, '') = '', '', CHAR(10)),
+				'{$observacionEsc}'
+			)
+		WHERE id_cotizacion = {$idCotizacion}
+		  AND estado = 'PENDIENTE'
+	");
+}
+
 function normalizar_telefono_whatsapp($telefono)
 {
 	$telefono = trim((string)$telefono);
@@ -343,9 +369,15 @@ $db->query("
 	LIMIT 1
 ");
 
+$notificacionesCanceladas = cancelar_notificaciones_pendientes_cotizacion(
+	intval($id),
+	'Kill switch: cotización rechazada manualmente desde administración.'
+);
+
 j([
 	'ok' => true,
 	'mensaje' => 'Mensaje de rechazo enviado correctamente por WhatsApp.',
 	'whatsapp_sid' => $envio['sid'] ?? '',
-	'id_conversacion' => $idConversacion
+	'id_conversacion' => $idConversacion,
+	'notificaciones_canceladas' => $notificacionesCanceladas
 ]);
