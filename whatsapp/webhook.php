@@ -3710,7 +3710,6 @@ if ($buttonPayload === 'tasacion_finalizar_si') {
 
     if ($idCotizacion > 0) {
         wa_marcar_cotizacion_comunicarse_cliente($idCotizacion);
-        wa_marcar_cotizacion_avanzo($idCotizacion);
     }
 
     $userState['step'] = 'pendiente_humano';
@@ -4176,7 +4175,6 @@ if (
 
         if ($idCotizacion > 0) {
             wa_marcar_cotizacion_comunicarse_cliente($idCotizacion);
-            wa_marcar_cotizacion_avanzo($idCotizacion);
         }
 
         NotificacionPendienteService::cancelarPorCotizacionYTipo(
