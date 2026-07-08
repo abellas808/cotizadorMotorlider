@@ -310,7 +310,10 @@ class TwilioMessageService
 
     public static function enviarTemplateMotivoNoAgendar(string $to): bool
     {
-        $contentSid = 'HX578d07078681762f7a5074189edb69a1';
+        $contentSid = ParametroSistemaService::obtener(
+            'twilio',
+            'template_motivo_no_agendar'
+        );
 
         return self::enviarTemplate(
             $to,
