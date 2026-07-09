@@ -14,13 +14,55 @@ if (!isset($config['db_tablePrefix'])) {
 
 require_once(__DIR__ . '/../../includes/database.php');
 require_once(__DIR__ . '/../../includes/funciones.php');
-require_once(__DIR__ . '/../../../whatsapp/services/NotificacionPendienteService.php');
+require_once(__DIR__ . '/../../../whatsapp/services/ParametroSistemaService.php');
+require_once(__DIR__ . '/../../../whatsapp/services/TwilioMessageService.php');
 
 session_start();
 
 header('Content-Type: application/json; charset=utf-8');
 
 global $db;
+
+if (!function_exists('wa_db')) {
+    function wa_db(): mysqli
+    {
+        global $config;
+
+        mysqli_report(MYSQLI_REPORT_OFF);
+
+        $cn = new mysqli(
+            (string)$config['db_server'],
+            (string)$config['db_user'],
+            (string)$config['db_pass'],
+            (string)$config['db_database']
+        );
+
+        if ($cn->connect_errno) {
+            throw new RuntimeException('Error conexión MySQL: ' . $cn->connect_error);
+        }
+
+        $cn->set_charset('utf8mb4');
+
+        return $cn;
+    }
+}
+
+if (!function_exists('wa_log')) {
+    function wa_log(string $tag, array $data = []): void
+    {
+        $dir = __DIR__ . '/../../../whatsapp/logs';
+
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0775, true);
+        }
+
+        @file_put_contents(
+            $dir . '/ajax_marcar_no_asistio_' . date('Ymd') . '.log',
+            date('Y-m-d H:i:s') . " [{$tag}] " . json_encode($data, JSON_UNESCAPED_UNICODE) . PHP_EOL,
+            FILE_APPEND
+        );
+    }
+}
 
 function j($a) {
     if (ob_get_length()) {
@@ -133,6 +175,21 @@ if (!$okEstado) {
     ]);
 }
 
+$db->query("
+    UPDATE carrito_abandonado
+    SET
+        estado = 'CERRADO',
+        fecha_ultima_gestion = NOW(),
+        usuario_ultima_gestion = '" . $db->escape($nombreUsuario) . "',
+        observaciones = CONCAT(
+            IFNULL(observaciones, ''),
+            IF(IFNULL(observaciones, '') = '', '', '\n'),
+            'Cerrado automáticamente: la cotización pasó al punto final NO_ASISTIO_AGENDA.'
+        )
+    WHERE id_cotizacion = " . intval($idCotizacion) . "
+      AND estado = 'PENDIENTE'
+");
+
 $sqlCarrito = "
     INSERT INTO carrito_abandonado
     (
@@ -238,6 +295,18 @@ if ($conversacion) {
         LIMIT 1
     ");
 }
+
+$mensajeEnviado = TwilioMessageService::enviarTemplateNoAsistioAgenda(
+    $telefono,
+    $idCotizacion
+);
+
+j([
+    'ok' => true,
+    'mensaje' => $mensajeEnviado
+        ? 'Cotizacion marcada como NO_ASISTIO, enviada a carritos abandonados y mensaje de re-coordinacion enviado.'
+        : 'Cotizacion marcada como NO_ASISTIO y enviada a carritos abandonados, pero no se pudo enviar el mensaje de re-coordinacion.'
+]);
 
 $notificacionCreada = NotificacionPendienteService::crear(
     $idCotizacion,

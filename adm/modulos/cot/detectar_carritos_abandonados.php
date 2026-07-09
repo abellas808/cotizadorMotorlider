@@ -163,7 +163,7 @@ while ($regla = $db->fetch_array($reglas)) {
               SELECT 1
               FROM carrito_abandonado ca
               WHERE ca.id_cotizacion = c.id_cotizaciones_generadas
-                AND ca.motivo_abandono = '" . esc($motivoAbandono) . "'
+                AND ca.estado = 'PENDIENTE'
           )
 
         ORDER BY c.id_cotizaciones_generadas ASC
@@ -306,7 +306,7 @@ $sqlAgendaPendiente = "
           SELECT 1
           FROM carrito_abandonado ca
           WHERE ca.id_cotizacion = wc.id_cotizacion
-            AND ca.motivo_abandono = 'NO_CONFIRMACION_AGENDA'
+            AND ca.estado = 'PENDIENTE'
       )
 ";
 

@@ -152,7 +152,7 @@ $sql = "
           SELECT 1
           FROM carrito_abandonado ca
           WHERE ca.id_cotizacion = a.id_cotizacion
-            AND ca.motivo_abandono = 'NO_RESPONDE_RECORDATORIO_AGENDA'
+            AND ca.estado = 'PENDIENTE'
       )
 
     ORDER BY n.fecha_envio ASC
@@ -203,7 +203,7 @@ while ($row = $db->fetch_array($rs)) {
         SELECT id
         FROM carrito_abandonado
         WHERE id_cotizacion = " . intval($idCotizacion) . "
-          AND motivo_abandono = 'NO_RESPONDE_RECORDATORIO_AGENDA'
+          AND estado = 'PENDIENTE'
         LIMIT 1
     ");
 

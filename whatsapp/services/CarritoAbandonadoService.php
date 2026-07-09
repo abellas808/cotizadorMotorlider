@@ -35,6 +35,38 @@ class CarritoAbandonadoService
         return intval($row['id'] ?? 0);
     }
 
+    private static function cerrarPendientesDuplicados($cn, int $idCotizacion, int $idActivo, string $motivo): void
+    {
+        if ($idCotizacion <= 0 || $idActivo <= 0) {
+            return;
+        }
+
+        $sql = "
+            UPDATE carrito_abandonado
+            SET
+                estado = 'CERRADO',
+                fecha_ultima_gestion = NOW(),
+                usuario_ultima_gestion = 'Alan',
+                observaciones = CONCAT(
+                    IFNULL(observaciones, ''),
+                    IF(IFNULL(observaciones, '') = '', '', '\n'),
+                    ?
+                )
+            WHERE id_cotizacion = ?
+              AND id <> ?
+              AND estado = 'PENDIENTE'
+        ";
+
+        $st = $cn->prepare($sql);
+        if (!$st) {
+            return;
+        }
+
+        $st->bind_param('sii', $motivo, $idCotizacion, $idActivo);
+        $st->execute();
+        $st->close();
+    }
+
     public static function actualizarMotivoPendiente(
         int $idCotizacion,
         string $origenAbandono,
@@ -98,6 +130,80 @@ class CarritoAbandonadoService
         return $ok && $actualizados > 0;
     }
 
+    private static function actualizarMotivoPendienteSinOrigen(
+        int $idCotizacion,
+        array $motivosPendientes,
+        string $mensajeCliente,
+        string $motivoAbandono,
+        string $origenAbandono
+    ): bool {
+        if ($idCotizacion <= 0 || empty($motivosPendientes)) {
+            return false;
+        }
+
+        $cn = wa_db();
+        $cn->set_charset("utf8mb4");
+
+        $motivosSql = [];
+        foreach ($motivosPendientes as $motivoPendiente) {
+            $motivosSql[] = "'" . $cn->real_escape_string((string)$motivoPendiente) . "'";
+        }
+
+        $sql = "
+            UPDATE carrito_abandonado
+            SET
+                mensaje_cliente = ?,
+                motivo_abandono = ?,
+                origen_abandono = ?,
+                fecha_respuesta = NOW(),
+                observaciones = CONCAT(
+                    IFNULL(observaciones, ''),
+                    IF(IFNULL(observaciones, '') = '', '', '\n'),
+                    'Motivo informado por WhatsApp: ',
+                    ?
+                )
+            WHERE id_cotizacion = ?
+              AND estado = 'PENDIENTE'
+              AND motivo_abandono IN (" . implode(',', $motivosSql) . ")
+            ORDER BY id DESC
+            LIMIT 1
+        ";
+
+        $st = $cn->prepare($sql);
+        if (!$st) {
+            $cn->close();
+            return false;
+        }
+
+        $st->bind_param(
+            'ssssi',
+            $mensajeCliente,
+            $motivoAbandono,
+            $origenAbandono,
+            $motivoAbandono,
+            $idCotizacion
+        );
+
+        $ok = $st->execute();
+        $actualizados = $st->affected_rows;
+
+        $st->close();
+
+        if ($ok && $actualizados > 0) {
+            $idActivo = self::obtenerIdPendientePorCotizacion($cn, $idCotizacion);
+            self::cerrarPendientesDuplicados(
+                $cn,
+                $idCotizacion,
+                $idActivo,
+                'Cerrado automÃ¡ticamente: la cotizaciÃ³n ya tiene un punto de abandono mÃ¡s reciente.'
+            );
+        }
+
+        $cn->close();
+
+        return $ok && $actualizados > 0;
+    }
+
     public static function actualizarMotivoCancelacionAgenda(
         int $idCotizacion,
         string $mensajeCliente,
@@ -107,9 +213,8 @@ class CarritoAbandonadoService
             return false;
         }
 
-        return self::actualizarMotivoPendiente(
+        return self::actualizarMotivoPendienteSinOrigen(
             $idCotizacion,
-            'AGENDA',
             [
                 'CANCELO_AGENDA_PENDIENTE_MOTIVO',
                 'NO_RESPONDIO_CONFIRMACION_AGENDA',
@@ -120,7 +225,8 @@ class CarritoAbandonadoService
                 'NO_ASISTIO_AGENDA'
             ],
             $mensajeCliente,
-            $motivoAbandono
+            $motivoAbandono,
+            'AGENDA'
         );
     }
 
@@ -357,6 +463,12 @@ class CarritoAbandonadoService
                     'motivo_abandono' => $motivoAbandono,
                     'origen_abandono' => $origenAbandono
                 ]);
+                self::cerrarPendientesDuplicados(
+                    $cn,
+                    $idCotizacion,
+                    $idPendiente,
+                    'Cerrado automÃ¡ticamente: la cotizaciÃ³n ya tiene un punto de abandono mÃ¡s reciente.'
+                );
             }
 
             $stUpdate->close();
