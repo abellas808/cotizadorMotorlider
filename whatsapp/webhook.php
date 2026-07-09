@@ -5974,7 +5974,7 @@ if (
             $idCotizacionTmp > 0 ? $idCotizacionTmp : null
         );
 
-        TwilioMessageService::enviarTemplateMotivoNoAgendar($from);
+        TwilioMessageService::enviarTemplateMotivoCancelacionAgenda($from);
         return;
     }
 
@@ -7989,7 +7989,7 @@ function wa_procesar_respuesta_no_asistio(
             $idCotizacionTmp > 0 ? $idCotizacionTmp : null
         );
 
-        TwilioMessageService::enviarTemplateMotivoNoAgendar($from);
+        TwilioMessageService::enviarTemplateMotivoCancelacionAgenda($from);
         return true;
     }
 
