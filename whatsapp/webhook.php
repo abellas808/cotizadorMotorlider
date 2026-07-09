@@ -3210,13 +3210,21 @@ if (
             : 'NO_AGENDA_REVISION';
     }
 
-    $motivoActualizado = CarritoAbandonadoService::actualizarMotivoPendiente(
-        $idCotizacion,
-        $origenAbandono,
-        [$puntoAbandono],
-        $mensajeCliente,
-        $motivoAbandono
-    );
+    if ($puntoAbandono === 'NO_ASISTIO_AGENDA') {
+        $motivoActualizado = CarritoAbandonadoService::actualizarMotivoNoAsistioAgenda(
+            $idCotizacion,
+            $mensajeCliente,
+            $motivoAbandono
+        );
+    } else {
+        $motivoActualizado = CarritoAbandonadoService::actualizarMotivoPendiente(
+            $idCotizacion,
+            $origenAbandono,
+            [$puntoAbandono],
+            $mensajeCliente,
+            $motivoAbandono
+        );
+    }
 
     if (!$motivoActualizado) {
         CarritoAbandonadoService::registrar(

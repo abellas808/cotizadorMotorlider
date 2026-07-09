@@ -230,6 +230,59 @@ class CarritoAbandonadoService
         );
     }
 
+    public static function actualizarMotivoNoAsistioAgenda(
+        int $idCotizacion,
+        string $mensajeCliente,
+        string $motivoInformado
+    ): bool {
+        if ($idCotizacion <= 0) {
+            return false;
+        }
+
+        $cn = wa_db();
+        $cn->set_charset("utf8mb4");
+
+        $sql = "
+            UPDATE carrito_abandonado
+            SET
+                mensaje_cliente = ?,
+                fecha_respuesta = NOW(),
+                observaciones = CONCAT(
+                    IFNULL(observaciones, ''),
+                    IF(IFNULL(observaciones, '') = '', '', '\n'),
+                    'Motivo informado por WhatsApp: ',
+                    ?
+                )
+            WHERE id_cotizacion = ?
+              AND origen_abandono = 'AGENDA'
+              AND estado = 'PENDIENTE'
+              AND motivo_abandono = 'NO_ASISTIO_AGENDA'
+            ORDER BY id DESC
+            LIMIT 1
+        ";
+
+        $st = $cn->prepare($sql);
+        if (!$st) {
+            $cn->close();
+            return false;
+        }
+
+        $st->bind_param(
+            'ssi',
+            $mensajeCliente,
+            $motivoInformado,
+            $idCotizacion
+        );
+
+        $ok = $st->execute();
+        $actualizados = $st->affected_rows;
+
+        $st->close();
+        $cn->close();
+
+        return $ok && $actualizados > 0;
+    }
+
     public static function cerrarPendientePorConfirmacionAgenda(int $idCotizacion): bool
     {
         if ($idCotizacion <= 0) {
