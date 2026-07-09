@@ -79,7 +79,9 @@ if (isset($db) && !empty($elemento['telefono'])) {
 			detalle_estado
 		FROM agendas
 		WHERE telefono = '" . $db->escape($telefonoAgenda) . "'
+		  AND id_cotizacion = " . intval($id) . "
 		  AND cancelado = 0
+		  AND finalizada = 1
 		  AND CONCAT(fecha, ' ', hora) < NOW()
 		ORDER BY fecha DESC, hora DESC, id_agenda DESC
 		LIMIT 1
