@@ -2831,15 +2831,16 @@ $buttonPayloadAgenda = trim((string)($_POST['ButtonPayload'] ?? ''));
 $buttonPayload = $buttonPayloadAgenda;
 
 $originalSidInicial = trim((string)($_POST['OriginalRepliedMessageSid'] ?? ''));
+$stepPreTasacionActual = (string)($userState['step'] ?? $currentConv['step_actual'] ?? '');
+$subStepPreTasacionActual = (string)($userState['sub_step'] ?? $currentConv['sub_step_actual'] ?? '');
+$forzarNoAgendarPreTasacion = false;
+$idCotizacionPreRespondida = 0;
+
 if ($originalSidInicial !== '' && $bodyNorm === 'en otro momento') {
     $metaMensajeRespondido = wa_obtener_meta_mensaje_respondido($originalSidInicial);
     $origenMensajeRespondido = (string)($metaMensajeRespondido['origen'] ?? '');
 
     if ($origenMensajeRespondido === 'backend_pre_tasacion') {
-        $_POST['ButtonPayload'] = 'precotizacion_no_agendar';
-        $buttonPayload = 'precotizacion_no_agendar';
-        $buttonPayloadAgenda = 'precotizacion_no_agendar';
-
         $idCotizacionPreRespondida = intval(
             $metaMensajeRespondido['id_cotizacion']
             ?? $metaMensajeRespondido['id_cotizaciones_generadas']
@@ -2847,16 +2848,44 @@ if ($originalSidInicial !== '' && $bodyNorm === 'en otro momento') {
             ?? 0
         );
 
-        if ($idCotizacionPreRespondida > 0) {
-            $userState['id_cotizacion'] = $idCotizacionPreRespondida;
-        }
-
         wa_log('PRETASACION_NO_AGENDAR_FORZADO_DESDE_REPLY', [
             'telefono' => $from,
             'original_sid' => $originalSidInicial,
             'id_cotizacion' => $idCotizacionPreRespondida,
             'body' => $body
         ]);
+
+        $forzarNoAgendarPreTasacion = true;
+    }
+}
+
+if (
+    !$forzarNoAgendarPreTasacion
+    && $buttonPayloadAgenda === ''
+    && $bodyNorm === 'en otro momento'
+    && $stepPreTasacionActual === 'resultado_enviado'
+    && $subStepPreTasacionActual === 'esperando_agenda'
+) {
+    $idCotizacionPreRespondida = intval($userState['id_cotizacion'] ?? $currentConv['id_cotizacion'] ?? 0);
+
+    wa_log('PRETASACION_NO_AGENDAR_FORZADO_DESDE_ESTADO', [
+        'telefono' => $from,
+        'id_cotizacion' => $idCotizacionPreRespondida,
+        'step' => $stepPreTasacionActual,
+        'sub_step' => $subStepPreTasacionActual,
+        'body' => $body
+    ]);
+
+    $forzarNoAgendarPreTasacion = true;
+}
+
+if ($forzarNoAgendarPreTasacion) {
+    $_POST['ButtonPayload'] = 'precotizacion_no_agendar';
+    $buttonPayload = 'precotizacion_no_agendar';
+    $buttonPayloadAgenda = 'precotizacion_no_agendar';
+
+    if ($idCotizacionPreRespondida > 0) {
+        $userState['id_cotizacion'] = $idCotizacionPreRespondida;
     }
 }
 
