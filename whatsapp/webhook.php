@@ -3144,19 +3144,50 @@ if (in_array($buttonPayloadAgenda, [
     }
 }
 
+$payloadMotivoNoAgenda = [
+    'motivo_no_agenda_otro_momento',
+    'motivo_no_agenda_mayor_valor',
+    'motivo_no_agenda_probando',
+    'motivo_no_agenda_otra_oferta',
+    'motivo_no_agenda_recibi_otra_oferta',
+    'motivo_no_agenda_vendido',
+    'motivo_no_agenda_auto_vendido',
+    'motivo_no_agenda_ya_vendi_auto',
+    'motivo_no_agenda_motivos_personales',
+    'motivo_no_agenda_personales'
+];
+
+$esperandoMotivoNoAsistio = (
+    strtoupper(trim((string)($userState['motivo_base'] ?? ''))) === 'NO_ASISTIO_AGENDA'
+    || trim((string)($userState['step'] ?? '')) === 'esperando_motivo_cancelacion_no_asistio'
+);
+
+if ($esperandoMotivoNoAsistio && !in_array($buttonPayloadAgenda, $payloadMotivoNoAgenda, true)) {
+    $motivoNoAsistioNorm = wa_normalizar_texto(trim($buttonPayloadAgenda . ' ' . $body));
+
+    if (strpos($motivoNoAsistioNorm, 'personal') !== false) {
+        $buttonPayloadAgenda = 'motivo_no_agenda_motivos_personales';
+        $_POST['ButtonPayload'] = $buttonPayloadAgenda;
+    } elseif (strpos($motivoNoAsistioNorm, 'vendi') !== false || strpos($motivoNoAsistioNorm, 'vendido') !== false) {
+        $buttonPayloadAgenda = 'motivo_no_agenda_ya_vendi_auto';
+        $_POST['ButtonPayload'] = $buttonPayloadAgenda;
+    } elseif (strpos($motivoNoAsistioNorm, 'oferta') !== false) {
+        $buttonPayloadAgenda = 'motivo_no_agenda_recibi_otra_oferta';
+        $_POST['ButtonPayload'] = $buttonPayloadAgenda;
+    } elseif (strpos($motivoNoAsistioNorm, 'mayor valor') !== false || strpos($motivoNoAsistioNorm, 'otro valor') !== false) {
+        $buttonPayloadAgenda = 'motivo_no_agenda_mayor_valor';
+        $_POST['ButtonPayload'] = $buttonPayloadAgenda;
+    } elseif (strpos($motivoNoAsistioNorm, 'probando') !== false) {
+        $buttonPayloadAgenda = 'motivo_no_agenda_probando';
+        $_POST['ButtonPayload'] = $buttonPayloadAgenda;
+    } elseif (strpos($motivoNoAsistioNorm, 'otro momento') !== false || strpos($motivoNoAsistioNorm, 'agendare luego') !== false) {
+        $buttonPayloadAgenda = 'motivo_no_agenda_otro_momento';
+        $_POST['ButtonPayload'] = $buttonPayloadAgenda;
+    }
+}
+
 if (
-    in_array($buttonPayloadAgenda, [
-        'motivo_no_agenda_otro_momento',
-        'motivo_no_agenda_mayor_valor',
-        'motivo_no_agenda_probando',
-        'motivo_no_agenda_otra_oferta',
-        'motivo_no_agenda_recibi_otra_oferta',
-        'motivo_no_agenda_vendido',
-        'motivo_no_agenda_auto_vendido',
-        'motivo_no_agenda_ya_vendi_auto',
-        'motivo_no_agenda_motivos_personales',
-        'motivo_no_agenda_personales'
-    ], true)
+    in_array($buttonPayloadAgenda, $payloadMotivoNoAgenda, true)
 ) {
     $conv = wa_get_conversation($from);
 
@@ -5943,7 +5974,7 @@ if (
             $idCotizacionTmp > 0 ? $idCotizacionTmp : null
         );
 
-        TwilioMessageService::enviarTemplateMotivoCancelacionAgenda($from);
+        TwilioMessageService::enviarTemplateMotivoNoAgendar($from);
         return;
     }
 
@@ -7958,7 +7989,7 @@ function wa_procesar_respuesta_no_asistio(
             $idCotizacionTmp > 0 ? $idCotizacionTmp : null
         );
 
-        TwilioMessageService::enviarTemplateMotivoCancelacionAgenda($from);
+        TwilioMessageService::enviarTemplateMotivoNoAgendar($from);
         return true;
     }
 
