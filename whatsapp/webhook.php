@@ -2477,6 +2477,41 @@ function wa_hora_en_opciones_agenda(string $hora, array $opciones): bool
     return false;
 }
 
+function wa_preparar_opciones_hora_agenda(
+    array $horasDisponibles,
+    string $fecha,
+    ?string $fechaPrimerDisponible = null
+): array {
+    $horas = wa_filtrar_horas_agendables_con_antelacion(
+        $horasDisponibles,
+        $fecha,
+        $fechaPrimerDisponible
+    );
+
+    $opciones = [];
+    $lineas = [];
+
+    foreach (array_values($horas) as $i => $item) {
+        $hora = (string)($item['hora'] ?? '');
+        if ($hora === '' && isset($item['hora_comienzo'])) {
+            $hora = (string)$item['hora_comienzo'];
+        }
+
+        if ($hora === '') {
+            continue;
+        }
+
+        $nro = (string)(count($opciones) + 1);
+        $opciones[$nro] = ['hora' => $hora];
+        $lineas[] = $nro . ' = ' . substr($hora, 0, 5);
+    }
+
+    return [
+        'opciones' => $opciones,
+        'lineas' => $lineas
+    ];
+}
+
 function wa_obtener_ultima_tasacion_final_mensaje(string $telefono): ?array
 {
     $cn = wa_db();
@@ -6724,6 +6759,50 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
             ? $userState['agenda_horas_opciones']
             : []
     );
+
+    $horaDisponibleAhora = wa_hora_en_opciones_agenda($hora, $horasValidacion);
+
+    if (!$horaDisponibleAhora) {
+        $opcionesActualizadas = wa_preparar_opciones_hora_agenda(
+            $horasValidacion,
+            $fecha,
+            $fechaPrimerDisponibleValidacion
+        );
+
+        $nuevoEstado = $userState;
+        $nuevoEstado['step'] = 'agenda_hora';
+        $nuevoEstado['agenda_horas_opciones'] = $opcionesActualizadas['opciones'];
+        unset($nuevoEstado['agenda_hora']);
+
+        wa_set_user_state(
+            $from,
+            $nuevoEstado,
+            'ESPERANDO_HORA',
+            'BOT',
+            $profileName !== '' ? $profileName : null,
+            null,
+            $idCotizacion > 0 ? $idCotizacion : null
+        );
+
+        if (empty($opcionesActualizadas['lineas'])) {
+            twiml_message_and_save(
+                $from,
+                "Ese horario ya no está disponible.\n\n"
+                . "En este momento no encontré otros horarios para ese día. Respondé ATRAS para elegir otro día."
+            );
+
+            return;
+        }
+
+        twiml_message_and_save(
+            $from,
+            "Ese horario ya no está disponible.\n\n"
+            . "Elegí otro horario disponible:\n\n"
+            . implode("\n", $opcionesActualizadas['lineas'])
+        );
+
+        return;
+    }
 
     if (!$horaFueOfrecida && !wa_hora_agendable_permitida($fecha, $hora, $horasValidacion, $fechaPrimerDisponibleValidacion)) {
         twiml_message_and_save(
