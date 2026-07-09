@@ -2456,6 +2456,27 @@ function wa_hora_agendable_permitida(
     return false;
 }
 
+function wa_hora_en_opciones_agenda(string $hora, array $opciones): bool
+{
+    $hora = substr(trim($hora), 0, 5);
+    if ($hora === '') {
+        return false;
+    }
+
+    foreach ($opciones as $opcion) {
+        $horaOpcion = (string)($opcion['hora'] ?? '');
+        if ($horaOpcion === '' && isset($opcion['hora_comienzo'])) {
+            $horaOpcion = (string)$opcion['hora_comienzo'];
+        }
+
+        if (substr(trim($horaOpcion), 0, 5) === $hora) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 function wa_obtener_ultima_tasacion_final_mensaje(string $telefono): ?array
 {
     $cn = wa_db();
@@ -5696,6 +5717,8 @@ if (($userState['step'] ?? '') === 'tipo_venta') {
         $from,
         "Por último, ¿Cuál es el valor que pretendes por tu vehículo?"
     );
+
+    return;
 }
 
 // =========================
@@ -5706,6 +5729,7 @@ if (($userState['step'] ?? '') === 'valor_pretendido') {
 
     if ($valor === '') {
         twiml_message_and_save($from, "El valor pretendido no parece válido. Escribime solo números. Ejemplo: 20000");
+        return;
     }
 
     $marca = trim((string)($userState['marca'] ?? ''));
@@ -5742,6 +5766,8 @@ if (($userState['step'] ?? '') === 'valor_pretendido') {
     );
 
     wa_finalizar_cotizacion_desde_estado($from, $profileName, $nuevoEstado, $valor);
+
+    return;
 }
 
 // =========================
@@ -6692,7 +6718,14 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
         wa_consulta_agenda_despues_de_corte_o_cerrado()
     );
 
-    if (!wa_hora_agendable_permitida($fecha, $hora, $horasValidacion, $fechaPrimerDisponibleValidacion)) {
+    $horaFueOfrecida = wa_hora_en_opciones_agenda(
+        $hora,
+        is_array($userState['agenda_horas_opciones'] ?? null)
+            ? $userState['agenda_horas_opciones']
+            : []
+    );
+
+    if (!$horaFueOfrecida && !wa_hora_agendable_permitida($fecha, $hora, $horasValidacion, $fechaPrimerDisponibleValidacion)) {
         twiml_message_and_save(
             $from,
             "No pude confirmar la agenda en este momento.\n\n"
