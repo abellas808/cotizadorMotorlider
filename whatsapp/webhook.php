@@ -2879,6 +2879,36 @@ if (
     $forzarNoAgendarPreTasacion = true;
 }
 
+if (
+    !$forzarNoAgendarPreTasacion
+    && $bodyNorm === 'en otro momento'
+) {
+    $ultimoMensajeBot = wa_obtener_ultimo_mensaje_saliente_bot($from);
+    $metaUltimoMensajeBot = $ultimoMensajeBot['meta'] ?? [];
+    $origenUltimoMensajeBot = (string)($metaUltimoMensajeBot['origen'] ?? '');
+
+    if ($origenUltimoMensajeBot === 'backend_pre_tasacion') {
+        $idCotizacionPreRespondida = intval(
+            $metaUltimoMensajeBot['id_cotizacion']
+            ?? $metaUltimoMensajeBot['id_cotizaciones_generadas']
+            ?? $metaUltimoMensajeBot['cotizacion_id']
+            ?? $userState['id_cotizacion']
+            ?? $currentConv['id_cotizacion']
+            ?? 0
+        );
+
+        wa_log('PRETASACION_NO_AGENDAR_FORZADO_DESDE_ULTIMO_SALIENTE', [
+            'telefono' => $from,
+            'id_mensaje_saliente' => intval($ultimoMensajeBot['id'] ?? 0),
+            'sid_mensaje_saliente' => (string)($ultimoMensajeBot['sid_mensaje'] ?? ''),
+            'id_cotizacion' => $idCotizacionPreRespondida,
+            'body' => $body
+        ]);
+
+        $forzarNoAgendarPreTasacion = true;
+    }
+}
+
 if ($forzarNoAgendarPreTasacion) {
     $_POST['ButtonPayload'] = 'precotizacion_no_agendar';
     $buttonPayload = 'precotizacion_no_agendar';
@@ -7463,6 +7493,55 @@ function wa_obtener_meta_mensaje_respondido(string $originalSid): array
     $meta = json_decode((string)($row['meta_json'] ?? ''), true);
 
     return is_array($meta) ? $meta : [];
+}
+
+function wa_obtener_ultimo_mensaje_saliente_bot(string $telefono): array
+{
+    if ($telefono === '') {
+        return [];
+    }
+
+    $cn = wa_db();
+
+    $sql = "
+        SELECT id, sid_mensaje, meta_json
+        FROM whatsapp_conversacion_mensajes
+        WHERE telefono = ?
+          AND direccion = 'SALIENTE'
+          AND emisor = 'BOT'
+        ORDER BY id DESC
+        LIMIT 1
+    ";
+
+    $st = $cn->prepare($sql);
+    if (!$st) {
+        wa_log('ULTIMO_SALIENTE_BOT_PREPARE_ERROR', [
+            'telefono' => $telefono,
+            'error' => $cn->error
+        ]);
+        $cn->close();
+        return [];
+    }
+
+    $st->bind_param('s', $telefono);
+    $st->execute();
+    $rs = $st->get_result();
+    $row = $rs ? $rs->fetch_assoc() : null;
+
+    if ($rs) {
+        $rs->free();
+    }
+    $st->close();
+    $cn->close();
+
+    if (!$row) {
+        return [];
+    }
+
+    $meta = json_decode((string)($row['meta_json'] ?? ''), true);
+    $row['meta'] = is_array($meta) ? $meta : [];
+
+    return $row;
 }
 
 function wa_obtener_id_cotizacion_ultimo_template(string $telefono, string $origen): int
