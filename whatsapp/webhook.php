@@ -2830,6 +2830,36 @@ $currentEstado = (string)($currentConv['estado'] ?? 'INICIO');
 $buttonPayloadAgenda = trim((string)($_POST['ButtonPayload'] ?? ''));
 $buttonPayload = $buttonPayloadAgenda;
 
+$originalSidInicial = trim((string)($_POST['OriginalRepliedMessageSid'] ?? ''));
+if ($originalSidInicial !== '' && $bodyNorm === 'en otro momento') {
+    $metaMensajeRespondido = wa_obtener_meta_mensaje_respondido($originalSidInicial);
+    $origenMensajeRespondido = (string)($metaMensajeRespondido['origen'] ?? '');
+
+    if ($origenMensajeRespondido === 'backend_pre_tasacion') {
+        $_POST['ButtonPayload'] = 'precotizacion_no_agendar';
+        $buttonPayload = 'precotizacion_no_agendar';
+        $buttonPayloadAgenda = 'precotizacion_no_agendar';
+
+        $idCotizacionPreRespondida = intval(
+            $metaMensajeRespondido['id_cotizacion']
+            ?? $metaMensajeRespondido['id_cotizaciones_generadas']
+            ?? $metaMensajeRespondido['cotizacion_id']
+            ?? 0
+        );
+
+        if ($idCotizacionPreRespondida > 0) {
+            $userState['id_cotizacion'] = $idCotizacionPreRespondida;
+        }
+
+        wa_log('PRETASACION_NO_AGENDAR_FORZADO_DESDE_REPLY', [
+            'telefono' => $from,
+            'original_sid' => $originalSidInicial,
+            'id_cotizacion' => $idCotizacionPreRespondida,
+            'body' => $body
+        ]);
+    }
+}
+
 $stepActualInicial = (string)($userState['step'] ?? '');
 $origenRecoordinacionInicial = strtoupper(trim((string)($userState['origen_recoordinacion'] ?? '')));
 $bloquearTasacionFinalPorTexto = in_array($stepActualInicial, [
@@ -7363,6 +7393,47 @@ function wa_obtener_id_cotizacion_desde_mensaje_respondido(string $originalSid):
     ]);
 
     return $idCotizacion;
+}
+
+function wa_obtener_meta_mensaje_respondido(string $originalSid): array
+{
+    if ($originalSid === '') {
+        return [];
+    }
+
+    $cn = wa_db();
+
+    $sql = "
+        SELECT meta_json
+        FROM whatsapp_conversacion_mensajes
+        WHERE sid_mensaje = ?
+        LIMIT 1
+    ";
+
+    $st = $cn->prepare($sql);
+    if (!$st) {
+        wa_log('META_DESDE_SID_PREPARE_ERROR', [
+            'sid' => $originalSid,
+            'error' => $cn->error
+        ]);
+        $cn->close();
+        return [];
+    }
+
+    $st->bind_param('s', $originalSid);
+    $st->execute();
+    $rs = $st->get_result();
+    $row = $rs ? $rs->fetch_assoc() : null;
+    $st->close();
+    $cn->close();
+
+    if (!$row) {
+        return [];
+    }
+
+    $meta = json_decode((string)($row['meta_json'] ?? ''), true);
+
+    return is_array($meta) ? $meta : [];
 }
 
 function wa_obtener_id_cotizacion_ultimo_template(string $telefono, string $origen): int
