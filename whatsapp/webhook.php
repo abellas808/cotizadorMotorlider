@@ -2883,7 +2883,7 @@ if (
     !$forzarNoAgendarPreTasacion
     && $bodyNorm === 'en otro momento'
 ) {
-    $ultimoMensajeBot = wa_obtener_ultimo_mensaje_saliente_bot($from);
+    $ultimoMensajeBot = wa_obtener_contexto_pre_tasacion_actual($from);
     $metaUltimoMensajeBot = $ultimoMensajeBot['meta'] ?? [];
     $origenUltimoMensajeBot = (string)($metaUltimoMensajeBot['origen'] ?? '');
 
@@ -5797,6 +5797,7 @@ $puedeInferirNoAsistioPorTexto = !in_array($stepNoAsistioActual, [
 
 if (
     $puedeInferirNoAsistioPorTexto
+    && empty(wa_obtener_contexto_pre_tasacion_actual($from))
     &&
     !in_array($buttonPayloadNoAsistio, [
         'no_asistio_recoordinar_confirmar',
@@ -5817,7 +5818,7 @@ if (
         );
     }
 
-    if ($idCotizacionNoAsistioTexto <= 0) {
+    if ($idCotizacionNoAsistioTexto <= 0 && empty(wa_obtener_contexto_pre_tasacion_actual($from))) {
         $idCotizacionNoAsistioTexto = wa_obtener_id_cotizacion_ultima_notificacion_procesada(
             $from,
             'NOTIFICACION_NO_ASISTIO_AGENDA'
@@ -7544,6 +7545,74 @@ function wa_obtener_ultimo_mensaje_saliente_bot(string $telefono): array
     return $row;
 }
 
+function wa_obtener_ultimo_mensaje_saliente_por_origenes(string $telefono, array $origenes): array
+{
+    if ($telefono === '' || empty($origenes)) {
+        return [];
+    }
+
+    $cn = wa_db();
+
+    $sql = "
+        SELECT id, sid_mensaje, meta_json
+        FROM whatsapp_conversacion_mensajes
+        WHERE telefono = ?
+          AND direccion = 'SALIENTE'
+          AND emisor = 'BOT'
+        ORDER BY id DESC
+        LIMIT 20
+    ";
+
+    $st = $cn->prepare($sql);
+    if (!$st) {
+        wa_log('ULTIMO_SALIENTE_ORIGENES_PREPARE_ERROR', [
+            'telefono' => $telefono,
+            'error' => $cn->error
+        ]);
+        $cn->close();
+        return [];
+    }
+
+    $st->bind_param('s', $telefono);
+    $st->execute();
+    $rs = $st->get_result();
+
+    while ($rs && ($row = $rs->fetch_assoc())) {
+        $meta = json_decode((string)($row['meta_json'] ?? ''), true);
+        $meta = is_array($meta) ? $meta : [];
+        $origen = (string)($meta['origen'] ?? '');
+
+        if (in_array($origen, $origenes, true)) {
+            $row['meta'] = $meta;
+            $rs->free();
+            $st->close();
+            $cn->close();
+
+            return $row;
+        }
+    }
+
+    if ($rs) {
+        $rs->free();
+    }
+    $st->close();
+    $cn->close();
+
+    return [];
+}
+
+function wa_obtener_contexto_pre_tasacion_actual(string $telefono): array
+{
+    $row = wa_obtener_ultimo_mensaje_saliente_por_origenes($telefono, [
+        'backend_pre_tasacion',
+        'template_no_asistio_agenda',
+        'template_motivo_recordatorio_no_agendar'
+    ]);
+
+    $meta = $row['meta'] ?? [];
+    return (string)($meta['origen'] ?? '') === 'backend_pre_tasacion' ? $row : [];
+}
+
 function wa_obtener_id_cotizacion_ultimo_template(string $telefono, string $origen): int
 {
     if ($telefono === '' || $origen === '') {
@@ -7579,7 +7648,17 @@ function wa_obtener_id_cotizacion_ultimo_template(string $telefono, string $orig
             continue;
         }
 
-        if ((string)($meta['origen'] ?? '') !== $origen) {
+        $origenActual = (string)($meta['origen'] ?? '');
+
+        if ($origen === 'template_no_asistio_agenda' && $origenActual === 'backend_pre_tasacion') {
+            wa_log('NO_ASISTIO_IGNORADO_POR_PRETASACION_RECIENTE', [
+                'telefono' => $telefono,
+                'origen_buscado' => $origen
+            ]);
+            break;
+        }
+
+        if ($origenActual !== $origen) {
             continue;
         }
 
@@ -7680,6 +7759,7 @@ function wa_procesar_respuesta_no_asistio(
 
     if (
         $puedeInferirNoAsistioPorTexto
+        && empty(wa_obtener_contexto_pre_tasacion_actual($from))
         &&
         !in_array($buttonPayloadNoAsistio, [
             'no_asistio_recoordinar_confirmar',
@@ -7700,7 +7780,7 @@ function wa_procesar_respuesta_no_asistio(
             );
         }
 
-        if ($idCotizacionNoAsistioTexto <= 0) {
+        if ($idCotizacionNoAsistioTexto <= 0 && empty(wa_obtener_contexto_pre_tasacion_actual($from))) {
             $idCotizacionNoAsistioTexto = wa_obtener_id_cotizacion_ultima_notificacion_procesada(
                 $from,
                 'NOTIFICACION_NO_ASISTIO_AGENDA'
