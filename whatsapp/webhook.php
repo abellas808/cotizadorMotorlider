@@ -6173,7 +6173,7 @@ if (
             $idCotizacionTmp > 0 ? $idCotizacionTmp : null
         );
 
-        TwilioMessageService::enviarTemplateMotivoCancelacionAgenda($from);
+        TwilioMessageService::enviarTemplateMotivoNoAgendar($from);
 
         return;
     }
