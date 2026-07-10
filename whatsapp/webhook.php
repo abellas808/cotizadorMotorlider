@@ -3311,6 +3311,7 @@ if (
     $nuevoEstado['sub_step'] = 'carrito_abandonado';
     $nuevoEstado['motivo_abandono'] = $motivoAbandono;
     $nuevoEstado['origen_abandono'] = $origenAbandono;
+    unset($nuevoEstado['mensaje_base_abandono']);
 
     wa_set_user_state(
         $from,
@@ -6263,6 +6264,7 @@ if (
                 ]);
             }
         }
+
         $carritoPreparado = CarritoAbandonadoService::actualizarMotivoCancelacionAgenda(
             $idCotizacionTmp,
             $mensajeCancelacionRecordatorio,
@@ -6298,6 +6300,7 @@ if (
         $nuevoEstado['id_conversacion'] = intval($convTmp['id'] ?? 0);
         $nuevoEstado['origen_abandono'] = 'AGENDA';
         $nuevoEstado['motivo_base'] = $puntoAbandonoRecordatorio;
+        $nuevoEstado['mensaje_base_abandono'] = $mensajeCancelacionRecordatorio;
 
         wa_set_user_state(
             $from,
@@ -6311,7 +6314,7 @@ if (
             $idCotizacionTmp > 0 ? $idCotizacionTmp : null
         );
 
-        TwilioMessageService::enviarTemplateMotivoNoAgendar($from, $idCotizacionTmp);
+        TwilioMessageService::enviarTemplateMotivoCancelacionAgenda($from, $idCotizacionTmp);
 
         return;
     }
