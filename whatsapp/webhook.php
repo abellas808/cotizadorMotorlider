@@ -3241,6 +3241,13 @@ if (
             : 'NO_AGENDA_REVISION';
     }
 
+    if ($origenAbandono === 'PRETASACION' || $puntoAbandono === 'NO_AGENDA_REVISION') {
+        NotificacionPendienteService::cancelarPendientesPorCotizacion(
+            $idCotizacion,
+            'Cliente informo motivo de no agendar revision'
+        );
+    }
+
     if ($puntoAbandono === 'NO_ASISTIO_AGENDA') {
         $motivoActualizado = CarritoAbandonadoService::actualizarMotivoNoAsistioAgenda(
             $idCotizacion,

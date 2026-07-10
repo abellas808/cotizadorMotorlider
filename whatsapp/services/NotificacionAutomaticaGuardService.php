@@ -41,6 +41,16 @@ class NotificacionAutomaticaGuardService
             $estadoCotizacion = self::estadoCotizacion($idCotizacion);
 
             if (
+                $tipo === 'RECORDATORIO_PRECOTIZACION_24HS'
+                && self::tieneAbandonoPretasacion($idCotizacion)
+            ) {
+                return self::resultado(
+                    'CANCELAR_TODAS',
+                    'Kill switch: la cotizacion ya fue marcada como NO_AGENDA_REVISION'
+                );
+            }
+
+            if (
                 intval($estadoCotizacion['estado_id'] ?? 0) === 5
                 || strtoupper(trim((string)($estadoCotizacion['estado'] ?? ''))) === 'RECHAZADO'
             ) {
@@ -139,6 +149,26 @@ class NotificacionAutomaticaGuardService
         $cn->close();
 
         return is_array($row) ? $row : [];
+    }
+
+    private static function tieneAbandonoPretasacion(int $idCotizacion): bool
+    {
+        $cn = self::db();
+
+        $rs = $cn->query("
+            SELECT id
+            FROM carrito_abandonado
+            WHERE id_cotizacion = " . intval($idCotizacion) . "
+              AND origen_abandono = 'PRETASACION'
+              AND estado = 'PENDIENTE'
+              AND motivo_abandono IN ('NO_AGENDA_REVISION', 'NO_RESPONDE_PRETASACION')
+            LIMIT 1
+        ");
+
+        $existe = $rs && $rs->num_rows > 0;
+        $cn->close();
+
+        return $existe;
     }
 
     private static function huboInteraccionPosterior(string $telefono, string $creada): bool
