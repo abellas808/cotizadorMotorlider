@@ -126,7 +126,6 @@ class CarritoAbandonadoService
             UPDATE carrito_abandonado
             SET
                 mensaje_cliente = ?,
-                motivo_abandono = ?,
                 fecha_respuesta = NOW(),
                 observaciones = CONCAT(
                     IFNULL(observaciones, ''),
@@ -149,9 +148,8 @@ class CarritoAbandonadoService
         }
 
         $st->bind_param(
-            'sssis',
+            'ssis',
             $mensajeCliente,
-            $motivoAbandono,
             $motivoAbandono,
             $idCotizacion,
             $origenAbandono
@@ -189,8 +187,6 @@ class CarritoAbandonadoService
             UPDATE carrito_abandonado
             SET
                 mensaje_cliente = ?,
-                motivo_abandono = ?,
-                origen_abandono = ?,
                 fecha_respuesta = NOW(),
                 observaciones = CONCAT(
                     IFNULL(observaciones, ''),
@@ -212,10 +208,8 @@ class CarritoAbandonadoService
         }
 
         $st->bind_param(
-            'ssssi',
+            'ssi',
             $mensajeCliente,
-            $motivoAbandono,
-            $origenAbandono,
             $motivoAbandono,
             $idCotizacion
         );
