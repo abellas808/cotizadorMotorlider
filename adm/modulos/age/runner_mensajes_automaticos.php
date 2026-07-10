@@ -41,6 +41,18 @@ function logMensajeAutomatico(string $msg, array $extra = []): void
     error_log($line . PHP_EOL, 3, __DIR__ . '/mensajes_automaticos.log');
 }
 
+logMensajeAutomatico('RUNNER_DESACTIVADO', [
+    'motivo' => 'Los envios automaticos de WhatsApp se procesan solo por la cola central whatsapp_notificaciones_pendientes'
+]);
+
+echo json_encode([
+    'ok' => true,
+    'runner' => 'runner_mensajes_automaticos',
+    'estado' => 'DESACTIVADO',
+    'motivo' => 'Los envios automaticos de WhatsApp se procesan solo por la cola central whatsapp_notificaciones_pendientes'
+], JSON_UNESCAPED_UNICODE);
+exit;
+
 function normalizarTelefonoWhatsapp(string $telefono): string
 {
     $telefono = trim($telefono);
