@@ -308,7 +308,7 @@ class TwilioMessageService
         }
     }
 
-    public static function enviarTemplateMotivoNoAgendar(string $to): bool
+    public static function enviarTemplateMotivoNoAgendar(string $to, ?int $idCotizacion = null): bool
     {
         $contentSid = ParametroSistemaService::obtener(
             'twilio',
@@ -320,7 +320,8 @@ class TwilioMessageService
             $contentSid,
             [],
             'template_motivo_no_agendar',
-            'Gracias por tu respuesta, nos gustaría saber el motivo de tu decisión.'
+            'Gracias por tu respuesta, nos gustaría saber el motivo de tu decisión.',
+            $idCotizacion
         );
     }
 
@@ -365,7 +366,7 @@ class TwilioMessageService
         );
     }
 
-    public static function enviarTemplateMotivoCancelacionAgenda(string $to): bool
+    public static function enviarTemplateMotivoCancelacionAgenda(string $to, ?int $idCotizacion = null): bool
     {
         $contentSid = ParametroSistemaService::obtener(
             'twilio',
@@ -382,7 +383,8 @@ class TwilioMessageService
             $contentSid,
             [],
             'template_motivo_recordatorio_no_agendar',
-            'Gracias por tu respuesta, nos gustaría saber el motivo de tu decisión.'
+            'Gracias por tu respuesta, nos gustaría saber el motivo de tu decisión.',
+            $idCotizacion
         );
     }
 

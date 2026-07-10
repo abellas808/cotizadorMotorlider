@@ -3193,7 +3193,14 @@ if (
 
     $idConversacion = intval($conv['id'] ?? 0);
 
-    $idCotizacion = intval($userState['id_cotizacion'] ?? 0);
+    $originalSidMotivo = trim((string)($_POST['OriginalRepliedMessageSid'] ?? ''));
+    $idCotizacionDesdeMensaje = wa_obtener_id_cotizacion_desde_mensaje_respondido($originalSidMotivo);
+
+    $idCotizacion = $idCotizacionDesdeMensaje;
+
+    if ($idCotizacion <= 0) {
+        $idCotizacion = intval($userState['id_cotizacion'] ?? 0);
+    }
 
     if ($idCotizacion <= 0) {
         $idCotizacion = intval($conv['id_cotizacion'] ?? 0);
@@ -3235,6 +3242,28 @@ if (
     $origenAbandono = strtoupper(trim((string)($userState['origen_abandono'] ?? 'PRETASACION')));
     $puntoAbandono = strtoupper(trim((string)($userState['motivo_base'] ?? '')));
 
+    if ($idCotizacionDesdeMensaje > 0) {
+        $carritoPendiente = CarritoAbandonadoService::obtenerPendientePorCotizacion($idCotizacionDesdeMensaje);
+        $origenCarrito = strtoupper(trim((string)($carritoPendiente['origen_abandono'] ?? '')));
+        $motivoCarrito = strtoupper(trim((string)($carritoPendiente['motivo_abandono'] ?? '')));
+
+        if ($origenCarrito !== '') {
+            $origenAbandono = $origenCarrito;
+        }
+
+        if (in_array($motivoCarrito, [
+            'NO_AGENDA_REVISION',
+            'NO_CONFIRMA_AGENDA',
+            'NO_CONFIRMA_AGENDA_AUTO',
+            'NO_CONFIRMACION_AGENDA',
+            'NO_CONFIRMACION_AGENDA_AUTO',
+            'NO_ASISTIO_AGENDA',
+            'NO_RESPONDE_PRETASACION'
+        ], true)) {
+            $puntoAbandono = $motivoCarrito;
+        }
+    }
+
     if ($puntoAbandono === '') {
         $puntoAbandono = $origenAbandono === 'AGENDA'
             ? 'NO_CONFIRMA_AGENDA'
@@ -3265,14 +3294,16 @@ if (
     }
 
     if (!$motivoActualizado) {
-        CarritoAbandonadoService::registrar(
-            $idCotizacion,
-            $idConversacion,
-            $from,
-            $mensajeCliente,
-            $puntoAbandono,
-            $origenAbandono
-        );
+        wa_log('MOTIVO_NO_AGENDA_SIN_CARRITO_PENDIENTE', [
+            'telefono' => $from,
+            'id_cotizacion' => $idCotizacion,
+            'id_conversacion' => $idConversacion,
+            'origen_abandono' => $origenAbandono,
+            'punto_abandono' => $puntoAbandono,
+            'motivo_abandono' => $motivoAbandono,
+            'original_sid' => $originalSidMotivo,
+            'id_cotizacion_desde_mensaje' => $idCotizacionDesdeMensaje
+        ]);
     }
 
     $nuevoEstado = $userState;
@@ -3476,7 +3507,7 @@ if (
                 $idCotizacion > 0 ? $idCotizacion : null
             );
 
-            TwilioMessageService::enviarTemplateMotivoCancelacionAgenda($from);
+            TwilioMessageService::enviarTemplateMotivoCancelacionAgenda($from, $idCotizacion);
 
             return;
         }
@@ -3632,7 +3663,7 @@ if (
             $idCotizacion > 0 ? $idCotizacion : null
         );
 
-        TwilioMessageService::enviarTemplateMotivoNoAgendar($from);
+        TwilioMessageService::enviarTemplateMotivoNoAgendar($from, $idCotizacion);
 
         return;
     }
@@ -3707,7 +3738,7 @@ if ($payload === 'precotizacion_no_agendar') {
         $idCotizacion > 0 ? $idCotizacion : null
     );
 
-    TwilioMessageService::enviarTemplateMotivoNoAgendar($from);
+    TwilioMessageService::enviarTemplateMotivoNoAgendar($from, $idCotizacion);
 
     return;
 }
@@ -3909,7 +3940,7 @@ if ($step === 'resultado_enviado' && $subStep === 'esperando_agenda') {
             $idCotizacion > 0 ? $idCotizacion : null
         );
 
-        TwilioMessageService::enviarTemplateMotivoNoAgendar($from);
+        TwilioMessageService::enviarTemplateMotivoNoAgendar($from, $idCotizacion);
 
         return;
     }
@@ -4178,7 +4209,7 @@ Te estaremos enviando un recordatorio antes de la inspección."
             $idCotizacion > 0 ? $idCotizacion : null
         );
 
-        TwilioMessageService::enviarTemplateMotivoNoAgendar($from);
+        TwilioMessageService::enviarTemplateMotivoNoAgendar($from, $idCotizacion);
 
         return;
     }
@@ -4298,7 +4329,7 @@ if ($esCancelacionResumenAgenda) {
         $idCotizacion > 0 ? $idCotizacion : null
     );
 
-    TwilioMessageService::enviarTemplateMotivoNoAgendar($from);
+    TwilioMessageService::enviarTemplateMotivoNoAgendar($from, $idCotizacion);
 
     return;
 }
@@ -5981,7 +6012,7 @@ if (
             $idCotizacionTmp > 0 ? $idCotizacionTmp : null
         );
 
-        TwilioMessageService::enviarTemplateMotivoCancelacionAgenda($from);
+        TwilioMessageService::enviarTemplateMotivoCancelacionAgenda($from, $idCotizacionTmp);
         return;
     }
 
@@ -6280,7 +6311,7 @@ if (
             $idCotizacionTmp > 0 ? $idCotizacionTmp : null
         );
 
-        TwilioMessageService::enviarTemplateMotivoNoAgendar($from);
+        TwilioMessageService::enviarTemplateMotivoNoAgendar($from, $idCotizacionTmp);
 
         return;
     }
@@ -6452,7 +6483,7 @@ if (($userState['step'] ?? '') === 'agenda_hora') {
             $idCotizacionCancelada > 0 ? $idCotizacionCancelada : null
         );
 
-        TwilioMessageService::enviarTemplateMotivoNoAgendar($from);
+        TwilioMessageService::enviarTemplateMotivoNoAgendar($from, $idCotizacionCancelada);
 
         return;
     }
@@ -6731,7 +6762,7 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
             'Cliente canceló agenda antes del recordatorio'
         );
 
-        TwilioMessageService::enviarTemplateMotivoNoAgendar($from);
+        TwilioMessageService::enviarTemplateMotivoNoAgendar($from, $idCotizacionCancelada);
 
         return;
     }
@@ -7996,7 +8027,7 @@ function wa_procesar_respuesta_no_asistio(
             $idCotizacionTmp > 0 ? $idCotizacionTmp : null
         );
 
-        TwilioMessageService::enviarTemplateMotivoCancelacionAgenda($from);
+        TwilioMessageService::enviarTemplateMotivoCancelacionAgenda($from, $idCotizacionTmp);
         return true;
     }
 

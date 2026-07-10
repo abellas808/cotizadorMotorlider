@@ -206,7 +206,8 @@ class ConversationService
 
         // Enviar template motivos
         TwilioMessageService::enviarTemplateMotivoNoAgendar(
-            $telefono
+            $telefono,
+            $idCotizacion
         );
 
         return true;

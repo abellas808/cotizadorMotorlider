@@ -35,6 +35,42 @@ class CarritoAbandonadoService
         return intval($row['id'] ?? 0);
     }
 
+    public static function obtenerPendientePorCotizacion(int $idCotizacion): array
+    {
+        if ($idCotizacion <= 0) {
+            return [];
+        }
+
+        $cn = wa_db();
+        $sql = "
+            SELECT id, motivo_abandono, origen_abandono
+            FROM carrito_abandonado
+            WHERE id_cotizacion = ?
+              AND estado = 'PENDIENTE'
+            ORDER BY id DESC
+            LIMIT 1
+        ";
+
+        $st = $cn->prepare($sql);
+        if (!$st) {
+            $cn->close();
+            return [];
+        }
+
+        $st->bind_param('i', $idCotizacion);
+        $st->execute();
+        $rs = $st->get_result();
+        $row = $rs ? $rs->fetch_assoc() : null;
+
+        if ($rs) {
+            $rs->free();
+        }
+        $st->close();
+        $cn->close();
+
+        return is_array($row) ? $row : [];
+    }
+
     private static function cerrarPendientesDuplicados($cn, int $idCotizacion, int $idActivo, string $motivo): void
     {
         if ($idCotizacion <= 0 || $idActivo <= 0) {
