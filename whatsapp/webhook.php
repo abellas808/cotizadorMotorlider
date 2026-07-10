@@ -3444,21 +3444,15 @@ if (
             }
 
             if ($idCotizacion > 0) {
-                if (!CarritoAbandonadoService::existePendiente(
+                CarritoAbandonadoService::registrar(
                     $idCotizacion,
+                    $idConversacion,
+                    $from,
+                    'Cliente cancelo asistencia mediante boton',
                     'NO_CONFIRMA_AGENDA',
-                    'AGENDA'
-                )) {
-                    CarritoAbandonadoService::registrar(
-                        $idCotizacion,
-                        $idConversacion,
-                        $from,
-                        'Cliente canceló asistencia mediante botón',
-                        'NO_CONFIRMA_AGENDA',
-                        'AGENDA',
-                        'Alan'
-                    );
-                }
+                    'AGENDA',
+                    'Alan'
+                );
 
                 //Pasar Cotizacion a estado COT. PRELIMINAR
                 $cnEstado = wa_db();
