@@ -252,6 +252,7 @@ class CarritoAbandonadoService
                 'NO_CONFIRMACION_AGENDA_AUTO',
                 'NO_CONFIRMA_AGENDA',
                 'NO_CONFIRMA_AGENDA_AUTO',
+                'NO_RESPONDE_RECORDATORIO_AGENDA',
                 'NO_ASISTIO_AGENDA'
             ],
             $mensajeCliente,

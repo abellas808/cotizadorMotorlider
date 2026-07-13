@@ -6238,7 +6238,7 @@ if (
         $idConversacionTmp = intval($convTmp['id'] ?? 0);
         $esCancelacionRecordatorio10hs = ($buttonPayloadRecordatorioAgenda === 'recordatorio_agenda_10_cancelar');
         $puntoAbandonoRecordatorio = $esCancelacionRecordatorio10hs
-            ? 'NO_CONFIRMA_AGENDA'
+            ? 'NO_RESPONDE_RECORDATORIO_AGENDA'
             : 'NO_CONFIRMACION_AGENDA_AUTO';
         $mensajeCancelacionRecordatorio = $esCancelacionRecordatorio10hs
             ? 'Cliente cancelo agenda desde recordatorio de agenda 10 hs'
