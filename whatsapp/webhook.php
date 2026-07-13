@@ -1123,7 +1123,8 @@ function wa_registrar_abandono_pretasacion_y_cancelar_notificaciones(
     int $idCotizacion,
     int $idConversacion,
     string $telefono,
-    string $mensajeCliente
+    string $mensajeCliente,
+    string $motivoAbandono = 'NO_AGENDA_REVISION'
 ): void {
     if ($idCotizacion <= 0) {
         return;
@@ -1136,7 +1137,7 @@ function wa_registrar_abandono_pretasacion_y_cancelar_notificaciones(
 
     if (!CarritoAbandonadoService::existePendiente(
         $idCotizacion,
-        'NO_AGENDA_REVISION',
+        $motivoAbandono,
         'PRETASACION'
     )) {
         CarritoAbandonadoService::registrar(
@@ -1144,7 +1145,7 @@ function wa_registrar_abandono_pretasacion_y_cancelar_notificaciones(
             $idConversacion,
             $telefono,
             $mensaje,
-            'NO_AGENDA_REVISION',
+            $motivoAbandono,
             'PRETASACION',
             'Alan'
         );
@@ -3617,7 +3618,8 @@ if (
             $idCotizacion,
             $idConversacion,
             $from,
-            $body !== '' ? $body : 'Cliente respondio que no quiere agendar'
+            $body !== '' ? $body : 'Cliente respondio que no quiere agendar',
+            'NO_RESPONDE_PRETASACION'
         );
 
         if (
@@ -3646,7 +3648,7 @@ if (
         $nuevoEstado['id_cotizacion'] = $idCotizacion;
         $nuevoEstado['id_conversacion'] = $idConversacion;
         $nuevoEstado['origen_abandono'] = 'PRETASACION';
-        $nuevoEstado['motivo_base'] = 'NO_AGENDA_REVISION';
+        $nuevoEstado['motivo_base'] = 'NO_RESPONDE_PRETASACION';
 
         wa_set_user_state(
             $from,

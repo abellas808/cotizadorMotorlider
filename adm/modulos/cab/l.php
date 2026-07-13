@@ -27,6 +27,9 @@ function ca_badge_punto_abandono($punto) {
             break;
 
         case 'NO_RESPONDE_PRETASACION':
+            $clase = 'ca-badge-naranja';
+            break;
+
         case 'NO_RESPONDE_PRETASACION_FINAL':
             $clase = 'ca-badge-amarillo';
             break;
