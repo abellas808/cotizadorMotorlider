@@ -6013,11 +6013,7 @@ if (
         return;
     }
 
-    CarritoAbandonadoService::actualizarMotivoCancelacionAgenda(
-        $idCotizacionTmp,
-        'Cliente quiere recoordinar la agenda luego de no asistir',
-        'QUIERE_RECOORDINAR_AGENDA'
-    );
+    CarritoAbandonadoService::marcarReagendarNoAsistio($idCotizacionTmp);
 
     $location = wa_agenda_location_id();
     $respDisponibilidad = wa_obtener_disponibilidad_agenda($location);
@@ -8030,11 +8026,7 @@ function wa_procesar_respuesta_no_asistio(
         return true;
     }
 
-    CarritoAbandonadoService::actualizarMotivoCancelacionAgenda(
-        $idCotizacionTmp,
-        'Cliente quiere recoordinar la agenda luego de no asistir',
-        'QUIERE_RECOORDINAR_AGENDA'
-    );
+    CarritoAbandonadoService::marcarReagendarNoAsistio($idCotizacionTmp);
 
     $location = wa_agenda_location_id();
     $respDisponibilidad = wa_obtener_disponibilidad_agenda($location);

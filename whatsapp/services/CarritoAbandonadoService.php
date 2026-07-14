@@ -314,6 +314,51 @@ class CarritoAbandonadoService
         return $ok && $actualizados > 0;
     }
 
+    public static function marcarReagendarNoAsistio(int $idCotizacion): bool
+    {
+        if ($idCotizacion <= 0) {
+            return false;
+        }
+
+        $cn = wa_db();
+        $cn->set_charset("utf8mb4");
+
+        $sql = "
+            UPDATE carrito_abandonado
+            SET
+                mensaje_cliente = 'Cliente quiere recoordinar la agenda luego de no asistir',
+                motivo_abandono = 'REAGENDAR',
+                origen_abandono = 'AGENDA',
+                fecha_respuesta = NOW(),
+                observaciones = CONCAT(
+                    IFNULL(observaciones, ''),
+                    IF(IFNULL(observaciones, '') = '', '', '\n'),
+                    'Actualizado automáticamente: cliente eligió Sí, agendar luego de NO_ASISTIO_AGENDA.'
+                )
+            WHERE id_cotizacion = ?
+              AND origen_abandono = 'AGENDA'
+              AND estado = 'PENDIENTE'
+              AND motivo_abandono IN ('NO_ASISTIO_AGENDA', 'QUIERE_RECOORDINAR_AGENDA')
+            ORDER BY id DESC
+            LIMIT 1
+        ";
+
+        $st = $cn->prepare($sql);
+        if (!$st) {
+            $cn->close();
+            return false;
+        }
+
+        $st->bind_param('i', $idCotizacion);
+        $ok = $st->execute();
+        $actualizados = $st->affected_rows;
+
+        $st->close();
+        $cn->close();
+
+        return $ok && $actualizados > 0;
+    }
+
     public static function cerrarPendientePorConfirmacionAgenda(int $idCotizacion): bool
     {
         if ($idCotizacion <= 0) {

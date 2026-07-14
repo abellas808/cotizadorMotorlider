@@ -52,6 +52,10 @@ function ca_badge_punto_abandono($punto) {
             $clase = 'ca-badge-rojo';
             break;
 
+        case 'REAGENDAR':
+            $clase = 'ca-badge-negro';
+            break;
+
         case 'TASACION_FINAL_RECHAZADA':
             $clase = 'ca-badge-naranja';
             break;
@@ -75,6 +79,7 @@ function ca_normalizar_punto_abandono($punto, $origen = '') {
         'NO_CONFIRMA_AGENDA',
         'NO_RESPONDE_RECORDATORIO_AGENDA',
         'NO_ASISTIO_AGENDA',
+        'REAGENDAR',
         'TASACION_FINAL_RECHAZADA',
         'NO_RESPONDE_TASACION_FINAL'
     ];
@@ -97,6 +102,10 @@ function ca_normalizar_punto_abandono($punto, $origen = '') {
 
     if ($punto === 'NO_RESPONDE_RECORDATORIO_AGENDA') {
         return 'NO_RESPONDE_RECORDATORIO_AGENDA';
+    }
+
+    if ($punto === 'QUIERE_RECOORDINAR_AGENDA') {
+        return 'REAGENDAR';
     }
 
     if (in_array($punto, [
@@ -177,6 +186,11 @@ function ca_respuesta_abandono($punto) {
             'Agenda confirmada.',
             'Usuario: no asistio a la revision.'
         ],
+        'REAGENDAR' => [
+            'Agenda confirmada.',
+            'Usuario: marca no asistio.',
+            'Cliente: quiere re agendar.'
+        ],
         'TASACION_FINAL_RECHAZADA' => [
             'BOT: envia tasacion final.',
             'Usuario: responde por ahora no.'
@@ -232,6 +246,7 @@ $puntosAbandono = [
     'NO_CONFIRMA_AGENDA',
     'NO_RESPONDE_RECORDATORIO_AGENDA',
     'NO_ASISTIO_AGENDA',
+    'REAGENDAR',
     'TASACION_FINAL_RECHAZADA',
     'NO_RESPONDE_TASACION_FINAL'
 ];
@@ -299,6 +314,11 @@ require_once('sistema_pre_contenido.php');
     .ca-badge-naranja{
         background:#ff8c00;
         color:#fff;
+    }
+
+    .ca-badge-negro {
+        background: #000;
+        color: #fff;
     }
 
     .ca-respuesta-flujo {
