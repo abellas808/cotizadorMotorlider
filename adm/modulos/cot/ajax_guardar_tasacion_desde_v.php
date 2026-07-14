@@ -100,6 +100,10 @@ function cot_normalizar_money($valor) {
 
     $valor = preg_replace('/\D/', '', $valor);
 
+    if ($valor === '') {
+        return '';
+    }
+
     return intval($valor);
 }
 

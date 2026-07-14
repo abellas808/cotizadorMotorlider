@@ -16,6 +16,7 @@ require_once(__DIR__ . '/../../includes/database.php');
 require_once(__DIR__ . '/../../includes/funciones.php');
 require_once(__DIR__ . '/../../../whatsapp/services/ParametroSistemaService.php');
 require_once(__DIR__ . '/../../../whatsapp/services/TwilioMessageService.php');
+require_once(__DIR__ . '/../../../whatsapp/services/CarritoAbandonadoService.php');
 
 session_start();
 
@@ -175,6 +176,7 @@ if (!$okEstado) {
     ]);
 }
 
+if (false) {
 $db->query("
     UPDATE carrito_abandonado
     SET
@@ -248,6 +250,8 @@ if (!$okCarrito) {
     ]);
 }
 
+}
+
 $conversacion = $db->query_first("
     SELECT id, datos_json
     FROM whatsapp_conversaciones
@@ -266,6 +270,18 @@ if (!$conversacion) {
         LIMIT 1
     ");
 }
+
+$idConversacionCarrito = intval($conversacion['id'] ?? 0);
+
+CarritoAbandonadoService::registrar(
+    $idCotizacion,
+    $idConversacionCarrito,
+    $telefono,
+    'Cliente no asistio a la agenda',
+    'NO_ASISTIO_AGENDA',
+    'AGENDA',
+    $nombreUsuario
+);
 
 if ($conversacion) {
     $datosConversacion = [];
