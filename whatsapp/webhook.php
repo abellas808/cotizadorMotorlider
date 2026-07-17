@@ -1588,6 +1588,30 @@ function wa_buscar_marcas_similares(string $texto, int $limite = 5): array
 
     return array_slice($resultados, 0, $limite);
 }
+function wa_marcas_sugeridas_fallback(int $limite = 5): array
+{
+    $marcas = wa_obtener_marcas_catalogo();
+    $resultados = [];
+
+    foreach ($marcas as $marca) {
+        if ($marca['cotisa'] !== 1) {
+            continue;
+        }
+
+        $resultados[] = [
+            'id'        => $marca['id'],
+            'id_marca'  => $marca['id_marca'],
+            'nombre'    => $marca['nombre'],
+            'prioridad' => $marca['prioridad']
+        ];
+
+        if (count($resultados) >= $limite) {
+            break;
+        }
+    }
+
+    return $resultados;
+}
 
 // =========================
 // MODELOS
@@ -1701,7 +1725,6 @@ function wa_buscar_modelos_similares(int $idMarca, string $texto, int $limite = 
 
     return array_slice($resultados, 0, $limite);
 }
-
 // =========================
 // VERSIONES
 // =========================
@@ -1811,7 +1834,6 @@ function wa_buscar_versiones_similares(int $idMarca, int $idModelo, string $text
 
     return array_slice($resultados, 0, $limite);
 }
-
 // =========================
 // COTIZADOR API
 // =========================
@@ -4671,6 +4693,7 @@ if (($userState['step'] ?? '') === 'marca') {
 
     if ($marcaIngresada === '') {
         twiml_message_and_save($from, "No pude leer la marca. Escribime la MARCA del vehículo.");
+        return;
     }
 
     try {
@@ -4678,10 +4701,11 @@ if (($userState['step'] ?? '') === 'marca') {
     } catch (Throwable $e) {
         wa_log('MARCA_DB_EXCEPTION', ['error' => $e->getMessage()]);
         twiml_message_and_save($from, "Ocurrió un problema consultando el catálogo de marcas. Probá nuevamente en unos instantes.");
+        return;
     }
 
     if ($marcaExacta !== null) {
-         $marcaFinal = $marcaExacta['nombre'];
+        $marcaFinal = $marcaExacta['nombre'];
 
         wa_set_user_state($from, [
             'step' => 'modelo',
@@ -4691,9 +4715,10 @@ if (($userState['step'] ?? '') === 'marca') {
 
         twiml_message_and_save(
             $from,
-             "Anotado. ¿Qué MODELO es?\n"
+            "Anotado. ¿Qué MODELO es?\n"
             . "(Ej: Onix, E2, Gol)"
         );
+        return;
     }
 
     try {
@@ -4701,6 +4726,11 @@ if (($userState['step'] ?? '') === 'marca') {
     } catch (Throwable $e) {
         wa_log('MARCA_SUGERENCIAS_DB_EXCEPTION', ['error' => $e->getMessage()]);
         twiml_message_and_save($from, "Ocurrió un problema consultando el catálogo de marcas. Probá nuevamente en unos instantes.");
+        return;
+    }
+
+    if (empty($sugerencias)) {
+        $sugerencias = wa_marcas_sugeridas_fallback(5);
     }
 
     if (!empty($sugerencias)) {
@@ -4730,6 +4760,7 @@ if (($userState['step'] ?? '') === 'marca') {
             . implode("\n", $opcionesTexto)
             . "\n\nRespondé con el número o con el nombre correcto."
         );
+        return;
     }
 
     wa_registrar_input_no_match_safe([
@@ -4748,8 +4779,8 @@ if (($userState['step'] ?? '') === 'marca') {
     ]);
 
     twiml_message_and_save($from, "No encontré esa marca.\n\nProbá escribiendo nuevamente el nombre de la marca.");
+    return;
 }
-
 // =========================
 // PASO: MARCA SUGERIDA
 // =========================
@@ -4762,13 +4793,14 @@ if (($userState['step'] ?? '') === 'marca_sugerida') {
         $marcaFinal = $opciones[$respuesta]['nombre'];
         $idMarca = (int)$opciones[$respuesta]['id_marca'];
 
-       wa_set_user_state ($from, [
+        wa_set_user_state($from, [
             'step' => 'modelo',
             'marca' => $marcaFinal,
             'id_marca' => $idMarca
         ], 'ESPERANDO_MODELO', 'BOT', $profileName !== '' ? $profileName : null);
 
         twiml_message_and_save($from, "Anotado. ¿Qué MODELO es? (Ej: Onix, E2, Gol)");
+        return;
     }
 
     foreach ($opciones as $op) {
@@ -4783,6 +4815,7 @@ if (($userState['step'] ?? '') === 'marca_sugerida') {
             ], 'ESPERANDO_MODELO', 'BOT', $profileName !== '' ? $profileName : null);
 
             twiml_message_and_save($from, "Anotado. ¿Qué MODELO es? (Ej: Onix, E2, Gol)");
+            return;
         }
     }
 
@@ -4794,6 +4827,7 @@ if (($userState['step'] ?? '') === 'marca_sugerida') {
             'respuesta' => $respuesta
         ]);
         twiml_message_and_save($from, "Ocurrió un problema consultando el catálogo de marcas. Probá nuevamente en unos instantes.");
+        return;
     }
 
     if ($marcaExacta !== null) {
@@ -4806,6 +4840,7 @@ if (($userState['step'] ?? '') === 'marca_sugerida') {
         ], 'ESPERANDO_MODELO', 'BOT', $profileName !== '' ? $profileName : null);
 
         twiml_message_and_save($from, "Anotado. ¿Qué MODELO es? (Ej: Onix, E2, Gol)");
+        return;
     }
 
     try {
@@ -4816,6 +4851,11 @@ if (($userState['step'] ?? '') === 'marca_sugerida') {
             'respuesta' => $respuesta
         ]);
         twiml_message_and_save($from, "Ocurrió un problema consultando el catálogo de marcas. Probá nuevamente en unos instantes.");
+        return;
+    }
+
+    if (empty($nuevasSugerencias)) {
+        $nuevasSugerencias = wa_marcas_sugeridas_fallback(5);
     }
 
     if (!empty($nuevasSugerencias)) {
@@ -4845,10 +4885,12 @@ if (($userState['step'] ?? '') === 'marca_sugerida') {
             . implode("\n", $opcionesTexto)
             . "\n\nRespondé con el número o con el nombre correcto."
         );
+        return;
     }
 
     wa_set_user_state($from, ['step' => 'marca'], 'ESPERANDO_MARCA', 'BOT', $profileName !== '' ? $profileName : null);
     twiml_message_and_save($from, "No encontré esa marca.\n\nProbá escribiendo nuevamente la marca del vehículo.");
+    return;
 }
 
 // =========================
@@ -4861,11 +4903,13 @@ if (($userState['step'] ?? '') === 'modelo') {
 
     if ($modeloIngresado === '') {
         twiml_message_and_save($from, "No pude leer el modelo. Escribime el MODELO del vehículo.");
+        return;
     }
 
     if ($idMarca <= 0) {
         wa_set_user_state($from, ['step' => null], 'INICIO', 'BOT', $profileName !== '' ? $profileName : null);
         twiml_message_and_save($from, "Se perdió la referencia de la marca seleccionada.\n\nEscribí COTIZAR para comenzar nuevamente.");
+        return;
     }
 
     try {
@@ -4873,6 +4917,7 @@ if (($userState['step'] ?? '') === 'modelo') {
     } catch (Throwable $e) {
         wa_log('MODELO_DB_EXCEPTION', ['error' => $e->getMessage(), 'id_marca' => $idMarca]);
         twiml_message_and_save($from, "Ocurrió un problema consultando el catálogo de modelos. Probá nuevamente en unos instantes.");
+        return;
     }
 
     if ($modeloExacto !== null) {
@@ -4886,10 +4931,8 @@ if (($userState['step'] ?? '') === 'modelo') {
             'id_model' => $modeloExacto['id_model']
         ], 'ESPERANDO_ANIO', 'BOT', $profileName !== '' ? $profileName : null);
 
-        twiml_message_and_save(
-            $from,
-            "¿De qué AÑO es?"
-        );
+        twiml_message_and_save($from, "¿De qué AÑO es?");
+        return;
     }
 
     try {
@@ -4897,6 +4940,7 @@ if (($userState['step'] ?? '') === 'modelo') {
     } catch (Throwable $e) {
         wa_log('MODELO_SUGERENCIAS_DB_EXCEPTION', ['error' => $e->getMessage(), 'id_marca' => $idMarca]);
         twiml_message_and_save($from, "Ocurrió un problema consultando el catálogo de modelos. Probá nuevamente en unos instantes.");
+        return;
     }
 
     if (!empty($sugerencias)) {
@@ -4929,6 +4973,7 @@ if (($userState['step'] ?? '') === 'modelo') {
             . implode("\n", $opcionesTexto)
             . "\n\nRespondé con el número o con el nombre correcto."
         );
+        return;
     }
 
     wa_registrar_input_no_match_safe([
@@ -4947,6 +4992,7 @@ if (($userState['step'] ?? '') === 'modelo') {
     ]);
 
     twiml_message_and_save($from, "No encontré ese modelo para {$marca}.\n\nProbá escribiendo nuevamente el nombre del modelo.");
+    return;
 }
 
 // =========================
@@ -5130,10 +5176,8 @@ if (($userState['step'] ?? '') === 'anio') {
         'anio' => $anio
     ], 'ESPERANDO_KM', 'BOT', $profileName !== '' ? $profileName : null);
 
-    twiml_message_and_save(
-        $from,
-        "Bien, ¿Cuántos Kilómetros tiene?"
-    );
+    twiml_message_and_save($from, "Bien, ¿cuántos Kilómetros tiene?");
+    return;
 }
 
 // =========================
@@ -5147,6 +5191,7 @@ if (($userState['step'] ?? '') === 'km') {
 
     if ($km === '') {
         twiml_message_and_save($from, "Los kilómetros no parecen válidos. Escribime solo números. Ejemplo: 85000");
+        return;
     }
 
     $idMarca = (int)($userState['id_marca'] ?? 0);
@@ -5218,11 +5263,13 @@ if (($userState['step'] ?? '') === 'km') {
         'km' => $km
     ], 'ESPERANDO_VERSION', 'BOT', $profileName !== '' ? $profileName : null);
 
-    // twiml_message_and_save(
-    //     $from,
-    //     "Perfecto. ¿Cuál es la Versión exacta?\n"
-    //     . "(Ej: GLS, LTZ, GS)"
-    // );
+    twiml_message_and_save(
+        $from,
+        "Perfecto. ¿Cuál es la Versión exacta?\n"
+        . "(Ej: GLS, LTZ, GS)\n"
+        . "Si no la sabés, respondé NINGUNA."
+    );
+    return;
 }
 
 // =========================
