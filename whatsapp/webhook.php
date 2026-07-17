@@ -3579,6 +3579,31 @@ $step = (string)($userState['step'] ?? '');
 $subStep = (string)($userState['sub_step'] ?? '');
 $payload = trim((string)($_POST['ButtonPayload'] ?? ''));
 $bodyLower = strtolower(trim((string)($_POST['Body'] ?? '')));
+$originalSidRecordatorioPre = trim((string)($_POST['OriginalRepliedMessageSid'] ?? ''));
+$metaRecordatorioPre = wa_obtener_meta_mensaje_respondido($originalSidRecordatorioPre);
+$origenRecordatorioPre = (string)($metaRecordatorioPre['origen'] ?? '');
+
+if ($origenRecordatorioPre === 'template_recordatorio_precotizacion_24hs') {
+    if (
+        in_array($payload, [
+            'recordatorio_precotizacion_no_agendar',
+            'recordatorio_precotizacion_24hs_cancelar'
+        ], true)
+        || in_array($bodyNorm, ['no quiero agendar', 'en otro momento', 'por ahora no', 'no'], true)
+    ) {
+        $payload = 'recordatorio_precotizacion_24hs_no';
+        $_POST['ButtonPayload'] = $payload;
+    } elseif (
+        in_array($payload, [
+            'recordatorio_precotizacion_agendar',
+            'recordatorio_precotizacion_24hs_agendar'
+        ], true)
+        || in_array($bodyNorm, ['quiero agendar', 'si quiero agendar', 'si agendar', 'si'], true)
+    ) {
+        $payload = 'recordatorio_precotizacion_24hs_si';
+        $_POST['ButtonPayload'] = $payload;
+    }
+}
 
 // =========================
 // RESPUESTA RECORDATORIO PRE-COTIZACION 24HS
@@ -3591,7 +3616,6 @@ if (
 ) {
     $conv = wa_get_conversation($from);
 
-    $originalSidRecordatorioPre = trim((string)($_POST['OriginalRepliedMessageSid'] ?? ''));
     $idCotizacionDesdeMensaje = wa_obtener_id_cotizacion_desde_mensaje_respondido($originalSidRecordatorioPre);
 
     $idCotizacion = $idCotizacionDesdeMensaje;
