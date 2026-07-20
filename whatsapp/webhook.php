@@ -4083,7 +4083,7 @@ $stepActual = (string)($userState['step'] ?? '');
 
 if (
     $agendaPendienteConfirmacionGlobal !== null
-    && in_array($stepActual, ['agenda_confirmar', 'agenda_confirmacion_humana'], true)
+    && $stepActual === 'agenda_confirmacion_humana'
 ) {
     if (wa_respuesta_es_si($body)) {
         try {
