@@ -333,8 +333,15 @@ class TwilioMessageService
     ): bool {
         $contentSid = ParametroSistemaService::obtener(
             'twilio',
-            'template_recordatorio_precotizacion_24hs'
+            'template_recordatorio_pretasacion_24'
         );
+
+        if (!$contentSid) {
+            $contentSid = ParametroSistemaService::obtener(
+                'twilio',
+                'template_recordatorio_precotizacion_24hs'
+            );
+        }
 
         return self::enviarTemplate(
             $to,
@@ -343,7 +350,7 @@ class TwilioMessageService
                 "1" => $nombre,
                 "2" => $vehiculo
             ],
-            'template_recordatorio_precotizacion_24hs',
+            'template_recordatorio_pretasacion_24',
             "¡Hola {$nombre}! 👋 Ayer te envié la cotización preliminar por tu {$vehiculo}. ¿Pudiste evaluarla? Avísame si querés agendar una revisión rápida sin costo o si por ahora preferís dejarlo en pausa.",
             $idCotizacion
         );

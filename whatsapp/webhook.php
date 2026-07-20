@@ -3161,9 +3161,8 @@ if (in_array($buttonPayloadAgenda, [
         $buttonPayload = 'tasacion_finalizar_si';
         $buttonPayloadAgenda = 'tasacion_finalizar_si';
     } else {
-        $_POST['ButtonPayload'] = 'tasacion_finalizar_no';
-        $buttonPayload = 'tasacion_finalizar_no';
-        $buttonPayloadAgenda = 'tasacion_finalizar_no';
+        wa_iniciar_rechazo_tasacion_final($from, $profileName, $userStateRecordatorio);
+        return;
     }
 }
 
@@ -3583,11 +3582,21 @@ $originalSidRecordatorioPre = trim((string)($_POST['OriginalRepliedMessageSid'] 
 $metaRecordatorioPre = wa_obtener_meta_mensaje_respondido($originalSidRecordatorioPre);
 $origenRecordatorioPre = (string)($metaRecordatorioPre['origen'] ?? '');
 
-if ($origenRecordatorioPre === 'template_recordatorio_precotizacion_24hs') {
+if (
+    in_array($origenRecordatorioPre, [
+        'template_recordatorio_precotizacion_24hs',
+        'template_recordatorio_pretasacion_24'
+    ], true)
+    || in_array($payload, [
+        'recordatorio_pretasacion_24hs_avanzar',
+        'recordatorio_pretasacion_24hs_no_avanzar'
+    ], true)
+) {
     if (
         in_array($payload, [
             'recordatorio_precotizacion_no_agendar',
-            'recordatorio_precotizacion_24hs_cancelar'
+            'recordatorio_precotizacion_24hs_cancelar',
+            'recordatorio_pretasacion_24hs_no_avanzar'
         ], true)
         || in_array($bodyNorm, ['no quiero agendar', 'en otro momento', 'por ahora no', 'no'], true)
     ) {
@@ -3596,7 +3605,8 @@ if ($origenRecordatorioPre === 'template_recordatorio_precotizacion_24hs') {
     } elseif (
         in_array($payload, [
             'recordatorio_precotizacion_agendar',
-            'recordatorio_precotizacion_24hs_agendar'
+            'recordatorio_precotizacion_24hs_agendar',
+            'recordatorio_pretasacion_24hs_avanzar'
         ], true)
         || in_array($bodyNorm, ['quiero agendar', 'si quiero agendar', 'si agendar', 'si'], true)
     ) {
