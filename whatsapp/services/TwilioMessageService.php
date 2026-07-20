@@ -357,7 +357,8 @@ class TwilioMessageService
     }
 
     public static function enviarTemplateRecordatorioConfirmacionAgenda3Hs(
-        string $to
+        string $to,
+        ?int $idCotizacion = null
     ): bool {
         $contentSid = ParametroSistemaService::obtener(
             'twilio',
@@ -369,7 +370,8 @@ class TwilioMessageService
             $contentSid,
             [],
             'template_recordatorio_confirmacion_agenda_3hs',
-            'Recordatorio 3 hs para confirmar agenda'
+            'Recordatorio 3 hs para confirmar agenda',
+            $idCotizacion
         );
     }
 

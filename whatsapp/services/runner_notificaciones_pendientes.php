@@ -209,12 +209,51 @@ while ($row = $rs->fetch_assoc()) {
                 'telefono' => $telefono
             ]);
 
-            $ok = TwilioMessageService::enviarTemplateRecordatorioConfirmacionAgenda3Hs($telefono);
+            $idCotizacion = intval($row['id_cotizacion'] ?? 0);
+
+            $ok = TwilioMessageService::enviarTemplateRecordatorioConfirmacionAgenda3Hs(
+                $telefono,
+                $idCotizacion > 0 ? $idCotizacion : null
+            );
 
             if ($ok) {
                 NotificacionPendienteService::marcarProcesada($id);
 
-                $idCotizacion = intval($row['id_cotizacion'] ?? 0);
+                if ($tipo === 'RECORDATORIO_CONFIRMACION_AGENDA_3HS' && $idCotizacion > 0) {
+                    $cnAbandonoAgenda3Hs = wa_db();
+                    $rsConvAgenda3Hs = $cnAbandonoAgenda3Hs->query("
+                        SELECT id
+                        FROM whatsapp_conversaciones
+                        WHERE telefono = '" . $cnAbandonoAgenda3Hs->real_escape_string($telefono) . "'
+                          AND id_cotizacion = " . intval($idCotizacion) . "
+                        ORDER BY id DESC
+                        LIMIT 1
+                    ");
+                    $convAgenda3Hs = $rsConvAgenda3Hs ? $rsConvAgenda3Hs->fetch_assoc() : null;
+                    $idConversacionAgenda3Hs = intval($convAgenda3Hs['id'] ?? 0);
+                    $cnAbandonoAgenda3Hs->close();
+
+                    CarritoAbandonadoService::registrar(
+                        $idCotizacion,
+                        $idConversacionAgenda3Hs,
+                        $telefono,
+                        'Sin respuesta a la confirmacion automatica de agenda',
+                        'NO_CONFIRMACION_AGENDA_AUTO',
+                        'AGENDA',
+                        'Alan'
+                    );
+
+                    NotificacionPendienteService::crear(
+                        $idCotizacion,
+                        intval($row['id_agenda'] ?? 0) > 0 ? intval($row['id_agenda']) : null,
+                        $telefono,
+                        'ABANDONO_AGENDA_POST_RECORDATORIO_3HS',
+                        'AGENDA',
+                        date('Y-m-d H:i:s', strtotime('+3 hours')),
+                        $payload,
+                        'Control interno: si no responde al recordatorio de agenda en 3 hs, actualizar carrito abandonado'
+                    );
+                }
 
                 if ($tipo === 'RECORDATORIO_CONFIRMACION_AGENDA_10HS' && $idCotizacion > 0) {
                     NotificacionPendienteService::crear(
@@ -662,6 +701,7 @@ while ($row = $rs->fetch_assoc()) {
                 SELECT id, datos_json
                 FROM whatsapp_conversaciones
                 WHERE telefono = '" . $cnAbandono->real_escape_string($telefono) . "'
+                  AND id_cotizacion = " . intval($idCotizacion) . "
                 ORDER BY id DESC
                 LIMIT 1
             ";
@@ -670,6 +710,18 @@ while ($row = $rs->fetch_assoc()) {
             $conv = $rsConv ? $rsConv->fetch_assoc() : null;
 
             $idConversacion = intval($conv['id'] ?? 0);
+
+            if ($idConversacion <= 0) {
+                $rsConvFallback = $cnAbandono->query("
+                    SELECT id, datos_json
+                    FROM whatsapp_conversaciones
+                    WHERE telefono = '" . $cnAbandono->real_escape_string($telefono) . "'
+                    ORDER BY id DESC
+                    LIMIT 1
+                ");
+                $conv = $rsConvFallback ? $rsConvFallback->fetch_assoc() : $conv;
+                $idConversacion = intval($conv['id'] ?? 0);
+            }
 
             $datos = [];
             if (!empty($conv['datos_json'])) {

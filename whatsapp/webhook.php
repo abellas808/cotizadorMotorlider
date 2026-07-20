@@ -6169,8 +6169,14 @@ if (
     $buttonPayloadRecordatorioAgenda === 'recordatorio_agenda_10_cancelar'
 ) {
     $convTmp = wa_get_conversation($from);
+    $originalSidRecordatorioAgenda = trim((string)($_POST['OriginalRepliedMessageSid'] ?? ''));
+    $idCotizacionDesdeRecordatorioAgenda = wa_obtener_id_cotizacion_desde_mensaje_respondido($originalSidRecordatorioAgenda);
 
-    $idCotizacionTmp = intval($userState['id_cotizacion'] ?? 0);
+    $idCotizacionTmp = $idCotizacionDesdeRecordatorioAgenda;
+
+    if ($idCotizacionTmp <= 0) {
+        $idCotizacionTmp = intval($userState['id_cotizacion'] ?? 0);
+    }
 
     if ($idCotizacionTmp <= 0) {
         $idCotizacionTmp = intval($convTmp['id_cotizacion'] ?? 0);
