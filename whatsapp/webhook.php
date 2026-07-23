@@ -290,6 +290,7 @@ function wa_es_cotizar(string $body, string $buttonPayload = '', string $buttonT
 
 function wa_iniciar_cotizacion_desde_comando(string $from, string $profileName = ''): void
 {
+    try {
     $idNuevaConversacion = ConversationService::crearNueva(
         $from,
         $profileName !== '' ? $profileName : ''
@@ -310,6 +311,12 @@ function wa_iniciar_cotizacion_desde_comando(string $from, string $profileName =
         'telefono' => $from,
         'id_conversacion' => $idNuevaConversacion
     ]);
+    } catch (Throwable $e) {
+        wa_log('COTIZAR_INICIO_ERROR', [
+            'telefono' => $from,
+            'error' => $e->getMessage()
+        ]);
+    }
 
     twiml_message_and_save(
         $from,
