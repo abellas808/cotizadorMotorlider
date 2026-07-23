@@ -262,6 +262,8 @@ function wa_es_agendar(string $texto): bool
 
     return in_array($v, [
         'agendar',
+        'si agendar',
+        'si quiero agendar',
         'quiero agendar',
         'deseo agendar',
         'coordinar inspeccion',
@@ -2913,6 +2915,7 @@ $originalSidInicial = trim((string)($_POST['OriginalRepliedMessageSid'] ?? ''));
 $stepPreTasacionActual = (string)($userState['step'] ?? $currentConv['step_actual'] ?? '');
 $subStepPreTasacionActual = (string)($userState['sub_step'] ?? $currentConv['sub_step_actual'] ?? '');
 $forzarNoAgendarPreTasacion = false;
+$forzarAgendarPreTasacion = false;
 $idCotizacionPreRespondida = 0;
 
 if ($originalSidInicial !== '' && $bodyNorm === 'en otro momento') {
@@ -2992,6 +2995,66 @@ if ($forzarNoAgendarPreTasacion) {
     $_POST['ButtonPayload'] = 'precotizacion_no_agendar';
     $buttonPayload = 'precotizacion_no_agendar';
     $buttonPayloadAgenda = 'precotizacion_no_agendar';
+
+    if ($idCotizacionPreRespondida > 0) {
+        $userState['id_cotizacion'] = $idCotizacionPreRespondida;
+    }
+}
+
+if (
+    !$forzarNoAgendarPreTasacion
+    && $buttonPayloadAgenda === ''
+    && wa_es_agendar($body)
+) {
+    if (
+        $stepPreTasacionActual === 'resultado_enviado'
+        && $subStepPreTasacionActual === 'esperando_agenda'
+    ) {
+        $idCotizacionPreRespondida = intval($userState['id_cotizacion'] ?? $currentConv['id_cotizacion'] ?? 0);
+
+        wa_log('PRETASACION_AGENDAR_FORZADO_DESDE_ESTADO', [
+            'telefono' => $from,
+            'id_cotizacion' => $idCotizacionPreRespondida,
+            'step' => $stepPreTasacionActual,
+            'sub_step' => $subStepPreTasacionActual,
+            'body' => $body
+        ]);
+
+        $forzarAgendarPreTasacion = true;
+    } else {
+        $ultimoMensajeBot = wa_obtener_contexto_pre_tasacion_actual($from);
+        $metaUltimoMensajeBot = $ultimoMensajeBot['meta'] ?? [];
+        $origenUltimoMensajeBot = (string)($metaUltimoMensajeBot['origen'] ?? '');
+
+        if ($origenUltimoMensajeBot === 'backend_pre_tasacion') {
+            $idCotizacionPreRespondida = intval(
+                $metaUltimoMensajeBot['id_cotizacion']
+                ?? $metaUltimoMensajeBot['id_cotizaciones_generadas']
+                ?? $metaUltimoMensajeBot['cotizacion_id']
+                ?? $userState['id_cotizacion']
+                ?? $currentConv['id_cotizacion']
+                ?? 0
+            );
+
+            wa_log('PRETASACION_AGENDAR_FORZADO_DESDE_ULTIMO_SALIENTE', [
+                'telefono' => $from,
+                'id_mensaje_saliente' => intval($ultimoMensajeBot['id'] ?? 0),
+                'sid_mensaje_saliente' => (string)($ultimoMensajeBot['sid_mensaje'] ?? ''),
+                'id_cotizacion' => $idCotizacionPreRespondida,
+                'body' => $body
+            ]);
+
+            $forzarAgendarPreTasacion = true;
+        }
+    }
+}
+
+if ($forzarAgendarPreTasacion) {
+    $_POST['ButtonPayload'] = 'si_agendar';
+    $buttonPayload = 'si_agendar';
+    $buttonPayloadAgenda = 'si_agendar';
+    $userState['step'] = 'resultado_enviado';
+    $userState['sub_step'] = 'esperando_agenda';
 
     if ($idCotizacionPreRespondida > 0) {
         $userState['id_cotizacion'] = $idCotizacionPreRespondida;
@@ -3805,6 +3868,7 @@ if ($step === 'resultado_enviado' && $subStep === 'esperando_agenda') {
     if (
         $payload === 'si_agendar' ||
         $payload === 'precotizacion_agendar' ||
+        wa_es_agendar($body) ||
         in_array($bodyLower, ['agendar', 'si agendar', 'sí agendar'], true)
     ) {
 
@@ -3930,6 +3994,7 @@ if ($step === 'resultado_enviado' && $subStep === 'esperando_agenda') {
    // EN OTRO MOMENTO / NO ME QUIERO AGENDAR
     if (
         $payload === 'precotizacion_no_agendar' ||
+        in_array($bodyNorm, ['en otro momento', 'no', 'ahora no'], true) ||
         in_array($bodyLower, ['en otro momento', 'no', 'ahora no'], true)
     ) {
         $conv = wa_get_conversation($from);
