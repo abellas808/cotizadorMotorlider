@@ -358,7 +358,7 @@ function wa_db(): mysqli
         throw new RuntimeException('Error conexión MySQL: ' . $cn->connect_error);
     }
 
-    if (!$cn->set_charset('utf8')) {
+    if (!$cn->set_charset('utf8mb4')) {
         throw new RuntimeException('Error charset MySQL: ' . $cn->error);
     }
 
