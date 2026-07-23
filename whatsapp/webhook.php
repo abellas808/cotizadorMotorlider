@@ -288,6 +288,37 @@ function wa_es_cotizar(string $body, string $buttonPayload = '', string $buttonT
     return false;
 }
 
+function wa_iniciar_cotizacion_desde_comando(string $from, string $profileName = ''): void
+{
+    $idNuevaConversacion = ConversationService::crearNueva(
+        $from,
+        $profileName !== '' ? $profileName : ''
+    );
+
+    wa_set_user_state(
+        $from,
+        [
+            'step' => 'marca',
+            'id_conversacion' => $idNuevaConversacion
+        ],
+        'ESPERANDO_MARCA',
+        'BOT',
+        $profileName !== '' ? $profileName : null
+    );
+
+    wa_log('NUEVA_CONVERSACION_COTIZACION', [
+        'telefono' => $from,
+        'id_conversacion' => $idNuevaConversacion
+    ]);
+
+    twiml_message_and_save(
+        $from,
+        "Â¡Excelente! Vamos a tasar tu auto de forma rÃ¡pida.\n"
+        . "Para empezar, decime la MARCA del vehÃ­culo.\n"
+        . "(Ej: Chevrolet, BYD, Volkswagen)"
+    );
+}
+
 function wa_respuesta_es_si(string $texto): bool
 {
     $v = wa_normalizar_texto($texto);
@@ -2883,6 +2914,10 @@ $to          = trim((string)($_POST['To'] ?? ''));
 $body        = trim((string)($_POST['Body'] ?? ''));
 $messageSid  = trim((string)($_POST['MessageSid'] ?? ''));
 $profileName = trim((string)($_POST['ProfileName'] ?? ''));
+$messageType = trim((string)($_POST['MessageType'] ?? ''));
+$buttonPayloadInicial = trim((string)($_POST['ButtonPayload'] ?? ''));
+$buttonTextInicial = trim((string)($_POST['ButtonText'] ?? ''));
+$originalRepliedMessageSid = trim((string)($_POST['OriginalRepliedMessageSid'] ?? ''));
 
 $GLOBALS['wa_current_from'] = $from;
 $GLOBALS['wa_current_conv'] = $id_conversacion;
@@ -2892,11 +2927,15 @@ $GLOBALS['wa_current_outgoing_emisor'] = 'BOT';
 $GLOBALS['wa_current_outgoing_already_saved'] = false;
 
 wa_log('INCOMING_PARSED', [
-    'from'         => $from,
-    'to'           => $to,
-    'body'         => $body,
-    'message_sid'  => $messageSid,
-    'profile_name' => $profileName
+    'from'                         => $from,
+    'to'                           => $to,
+    'body'                         => $body,
+    'message_sid'                  => $messageSid,
+    'profile_name'                 => $profileName,
+    'message_type'                 => $messageType,
+    'button_payload'               => $buttonPayloadInicial,
+    'button_text'                  => $buttonTextInicial,
+    'original_replied_message_sid' => $originalRepliedMessageSid
 ]);
 
 if ($from === '') {
@@ -2925,15 +2964,30 @@ $bodyNorm = wa_normalizar_texto($body);
 $userState = wa_get_user_data($from);
 $currentConv = wa_get_conversation($from);
 $currentEstado = (string)($currentConv['estado'] ?? 'INICIO');
-$buttonPayloadAgenda = trim((string)($_POST['ButtonPayload'] ?? ''));
+$buttonPayloadAgenda = $buttonPayloadInicial;
 $buttonPayload = $buttonPayloadAgenda;
 
-$originalSidInicial = trim((string)($_POST['OriginalRepliedMessageSid'] ?? ''));
+$originalSidInicial = $originalRepliedMessageSid;
 $stepPreTasacionActual = (string)($userState['step'] ?? $currentConv['step_actual'] ?? '');
 $subStepPreTasacionActual = (string)($userState['sub_step'] ?? $currentConv['sub_step_actual'] ?? '');
 $forzarNoAgendarPreTasacion = false;
 $forzarAgendarPreTasacion = false;
 $idCotizacionPreRespondida = 0;
+
+if (wa_es_cotizar($body, $buttonPayload, $buttonTextInicial)) {
+    wa_log('COTIZAR_DETECTADO_TEMPRANO', [
+        'telefono'       => $from,
+        'body'           => $body,
+        'button_payload' => $buttonPayload,
+        'button_text'    => $buttonTextInicial,
+        'message_type'   => $messageType,
+        'estado_actual'  => $currentEstado,
+        'step_actual'    => $stepPreTasacionActual,
+        'message_sid'    => $messageSid
+    ]);
+
+    wa_iniciar_cotizacion_desde_comando($from, $profileName);
+}
 
 if ($originalSidInicial !== '' && $bodyNorm === 'en otro momento') {
     $metaMensajeRespondido = wa_obtener_meta_mensaje_respondido($originalSidInicial);
