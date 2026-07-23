@@ -4481,13 +4481,7 @@ if (in_array($bodyNorm, ['hola', 'hi', 'menu', 'inicio'], true)) {
         $profileName !== '' ? $profileName : null
     );
 
-    twiml_message_and_save(
-        $from,
-        "👋 ¡Hola! Soy Alan\n"
-        . "Cotizador virtual de Motorlider.\n"
-        . "Estoy aquí para ayudarte a cotizar tu vehículo de forma rápida y fácil.\n\n"
-        . "Para comenzar, por favor escribí: COTIZAR."
-    );
+    wa_preguntar_inicio_cotizar_interactiva($from);
 }
 
 if (
