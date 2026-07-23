@@ -320,8 +320,8 @@ function wa_iniciar_cotizacion_desde_comando(string $from, string $profileName =
 
     twiml_message_and_save(
         $from,
-        "Â¡Excelente! Vamos a tasar tu auto de forma rÃ¡pida.\n"
-        . "Para empezar, decime la MARCA del vehÃ­culo.\n"
+        "Excelente. Vamos a tasar tu auto de forma rapida.\n"
+        . "Para empezar, decime la MARCA del vehiculo.\n"
         . "(Ej: Chevrolet, BYD, Volkswagen)"
     );
 }
