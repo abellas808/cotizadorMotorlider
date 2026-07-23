@@ -271,6 +271,23 @@ function wa_es_agendar(string $texto): bool
     ], true);
 }
 
+function wa_es_cotizar(string $body, string $buttonPayload = '', string $buttonText = ''): bool
+{
+    $valores = [
+        wa_normalizar_texto($body),
+        wa_normalizar_texto($buttonPayload),
+        wa_normalizar_texto($buttonText),
+    ];
+
+    foreach ($valores as $valor) {
+        if (in_array($valor, ['cotizar', 'iniciar', 'empezar', 'iniciar cotizacion'], true)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 function wa_respuesta_es_si(string $texto): bool
 {
     $v = wa_normalizar_texto($texto);
@@ -4488,7 +4505,7 @@ if (
     return;
 }
 
-if ($bodyNorm === 'cotizar') {
+if (wa_es_cotizar($body, $buttonPayload, (string)($_POST['ButtonText'] ?? ''))) {
 
     $idNuevaConversacion = ConversationService::crearNueva(
         $from,
