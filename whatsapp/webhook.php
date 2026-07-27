@@ -3883,8 +3883,8 @@ if (
         }
 
         $nuevoEstado = $userState;
-        $nuevoEstado['step'] = 'esperando_motivo_rechazo_tasacion_final';
-        $nuevoEstado['sub_step'] = 'motivo_rechazo_tasacion_final';
+        $nuevoEstado['step'] = 'esperando_motivo_no_agendar_precotizacion';
+        $nuevoEstado['sub_step'] = 'motivo_no_agendar';
         $nuevoEstado['id_cotizacion'] = $idCotizacion;
         $nuevoEstado['id_conversacion'] = $idConversacion;
         $nuevoEstado['origen_abandono'] = 'PRETASACION';
@@ -3893,14 +3893,14 @@ if (
         wa_set_user_state(
             $from,
             $nuevoEstado,
-            'ESPERANDO_MOTIVO_RECHAZO_TASACION_FINAL',
+            'ESPERANDO_MOTIVO_NO_AGENDAR_PRE_COTIZACION',
             'BOT',
             $profileName !== '' ? $profileName : null,
             null,
             $idCotizacion > 0 ? $idCotizacion : null
         );
 
-        TwilioMessageService::enviarTemplateMotivoRechazoTasacionFinal($from);
+        TwilioMessageService::enviarTemplateMotivoNoAgendar($from, $idCotizacion);
 
         return;
     }
