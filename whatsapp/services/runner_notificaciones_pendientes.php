@@ -514,7 +514,10 @@ while ($row = $rs->fetch_assoc()) {
                 ");
             }
 
-            $okRecordatorio10Hs = TwilioMessageService::enviarTemplateRecordatorioConfirmacionAgenda10Hs($telefonoAgenda);
+            $okRecordatorio10Hs = TwilioMessageService::enviarTemplateRecordatorioConfirmacionAgenda10Hs(
+                $telefonoAgenda,
+                $idCotizacion
+            );
 
             $cnAbandonoAgenda->close();
 

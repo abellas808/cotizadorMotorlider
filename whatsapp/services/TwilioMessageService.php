@@ -400,7 +400,8 @@ class TwilioMessageService
     }
 
     public static function enviarTemplateRecordatorioConfirmacionAgenda10Hs(
-        string $to
+        string $to,
+        ?int $idCotizacion = null
     ): bool {
         $contentSid = ParametroSistemaService::obtener(
             'twilio',
@@ -416,7 +417,8 @@ class TwilioMessageService
             $contentSid,
             [],
             'template_recordatorio_confirmacion_agenda_10hs',
-            '¡Hola! Noté que no llegaste a confirmar tu agenda para la revisión. ¿Querés continuar con ella?'
+            '¡Hola! Noté que no llegaste a confirmar tu agenda para la revisión. ¿Querés continuar con ella?',
+            $idCotizacion
         );
     }
 
