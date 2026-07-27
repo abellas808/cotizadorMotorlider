@@ -749,6 +749,36 @@ function wa_get_conversation(string $telefono): ?array
     return $row ?: null;
 }
 
+function wa_get_conversation_by_cotizacion(string $telefono, int $idCotizacion): ?array
+{
+    if ($telefono === '' || $idCotizacion <= 0) {
+        return null;
+    }
+
+    $cn = wa_db();
+
+    $sql = "SELECT * FROM whatsapp_conversaciones WHERE telefono = ? AND id_cotizacion = ? ORDER BY id DESC LIMIT 1";
+    $st = $cn->prepare($sql);
+
+    if (!$st) {
+        throw new RuntimeException('Error prepare wa_get_conversation_by_cotizacion: ' . $cn->error);
+    }
+
+    $st->bind_param('si', $telefono, $idCotizacion);
+    $st->execute();
+    $rs = $st->get_result();
+
+    $row = $rs ? $rs->fetch_assoc() : null;
+
+    if ($rs) {
+        $rs->free();
+    }
+    $st->close();
+    $cn->close();
+
+    return $row ?: null;
+}
+
 function wa_create_conversation_if_not_exists(string $telefono, string $nombre = ''): array
 {
     $conv = wa_get_conversation($telefono);
@@ -6247,8 +6277,24 @@ if (
     $buttonPayloadNoAsistio === 'no_asistio_cancelar'
 ) {
     $convTmp = wa_get_conversation($from);
-    $idCotizacionTmp = intval($userState['id_cotizacion'] ?? 0);
+    $originalSidNoAsistio = trim((string)($_POST['OriginalRepliedMessageSid'] ?? ''));
+    $idCotizacionDesdeNoAsistio = wa_obtener_id_cotizacion_desde_mensaje_respondido($originalSidNoAsistio);
+    $idCotizacionTmp = $idCotizacionDesdeNoAsistio;
     $idAgendaRecordatorioTmp = 0;
+
+    if ($idCotizacionTmp > 0) {
+        $userState['id_cotizacion'] = $idCotizacionTmp;
+
+        $convCotizacionTmp = wa_get_conversation_by_cotizacion($from, $idCotizacionTmp);
+        if ($convCotizacionTmp !== null) {
+            $convTmp = $convCotizacionTmp;
+            $userState['id_conversacion'] = intval($convCotizacionTmp['id'] ?? 0);
+        }
+    }
+
+    if ($idCotizacionTmp <= 0) {
+        $idCotizacionTmp = intval($userState['id_cotizacion'] ?? 0);
+    }
 
     if ($idCotizacionTmp <= 0) {
         $idCotizacionTmp = intval($convTmp['id_cotizacion'] ?? 0);
@@ -8267,7 +8313,23 @@ function wa_procesar_respuesta_no_asistio(
     }
 
     $convTmp = wa_get_conversation($from);
-    $idCotizacionTmp = intval($userState['id_cotizacion'] ?? 0);
+    $originalSidNoAsistio = trim((string)($_POST['OriginalRepliedMessageSid'] ?? ''));
+    $idCotizacionDesdeNoAsistio = wa_obtener_id_cotizacion_desde_mensaje_respondido($originalSidNoAsistio);
+    $idCotizacionTmp = $idCotizacionDesdeNoAsistio;
+
+    if ($idCotizacionTmp > 0) {
+        $userState['id_cotizacion'] = $idCotizacionTmp;
+
+        $convCotizacionTmp = wa_get_conversation_by_cotizacion($from, $idCotizacionTmp);
+        if ($convCotizacionTmp !== null) {
+            $convTmp = $convCotizacionTmp;
+            $userState['id_conversacion'] = intval($convCotizacionTmp['id'] ?? 0);
+        }
+    }
+
+    if ($idCotizacionTmp <= 0) {
+        $idCotizacionTmp = intval($userState['id_cotizacion'] ?? 0);
+    }
 
     if ($idCotizacionTmp <= 0) {
         $idCotizacionTmp = intval($convTmp['id_cotizacion'] ?? 0);
