@@ -379,19 +379,14 @@ class TwilioMessageService
     {
         $contentSid = ParametroSistemaService::obtener(
             'twilio',
-            'template_motivo_recordatorio_no_agendar',
-            ParametroSistemaService::obtener(
-                'twilio',
-                'motivo_recordatorio_no_agendar',
-                'HXe9db678711733da0bb008b307d9ff19c'
-            )
+            'template_motivo_no_agendar'
         );
 
         return self::enviarTemplate(
             $to,
             $contentSid,
             [],
-            'template_motivo_recordatorio_no_agendar',
+            'template_motivo_no_agendar',
             'Gracias por tu respuesta, nos gustaría saber el motivo de tu decisión.',
             $idCotizacion
         );
