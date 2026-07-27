@@ -3191,15 +3191,32 @@ if (wa_procesar_respuesta_no_asistio($from, $body, $userState, $profileName)) {
     twiml_empty();
 }
 
+$motivoTasacionFinalTextoNorm = wa_normalizar_texto(
+    trim($buttonPayloadAgenda . ' ' . $body . ' ' . (string)($_POST['ButtonText'] ?? ''))
+);
+
 if (
     in_array($buttonPayloadAgenda, [
         'motivo_tasacion_final_otro_valor',
         'motivo_tasacion_final_vender_mas_adelante',
         'motivo_tasacion_final_personales',
+        'motivo_tasacion_final_probando',
         'motivo_no_age_tas_fin_otro_valor',
         'motivo_no_age_tas_fin_vendere_mas_adelante',
-        'motivo_no_age_tas_fin_motivos_personales'
+        'motivo_no_age_tas_fin_motivos_personales',
+        'motivo_no_age_tas_fin_probando'
     ], true)
+    || (
+        ($userState['step'] ?? '') === 'esperando_motivo_rechazo_tasacion_final'
+        && (
+            strpos($motivoTasacionFinalTextoNorm, 'mayor valor') !== false
+            || strpos($motivoTasacionFinalTextoNorm, 'otro valor') !== false
+            || strpos($motivoTasacionFinalTextoNorm, 'agendare luego') !== false
+            || strpos($motivoTasacionFinalTextoNorm, 'vender mas adelante') !== false
+            || strpos($motivoTasacionFinalTextoNorm, 'probando') !== false
+            || strpos($motivoTasacionFinalTextoNorm, 'personal') !== false
+        )
+    )
 ) {
     $conv = wa_get_conversation($from);
     $idConversacion = intval($conv['id'] ?? 0);
@@ -3209,31 +3226,54 @@ if (
         $idCotizacion = intval($conv['id_cotizacion'] ?? 0);
     }
 
-    $motivoAbandono = 'TASACION_FINAL_RECHAZADA';
+    $esMotivoPrecotizacion = strtoupper(trim((string)($userState['origen_abandono'] ?? ''))) === 'PRETASACION'
+        || strtoupper(trim((string)($userState['motivo_base'] ?? ''))) === 'NO_RESPONDE_PRETASACION';
+
+    $motivoAbandono = $esMotivoPrecotizacion ? 'NO_RESPONDE_PRETASACION' : 'TASACION_FINAL_RECHAZADA';
 
     switch ($buttonPayloadAgenda) {
         case 'motivo_tasacion_final_otro_valor':
         case 'motivo_no_age_tas_fin_otro_valor':
-            $motivoAbandono = 'ESPERABA_OTRO_VALOR';
+            $motivoAbandono = $esMotivoPrecotizacion ? 'ESPERABA_MAYOR_VALOR' : 'ESPERABA_OTRO_VALOR';
             break;
 
         case 'motivo_tasacion_final_vender_mas_adelante':
         case 'motivo_no_age_tas_fin_vendere_mas_adelante':
-            $motivoAbandono = 'VENDERA_MAS_ADELANTE';
+            $motivoAbandono = $esMotivoPrecotizacion ? 'ME_QUIERO_AGENDAR_EN_OTRO_MOMENTO' : 'VENDERA_MAS_ADELANTE';
             break;
 
         case 'motivo_tasacion_final_personales':
         case 'motivo_no_age_tas_fin_motivos_personales':
             $motivoAbandono = 'MOTIVOS_PERSONALES';
             break;
+
+        case 'motivo_tasacion_final_probando':
+        case 'motivo_no_age_tas_fin_probando':
+            $motivoAbandono = 'ESTABA_PROBANDO';
+            break;
+    }
+
+    if (strpos($motivoTasacionFinalTextoNorm, 'probando') !== false) {
+        $motivoAbandono = 'ESTABA_PROBANDO';
+    } elseif (strpos($motivoTasacionFinalTextoNorm, 'mayor valor') !== false || strpos($motivoTasacionFinalTextoNorm, 'otro valor') !== false) {
+        $motivoAbandono = $esMotivoPrecotizacion ? 'ESPERABA_MAYOR_VALOR' : 'ESPERABA_OTRO_VALOR';
+    } elseif (strpos($motivoTasacionFinalTextoNorm, 'agendare luego') !== false || strpos($motivoTasacionFinalTextoNorm, 'vender mas adelante') !== false) {
+        $motivoAbandono = $esMotivoPrecotizacion ? 'ME_QUIERO_AGENDAR_EN_OTRO_MOMENTO' : 'VENDERA_MAS_ADELANTE';
+    } elseif (strpos($motivoTasacionFinalTextoNorm, 'personal') !== false) {
+        $motivoAbandono = 'MOTIVOS_PERSONALES';
     }
 
     $mensajeCliente = $body !== '' ? $body : $buttonPayloadAgenda;
+    $origenCarrito = $esMotivoPrecotizacion ? 'PRETASACION' : 'TASACION_FINAL';
+    $motivosPendientes = $esMotivoPrecotizacion
+        ? ['NO_RESPONDE_PRETASACION', 'NO_AGENDA_REVISION']
+        : ['TASACION_FINAL_RECHAZADA', 'NO_RESPONDE_TASACION_FINAL'];
+    $motivoRegistro = $esMotivoPrecotizacion ? 'NO_RESPONDE_PRETASACION' : 'TASACION_FINAL_RECHAZADA';
 
     $actualizado = CarritoAbandonadoService::actualizarMotivoPendiente(
         $idCotizacion,
-        'TASACION_FINAL',
-        ['TASACION_FINAL_RECHAZADA', 'NO_RESPONDE_TASACION_FINAL'],
+        $origenCarrito,
+        $motivosPendientes,
         $mensajeCliente,
         $motivoAbandono
     );
@@ -3244,17 +3284,19 @@ if (
             $idConversacion,
             $from,
             $mensajeCliente,
-            'TASACION_FINAL_RECHAZADA',
-            'TASACION_FINAL',
+            $motivoRegistro,
+            $origenCarrito,
             'Alan'
         );
     }
 
     $nuevoEstado = $userState;
     $nuevoEstado['step'] = 'cerrado';
-    $nuevoEstado['sub_step'] = 'tasacion_final_rechazada_con_motivo';
+    $nuevoEstado['sub_step'] = $esMotivoPrecotizacion
+        ? 'precotizacion_rechazada_con_motivo'
+        : 'tasacion_final_rechazada_con_motivo';
     $nuevoEstado['motivo_abandono'] = $motivoAbandono;
-    $nuevoEstado['origen_abandono'] = 'TASACION_FINAL';
+    $nuevoEstado['origen_abandono'] = $origenCarrito;
 
     wa_set_user_state(
         $from,
@@ -3725,6 +3767,7 @@ $origenRecordatorioPre = (string)($metaRecordatorioPre['origen'] ?? '');
 
 if (
     in_array($origenRecordatorioPre, [
+        'recordatorio_precotizaciones_24hs_new',
         'template_recordatorio_precotizacion_24hs',
         'template_recordatorio_pretasacion_24'
     ], true)
@@ -3840,8 +3883,8 @@ if (
         }
 
         $nuevoEstado = $userState;
-        $nuevoEstado['step'] = 'esperando_motivo_no_agendar_precotizacion';
-        $nuevoEstado['sub_step'] = 'motivo_no_agendar';
+        $nuevoEstado['step'] = 'esperando_motivo_rechazo_tasacion_final';
+        $nuevoEstado['sub_step'] = 'motivo_rechazo_tasacion_final';
         $nuevoEstado['id_cotizacion'] = $idCotizacion;
         $nuevoEstado['id_conversacion'] = $idConversacion;
         $nuevoEstado['origen_abandono'] = 'PRETASACION';
@@ -3850,14 +3893,14 @@ if (
         wa_set_user_state(
             $from,
             $nuevoEstado,
-            'ESPERANDO_MOTIVO_NO_AGENDAR_PRE_COTIZACION',
+            'ESPERANDO_MOTIVO_RECHAZO_TASACION_FINAL',
             'BOT',
             $profileName !== '' ? $profileName : null,
             null,
             $idCotizacion > 0 ? $idCotizacion : null
         );
 
-        TwilioMessageService::enviarTemplateMotivoNoAgendar($from, $idCotizacion);
+        TwilioMessageService::enviarTemplateMotivoRechazoTasacionFinal($from);
 
         return;
     }
