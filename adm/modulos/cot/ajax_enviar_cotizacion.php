@@ -228,7 +228,7 @@ function enviar_whatsapp_twilio($to, $body) {
 	];
 }
 
-function enviar_template_pretasacion_twilio($to, $bodyTexto) {
+function enviar_template_pretasacion_twilio($to, array $variablesTemplate) {
 	$url = 'https://api.twilio.com/2010-04-01/Accounts/' . TWILIO_ACCOUNT_SID . '/Messages.json';
 	$contentSid = cot_obtener_parametro_sistema(
 		'twilio',
@@ -244,9 +244,7 @@ function enviar_template_pretasacion_twilio($to, $bodyTexto) {
 		'From' => TWILIO_WHATSAPP_FROM,
 		'To'   => $to,
 		'ContentSid' => $contentSid,
-		'ContentVariables' => json_encode([
-			'1' => $bodyTexto
-		], JSON_UNESCAPED_UNICODE)
+		'ContentVariables' => json_encode($variablesTemplate, JSON_UNESCAPED_UNICODE)
 	]);
 
 	$ch = curl_init($url);
@@ -458,6 +456,19 @@ if ($nombreCliente === '') {
 $desdeFmt = number_format($pretasacion_desde, 0, ',', '.');
 $hastaFmt = number_format($pretasacion_hasta, 0, ',', '.');
 
+if ($clavePlantilla === 'respuesta_humana_venta_contado') {
+	$textoOperacionTemplate = 'al contado. Nosotros asumimos los honorarios y gastos de escribano.';
+} else {
+	$textoOperacionTemplate = 'que será tomado como parte de pago del vehículo en el cual está interesado/a.';
+}
+
+$variablesTemplatePretasacion = [
+	'1' => $nombreCliente,
+	'2' => $desdeFmt,
+	'3' => $hastaFmt,
+	'4' => $textoOperacionTemplate
+];
+
 $mensaje = $plantilla;
 $mensaje = str_replace('{nombre_cliente}', $nombreCliente, $mensaje);
 $mensaje = str_replace('{pre_tasacion_desde}', $desdeFmt, $mensaje);
@@ -466,7 +477,7 @@ $mensaje = str_replace('{pre_tasacion_hasta}', $hastaFmt, $mensaje);
 // =========================
 // ENVIAR WHATSAPP
 // =========================
-$envio = enviar_template_pretasacion_twilio($telefono, $mensaje);
+$envio = enviar_template_pretasacion_twilio($telefono, $variablesTemplatePretasacion);
 
 if (!$envio['ok']) {
 	j([
@@ -491,7 +502,8 @@ registrar_mensaje_whatsapp_backend(
 		'id_usuario' => intval($idUsuario),
 		'tipo_venta' => $tipoVenta,
 		'clave_plantilla' => $clavePlantilla,
-		'content_sid' => (string)($envio['content_sid'] ?? '')
+		'content_sid' => (string)($envio['content_sid'] ?? ''),
+		'content_variables' => $variablesTemplatePretasacion
 	],
 	$idUsuario,
 	(string)($usuario['nombre'] ?? '')
