@@ -386,14 +386,14 @@ class TwilioMessageService
     {
         $contentSid = ParametroSistemaService::obtener(
             'twilio',
-            'template_motivo_no_agendar'
+            'template_motivo_cancelacion_agenda'
         );
 
         return self::enviarTemplate(
             $to,
             $contentSid,
             [],
-            'template_motivo_no_agendar',
+            'template_motivo_cancelacion_agenda',
             'Gracias por tu respuesta, nos gustaría saber el motivo de tu decisión.',
             $idCotizacion
         );
@@ -482,7 +482,8 @@ class TwilioMessageService
             $to,
             $contentSid,
             [
-                '1' => $nombre
+                '1' => $nombre,
+                '2' => $vehiculo
             ],
             'template_recordatorio_tasacion_final_24hs',
             "Recordatorio 24 hs de tasación final para {$nombre} - {$vehiculo}"
