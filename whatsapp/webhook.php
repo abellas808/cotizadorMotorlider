@@ -26,18 +26,25 @@ require_once __DIR__ . '/services/CarritoAbandonadoService.php';
 // =========================
 // CONFIG
 // =========================
-const TWILIO_AUTH_TOKEN = '58f767d26211d9d0c20ea687df00b4c3';
-const COTIZADOR_BASE_URL = 'https://carplay.uy/apicotizador/cotizadorPublico/';
-const TWILIO_TEMPLATE_INICIO_COTIZAR = 'HXe82609254670d3ddc6712e0c44601431';
-const DB_HOST = 'localhost';
-const DB_NAME = 'marcos2022_api';
-const DB_USER = 'marcos2022_usr_api';
-const DB_PASS = '_eT4AjJ79~tX]*h)J5';
-const TWILIO_ACCOUNT_SID = 'AC4a648c5c55de9d9b1f1f6601b14d4c4d';
-const TWILIO_WHATSAPP_FROM = 'whatsapp:+59898057857';
-const TWILIO_TEMPLATE_FICHA_OFICIAL = 'HX87986b209f35aeeed79d069cb816c647';
-const TWILIO_TEMPLATE_TIPO_VENTA = 'HXfaf8c64eb73fcfe261c8b5710e737614';
-const TWILIO_TEMPLATE_CONFIRMAR_AGENDA  = 'HX681d179d01fa947c267a0ae2ca1a3737';
+function wa_env(string $key, string $default = ''): string
+{
+    $value = getenv($key);
+    return ($value === false || $value === '') ? $default : (string)$value;
+}
+
+define('APP_ENV', wa_env('APP_ENV', 'production'));
+define('TWILIO_AUTH_TOKEN', wa_env('TWILIO_AUTH_TOKEN', '58f767d26211d9d0c20ea687df00b4c3'));
+define('COTIZADOR_BASE_URL', wa_env('COTIZADOR_BASE_URL', 'https://carplay.uy/apicotizador/cotizadorPublico/'));
+define('TWILIO_TEMPLATE_INICIO_COTIZAR', wa_env('TWILIO_TEMPLATE_INICIO_COTIZAR', 'HXe82609254670d3ddc6712e0c44601431'));
+define('DB_HOST', wa_env('DB_HOST', 'localhost'));
+define('DB_NAME', wa_env('DB_NAME', 'marcos2022_api'));
+define('DB_USER', wa_env('DB_USER', 'marcos2022_usr_api'));
+define('DB_PASS', wa_env('DB_PASS', '_eT4AjJ79~tX]*h)J5'));
+define('TWILIO_ACCOUNT_SID', wa_env('TWILIO_ACCOUNT_SID', 'AC4a648c5c55de9d9b1f1f6601b14d4c4d'));
+define('TWILIO_WHATSAPP_FROM', wa_env('TWILIO_WHATSAPP_FROM', 'whatsapp:+59898057857'));
+define('TWILIO_TEMPLATE_FICHA_OFICIAL', wa_env('TWILIO_TEMPLATE_FICHA_OFICIAL', 'HX87986b209f35aeeed79d069cb816c647'));
+define('TWILIO_TEMPLATE_TIPO_VENTA', wa_env('TWILIO_TEMPLATE_TIPO_VENTA', 'HXfaf8c64eb73fcfe261c8b5710e737614'));
+define('TWILIO_TEMPLATE_CONFIRMAR_AGENDA', wa_env('TWILIO_TEMPLATE_CONFIRMAR_AGENDA', 'HX681d179d01fa947c267a0ae2ca1a3737'));
 
 // =========================
 // PATHS
@@ -72,6 +79,10 @@ function get_request_headers_lower(): array
 
 function validate_twilio_signature(string $authToken): bool
 {
+    if (APP_ENV === 'local' && wa_env('TWILIO_SIGNATURE_VALIDATE', '0') === '0') {
+        return true;
+    }
+
     $headers = get_request_headers_lower();
     $twilioSignature = $headers['x-twilio-signature'] ?? '';
     $accountSid = (string)($_POST['AccountSid'] ?? '');
@@ -6925,6 +6936,16 @@ if (($userState['step'] ?? '') === 'agenda_hora') {
 
         twiml_empty();
     }
+
+    twiml_message_and_save(
+        $from,
+        "Resumen de tu agenda:\n\n"
+        . "Fecha: " . $fechaFormateada . "\n"
+        . "Hora: " . $horaFormateada . "\n"
+        . "Lugar: Av. de las AmÃ©ricas 7868 (Frente al Puente de las AmÃ©ricas)\n"
+        . "https://n9.cl/1q4vx\n\n"
+        . "RespondÃ© CONFIRMAR para finalizar la agenda o CANCELAR para dejarlo sin efecto."
+    );
 }
 
 // =========================
@@ -7322,13 +7343,23 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
         $idCotizacion
     );
 
-    TwilioMessageService::enviarTemplateDatosFinalesAgendaConfirmacion(
+    $okTemplateFinal = TwilioMessageService::enviarTemplateDatosFinalesAgendaConfirmacion(
         $from,
         wa_formatear_fecha_chat($fecha),
         substr($hora, 0, 5)
     );
 
-    return;
+    if (!$okTemplateFinal) {
+        twiml_message_and_save(
+            $from,
+            "Â¡Agenda confirmada!\n\n"
+            . "Fecha: " . wa_formatear_fecha_chat($fecha) . "\n"
+            . "Hora: " . substr($hora, 0, 5) . "\n\n"
+            . "Te esperamos en Motorlider."
+        );
+    }
+
+    twiml_empty();
 }
 
 $userState = wa_get_user_data($from);
@@ -7537,7 +7568,21 @@ function enviar_template_confirmacion($to, $fecha, $hora) {
 	]);
 
 	$response = curl_exec($ch);
+    $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $error = curl_error($ch);
 	curl_close($ch);
+
+    wa_log('TWILIO_TEMPLATE_CONFIRMACION_AGENDA_RESPONSE', [
+        'to' => $to,
+        'content_sid' => $contentSid,
+        'http_code' => $httpCode,
+        'error' => $error,
+        'response' => $response
+    ]);
+
+    if ($response === false || $error !== '' || $httpCode < 200 || $httpCode >= 300) {
+        return false;
+    }
 
     $mensajeHistorial =
         "Resumen de tu agenda:\n\n"
@@ -7557,7 +7602,7 @@ function enviar_template_confirmacion($to, $fecha, $hora) {
         'BOT'
     );
 
-	return $response;
+	return true;
 }
 
 function wa_obtener_contexto_completo_por_telefono(string $telefono): ?array
