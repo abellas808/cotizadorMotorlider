@@ -1648,7 +1648,6 @@ function obtenerContenidoURLConCurl($url) {
 			WHERE id_sucursal = "'.$sucursal.'"
 			AND fecha = "'.$fecha.'"
 			AND activo = 1
-			AND cancelado = 0
 		');
 
 		if ($qBloqueos && $qBloqueos->num_rows > 0) {
@@ -1717,7 +1716,15 @@ function obtenerContenidoURLConCurl($url) {
 
 				$horas_base[] = $horario->hora_comienzo;
 
-				$query_horario_ocupado = $bd->query('SELECT * FROM agendas WHERE fecha = "'.($fecha).'"  AND hora = "'.$horario->hora_comienzo.'"');
+				$query_horario_ocupado = $bd->query('
+					SELECT id_agenda
+					FROM agendas
+					WHERE id_sucursal = "'.$sucursal.'"
+					AND fecha = "'.($fecha).'"
+					AND LEFT(hora, 5) = "'.substr($horario->hora_comienzo, 0, 5).'"
+					AND (cancelado = 0 OR cancelado IS NULL)
+					LIMIT 1
+				');
 				$horario_ocupado = $query_horario_ocupado->fetch_all(MYSQLI_ASSOC);
 
 				if (count($horario_ocupado) == 0) {
@@ -1815,6 +1822,27 @@ function obtenerContenidoURLConCurl($url) {
 			return [
 				"codigo"=>500,
 				"mensaje"=>"La hora seleccionada no está disponible para reservas.",
+				"error"=>500
+			];
+		}
+
+		$qOcupada = $bd->query("
+			SELECT id_agenda
+			FROM agendas
+			WHERE id_sucursal = '".$sucursal."'
+			AND fecha = '".$fecha."'
+			AND LEFT(hora, 5) = '".substr($hora, 0, 5)."'
+			AND (cancelado = 0 OR cancelado IS NULL)
+			LIMIT 1
+		");
+
+		$agendaOcupada = $qOcupada ? $qOcupada->fetch_array(MYSQLI_ASSOC) : null;
+
+		if ($agendaOcupada) {
+			LogCron("HORARIO OCUPADO detectado");
+			return [
+				"codigo"=>500,
+				"mensaje"=>"La hora seleccionada no estÃ¡ disponible para reservas.",
 				"error"=>500
 			];
 		}

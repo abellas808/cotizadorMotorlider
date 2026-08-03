@@ -32,6 +32,42 @@ if ($nombre != '' && $fecha != '' && $hora != '') {
 	$fecha_actual = date("Y-m-d");
 
 	if (!$ea) {
+		$hora_normalizada = substr($hora, 0, 5);
+		$horario_ocupado = $connection->query('
+			SELECT id_agenda
+			FROM agendas
+			WHERE id_sucursal = "' . ($sucursal) . '"
+			AND fecha = "' . ($fecha) . '"
+			AND LEFT(hora, 5) = "' . ($hora_normalizada) . '"
+			AND (cancelado = 0 OR cancelado IS NULL)
+			LIMIT 1
+		');
+		$ho = $horario_ocupado ? $horario_ocupado->fetch_array(MYSQLI_ASSOC) : null;
+
+		if ($ho) {
+			echo 4;
+			exit;
+		}
+
+		$horario_bloqueado = $connection->query('
+			SELECT id_bloqueo
+			FROM agenda_bloqueos
+			WHERE id_sucursal = "' . ($sucursal) . '"
+			AND fecha = "' . ($fecha) . '"
+			AND activo = 1
+			AND (
+				hora IS NULL
+				OR TIME_FORMAT(hora, "%H:%i") = "' . ($hora_normalizada) . '"
+			)
+			LIMIT 1
+		');
+		$hb = $horario_bloqueado ? $horario_bloqueado->fetch_array(MYSQLI_ASSOC) : null;
+
+		if ($hb) {
+			echo 4;
+			exit;
+		}
+
 		// Obtengo las variables necesarias segun las entradas recibidas para realizar los inserts
 		$sucursalesList = 'SELECT * FROM agenda_sucursal WHERE id_sucursal = "' . ($sucursal) . '"';
 		$sucursales = $connection->query($sucursalesList);

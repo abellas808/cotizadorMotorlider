@@ -19,6 +19,28 @@ setlocale(LC_ALL,"es_ES@euro","es_ES","esp");
 $date = DateTime::createFromFormat("Y-m-d", $fecha);
 $dia = strftime("%A", $date->getTimestamp());
 
+$bloqueo_dia_completo = false;
+$horas_bloqueadas = array();
+
+$bloqueos = $connection->query('
+	SELECT hora
+	FROM agenda_bloqueos
+	WHERE id_sucursal = "'.$sucursal.'"
+	AND fecha = "'.$fecha.'"
+	AND activo = 1
+');
+
+if ($bloqueos) {
+	while ($bloqueo = $bloqueos->fetch_assoc()) {
+		if ($bloqueo['hora'] === null || $bloqueo['hora'] === '' || $bloqueo['hora'] == '00:00:00') {
+			$bloqueo_dia_completo = true;
+			break;
+		}
+
+		$horas_bloqueadas[] = substr($bloqueo['hora'], 0, 5);
+	}
+}
+
 $horarios = $connection->query('SELECT hora_comienzo FROM agenda_particulares
 INNER JOIN agenda_horas_particulares
 ON agenda_particulares.id_particular = agenda_horas_particulares.id_particular
@@ -64,7 +86,19 @@ ORDER BY hora_comienzo asc');
 	<?php $array_horario = $horarios->fetch_all(MYSQLI_ASSOC);
 	foreach($array_horario as $horario) {
 
-		$horario_ocupado = $connection->query('SELECT * FROM agendas WHERE fecha = "'.($fecha).'"  AND hora = "'.$horario['hora_comienzo'].'"');
+		if ($bloqueo_dia_completo || in_array(substr($horario['hora_comienzo'], 0, 5), $horas_bloqueadas)) {
+			continue;
+		}
+
+		$horario_ocupado = $connection->query('
+			SELECT id_agenda
+			FROM agendas
+			WHERE id_sucursal = "'.$sucursal.'"
+			AND fecha = "'.($fecha).'"
+			AND LEFT(hora, 5) = "'.substr($horario['hora_comienzo'], 0, 5).'"
+			AND (cancelado = 0 OR cancelado IS NULL)
+			LIMIT 1
+		');
 		$ho = $horario_ocupado->fetch_all(MYSQLI_ASSOC);
 
 		date_default_timezone_set ('America/Montevideo');

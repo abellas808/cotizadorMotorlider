@@ -206,6 +206,10 @@ if(isset($_POST['id_cotizacion']) && intval($_POST['id_cotizacion']) > 0){
 	                }
 
 	                if(response == 2){ alert("Ya existe una agenda para la cotizacion: " + id_cotizacion)}
+	                if(response == 4){
+	                    $("#resultado_agenda").html("Ese horario ya no está disponible. Volvé al calendario y elegí otro horario.");
+	                    alert("Ese horario ya no está disponible. Por favor elegí otro horario.");
+	                }
 	               
 	               //var = "*Detalle de Agenda:*%0A*Nombre del cliente:* Santiago Palermo%0A*Documento del cliente:* 46448486%0A*Fecha:* 12/06/2021%0A*Hora:* 10:00%0A*Sucursal:* Motorlider%0A*Automóvil:* Hyundai i10 5p full";
 
