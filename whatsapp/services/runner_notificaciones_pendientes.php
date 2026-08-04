@@ -211,10 +211,17 @@ while ($row = $rs->fetch_assoc()) {
 
             $idCotizacion = intval($row['id_cotizacion'] ?? 0);
 
-            $ok = TwilioMessageService::enviarTemplateRecordatorioConfirmacionAgenda3Hs(
-                $telefono,
-                $idCotizacion > 0 ? $idCotizacion : null
-            );
+            if ($tipo === 'RECORDATORIO_CONFIRMACION_AGENDA_10HS') {
+                $ok = TwilioMessageService::enviarTemplateRecordatorioConfirmacionAgenda10Hs(
+                    $telefono,
+                    $idCotizacion > 0 ? $idCotizacion : null
+                );
+            } else {
+                $ok = TwilioMessageService::enviarTemplateRecordatorioConfirmacionAgenda3Hs(
+                    $telefono,
+                    $idCotizacion > 0 ? $idCotizacion : null
+                );
+            }
 
             if ($ok) {
                 NotificacionPendienteService::marcarProcesada($id);
@@ -256,6 +263,8 @@ while ($row = $rs->fetch_assoc()) {
                 }
 
                 if ($tipo === 'RECORDATORIO_CONFIRMACION_AGENDA_10HS' && $idCotizacion > 0) {
+                    $payload['tipo_recordatorio_origen'] = 'RECORDATORIO_CONFIRMACION_AGENDA_10HS';
+
                     NotificacionPendienteService::crear(
                         $idCotizacion,
                         intval($row['id_agenda'] ?? 0) > 0 ? intval($row['id_agenda']) : null,
@@ -514,10 +523,7 @@ while ($row = $rs->fetch_assoc()) {
                 ");
             }
 
-            $okRecordatorio10Hs = TwilioMessageService::enviarTemplateRecordatorioConfirmacionAgenda10Hs(
-                $telefonoAgenda,
-                $idCotizacion
-            );
+            $okRecordatorio10Hs = true;
 
             $cnAbandonoAgenda->close();
 

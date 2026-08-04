@@ -6268,6 +6268,10 @@ if (
         );
     }
 
+    if ($idCotizacionNoAsistioTexto <= 0) {
+        $idCotizacionNoAsistioTexto = intval($userState['id_cotizacion'] ?? 0);
+    }
+
     if ($idCotizacionNoAsistioTexto > 0) {
         $userState['id_cotizacion'] = $idCotizacionNoAsistioTexto;
 
@@ -8333,6 +8337,10 @@ function wa_procesar_respuesta_no_asistio(
                 $from,
                 'NOTIFICACION_NO_ASISTIO_AGENDA'
             );
+        }
+
+        if ($idCotizacionNoAsistioTexto <= 0) {
+            $idCotizacionNoAsistioTexto = intval($userState['id_cotizacion'] ?? 0);
         }
 
         if ($idCotizacionNoAsistioTexto > 0) {

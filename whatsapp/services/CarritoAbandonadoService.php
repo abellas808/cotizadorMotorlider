@@ -327,7 +327,7 @@ class CarritoAbandonadoService
             UPDATE carrito_abandonado
             SET
                 mensaje_cliente = 'Cliente quiere recoordinar la agenda luego de no asistir',
-                motivo_abandono = 'REAGENDAR',
+                motivo_abandono = 'QUIERE_RECOORDINAR_AGENDA',
                 origen_abandono = 'AGENDA',
                 fecha_respuesta = NOW(),
                 observaciones = CONCAT(
