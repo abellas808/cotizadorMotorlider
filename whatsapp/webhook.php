@@ -6941,6 +6941,7 @@ if (($userState['step'] ?? '') === 'agenda_hora') {
 if (($userState['step'] ?? '') === 'agenda_confirmar') {
 
     $buttonPayload = trim((string)($_POST['ButtonPayload'] ?? ''));
+    $buttonTextNorm = wa_normalizar_texto((string)($_POST['ButtonText'] ?? ''));
     $respuestaNorm = wa_normalizar_texto($body);
 
     if ($buttonPayload !== '') {
@@ -6996,6 +6997,7 @@ if (($userState['step'] ?? '') === 'agenda_confirmar') {
     // CANCELAR
     if (
         in_array($buttonPayload, ['cancelar_agenda_final', 'agenda_revision_cancelar'], true)
+        || $buttonTextNorm === 'cancelar'
         || wa_es_cancelar_agenda($body)
     ) {
 
