@@ -3566,10 +3566,18 @@ if (
     return;
 }
 
-if (
-    $buttonPayloadAgenda === 'asistencia__agenda_si' ||
-    $buttonPayloadAgenda === 'asistencia_agenda_no'
-) {
+$buttonPayloadAsistenciaNorm = wa_normalizar_texto($buttonPayloadAgenda);
+$buttonTextAsistenciaNorm = wa_normalizar_texto((string)($_POST['ButtonText'] ?? ''));
+$originalSidAsistencia = trim((string)($_POST['OriginalRepliedMessageSid'] ?? ''));
+$metaAsistencia = wa_obtener_meta_mensaje_respondido($originalSidAsistencia);
+$origenAsistencia = (string)($metaAsistencia['origen'] ?? '');
+$esRespuestaTemplateAsistencia = ($origenAsistencia === 'template_asistencia_agenda');
+$esAsistenciaSi = in_array($buttonPayloadAsistenciaNorm, ['asistencia agenda si', 'asistencia  agenda si'], true)
+    || ($esRespuestaTemplateAsistencia && in_array($buttonTextAsistenciaNorm, ['si', 'sí'], true));
+$esAsistenciaNo = in_array($buttonPayloadAsistenciaNorm, ['asistencia agenda no', 'asistencia  agenda no'], true)
+    || ($esRespuestaTemplateAsistencia && $buttonTextAsistenciaNorm === 'no');
+
+if ($esAsistenciaSi || $esAsistenciaNo) {
     try {
         $agendaPendiente = wa_obtener_agenda_pendiente_confirmacion($from);
 
@@ -3587,7 +3595,7 @@ if (
              return;
         }
 
-        if ($buttonPayloadAgenda === 'asistencia__agenda_si') {
+        if ($esAsistenciaSi) {
             wa_marcar_confirmacion_agenda((int)$agendaPendiente['id_agenda'], 'SI');
             NotificacionPendienteService::cancelarPorAgendaYTipo(
                 (int)$agendaPendiente['id_agenda'],
@@ -3636,7 +3644,7 @@ if (
             return;
         }
 
-        if ($buttonPayloadAgenda === 'asistencia_agenda_no') {
+        if ($esAsistenciaNo) {
             NotificacionPendienteService::cancelarPorAgendaYTipo(
                 (int)$agendaPendiente['id_agenda'],
                 'ABANDONO_RECORDATORIO_AGENDA_10HS',
