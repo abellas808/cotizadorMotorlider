@@ -6400,6 +6400,44 @@ if (
 // RECORDATORIO AGENDA 3HS - NORMALIZAR RESPUESTA
 // =========================
 $buttonPayloadRecordatorioAgenda = trim((string)($_POST['ButtonPayload'] ?? ''));
+$payloadRecordatorioAgendaNorm = wa_normalizar_texto($buttonPayloadRecordatorioAgenda);
+
+if ($buttonPayloadRecordatorioAgenda !== '') {
+    if (in_array($payloadRecordatorioAgendaNorm, [
+        'recordatorio agenda 3hs confirmar',
+        'recordatorio agenda quiero agendar',
+        'recordatorio agenda agendar',
+        'recordatorio confirmar agenda'
+    ], true)) {
+        $buttonPayloadRecordatorioAgenda = 'recordatorio_agenda_confirmar_pendiente';
+        $_POST['ButtonPayload'] = $buttonPayloadRecordatorioAgenda;
+        $buttonPayloadAgenda = $buttonPayloadRecordatorioAgenda;
+        $buttonPayload = $buttonPayloadRecordatorioAgenda;
+    } elseif (in_array($payloadRecordatorioAgendaNorm, [
+        'recordatorio agenda 3hs buscar otro dia',
+        'recordatorio agenda otro dia',
+        'recordatorio buscar otro dia',
+        'recordatorio agenda recoordinar'
+    ], true)) {
+        $buttonPayloadRecordatorioAgenda = 'recordatorio_agenda_buscar_otro_dia';
+        $_POST['ButtonPayload'] = $buttonPayloadRecordatorioAgenda;
+        $buttonPayloadAgenda = $buttonPayloadRecordatorioAgenda;
+        $buttonPayload = $buttonPayloadRecordatorioAgenda;
+    } elseif (in_array($payloadRecordatorioAgendaNorm, [
+        'recordatorio agenda 3hs cancelar',
+        'recordatorio agenda no quiero agendar',
+        'recordatorio agenda no agendar',
+        'recordatorio no quiero agendar',
+        'recordatorio agenda cancelar pendiente',
+        'cancelar agenda recordatorio',
+        'no quiero agendar'
+    ], true)) {
+        $buttonPayloadRecordatorioAgenda = 'recordatorio_agenda_cancelar';
+        $_POST['ButtonPayload'] = $buttonPayloadRecordatorioAgenda;
+        $buttonPayloadAgenda = $buttonPayloadRecordatorioAgenda;
+        $buttonPayload = $buttonPayloadRecordatorioAgenda;
+    }
+}
 
 if (
     $buttonPayloadRecordatorioAgenda === 'recordatorio_agenda_confirmar_pendiente' ||
